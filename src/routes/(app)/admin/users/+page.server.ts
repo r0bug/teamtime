@@ -2,9 +2,10 @@ import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { db, users } from '$lib/server/db';
 import { desc } from 'drizzle-orm';
+import { canManageUsers } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	if (!locals.user || locals.user.role !== 'manager') {
+	if (!canManageUsers(locals.user)) {
 		throw redirect(302, '/dashboard');
 	}
 

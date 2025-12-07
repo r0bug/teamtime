@@ -2,7 +2,7 @@ import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, pgEnum, decima
 import { relations } from 'drizzle-orm';
 
 // Enums
-export const userRoleEnum = pgEnum('user_role', ['manager', 'purchaser', 'staff']);
+export const userRoleEnum = pgEnum('user_role', ['admin', 'manager', 'purchaser', 'staff']);
 export const taskStatusEnum = pgEnum('task_status', ['not_started', 'in_progress', 'completed', 'cancelled']);
 export const taskPriorityEnum = pgEnum('task_priority', ['low', 'medium', 'high', 'urgent']);
 export const taskSourceEnum = pgEnum('task_source', ['manual', 'recurring', 'event_triggered', 'purchase_approval']);

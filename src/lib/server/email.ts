@@ -32,3 +32,10 @@ export async function sendPinResetEmail(email: string, resetLink: string): Promi
 	console.log('LINK:', resetLink);
 	console.log('========================================\n');
 }
+
+export async function sendPinResetCode(email: string, code: string): Promise<void> {
+	console.log('\n========================================');
+	console.log('PIN RESET CODE FOR:', email);
+	console.log('CODE:', code);
+	console.log('========================================\n');
+}
