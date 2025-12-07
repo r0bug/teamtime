@@ -1,0 +1,808 @@
+Mobile Workforce Operations System — Functional Specification
+1. Purpose & Overview
+
+This system is a mobile-first web application designed to support real-world workforce operations involving:
+
+Employee scheduling
+
+Timekeeping (clock in / clock out)
+
+Manager–employee and employee–employee communication
+
+Task management (assignments, procedures, approvals)
+
+Expense tracking for field purchasing
+
+ATM withdrawal reconciliation
+
+Location-aware actions (clock-ins, purchases, photos, tasks)
+
+The core goal is to remove friction from scheduling, purchasing, task execution, and cash reconciliation while maintaining accountability, traceability, and ease of use in fast-moving environments like estate and yard sales.
+
+The system is delivered as a browser-based application served from a central webserver, with a mobile-first responsive UI that also works well on desktop PCs. It may be implemented as a Progressive Web App (PWA) to support home-screen install and richer notifications.
+
+2. Platform, Deployment & Access
+2.1 Deployment Model
+
+Server-Hosted Web Application
+
+Hosted on a central web server (cloud or on-prem)
+
+All clients connect via HTTPS
+
+Backend
+
+Exposes an API (REST or GraphQL) for:
+
+Authentication
+
+Scheduling
+
+Tasks
+
+Messaging
+
+Expenses & withdrawals
+
+Location/event logging
+
+Frontend
+
+Single Page Application (SPA) or similar web client
+
+Delivered from the same webserver (or CDN) and loaded in the browser
+
+2.2 Client Platforms
+
+Mobile Client
+
+Mobile-first UI design for phones (iOS/Android) via modern browsers
+
+Touch-optimized interactions
+
+PWA option:
+
+Add to home screen
+
+Push notifications (where supported)
+
+Offline caching of critical views
+
+Desktop / PC Client
+
+Same web app runs in desktop browsers (Chrome, Edge, Firefox, Safari)
+
+Responsive layout adapts:
+
+Larger screens optimized for managers (e.g., full schedule views, dashboards, task boards)
+
+No additional installation required beyond browser
+
+2.3 Hardware/OS Access
+
+Camera access (via browser permissions) for:
+
+Photos of items, receipts, task verification
+
+GPS / Location services (via browser permissions) for:
+
+Clock-ins/outs
+
+ATM withdrawals
+
+Photo and task events
+
+Notifications:
+
+Browser-based and PWA push notifications
+
+Lock-screen notifications where OS/PWA stack supports them
+
+2.4 Offline Tolerance
+
+Temporary offline operation with queued sync for:
+
+Messages
+
+Clock-in/out events
+
+Task updates
+
+ATM withdrawal logging
+
+3. Authentication, Sessions & Security
+3.1 Login & Session Behavior
+
+Primary Login Mechanism:
+
+User identity (e.g., email or username) + PIN-based authentication
+
+Session Behavior:
+
+Persistent login by default for both mobile and desktop
+
+When session renewal is required:
+
+User re-enters PIN
+
+System may occasionally require 2FA (below)
+
+3.2 Two-Factor Authentication (2FA)
+
+Secondary Verification:
+
+Email-based 2FA
+
+Triggered occasionally:
+
+New device
+
+Suspicious activity
+
+Long intervals since last strong verification
+
+3.3 Security Requirements
+
+All communication over HTTPS
+
+Audit trail of:
+
+Logins/logouts
+
+Clock-ins / clock-outs
+
+Task creation, assignment, completion, approvals
+
+ATM withdrawals & allocations
+
+Location-capturing events
+
+Broadcast shift messages
+
+Role-based access controls tied to Manager / Purchaser / Staff roles
+
+4. User Roles & Permissions
+4.1 Manager
+
+Create and modify employee schedules
+
+Approve/adjust time and attendance data
+
+Create, assign, and manage tasks
+
+Configure:
+
+Recurring task templates
+
+Event-triggered tasks (e.g., tied to clock-in/clock-out)
+
+Send broadcast shift requests to staff
+
+Communicate with any employee (1:1 or broadcast)
+
+Receive and decide on purchase approval requests
+
+View purchaser expense and ATM activity
+
+Export ATM withdrawal and task data
+
+Use AI scheduling assistant
+
+View location logs for:
+
+Clock-ins/outs
+
+ATM withdrawals
+
+Photos
+
+Relevant tasks
+
+4.2 Purchaser
+
+View schedule & tasks
+
+Clock in and clock out
+
+Record ATM withdrawals
+
+Attach withdrawals to products or product groups
+
+Capture photos of:
+
+Products under consideration
+
+Receipts
+
+Purchased items
+
+Initiate purchase approval request tasks to managers (with photos & pricing)
+
+Use messaging with managers and other employees
+
+Complete assigned tasks, including photo-required tasks
+
+4.3 Staff Employee
+
+View personal schedule and upcoming shifts
+
+Clock in and clock out via web app
+
+Receive and complete tasks (one-off, recurring, event-triggered)
+
+Participate in 1:1 private messaging:
+
+With managers
+
+With other employees
+
+Send/receive photos
+
+Respond to broadcast shift requests
+
+5. Scheduling System
+5.1 Manager Scheduling Tools (Desktop & Mobile)
+
+Drag-and-drop schedule interface, usable on:
+
+Desktop browsers (full calendar view)
+
+Mobile (simplified day/week view with drag interactions adapted to touch)
+
+Features:
+
+Create, edit, and move shift blocks
+
+Assign employees to shifts visually
+
+Filter by:
+
+Employee
+
+Location
+
+Role
+
+5.2 Employee Schedule View
+
+Each employee sees:
+
+Their own schedule
+
+Next upcoming shift prominently on the home screen
+
+Home Screen UX (Employee):
+
+Next shift summary (date, time, location)
+
+Clock-in / clock-out controls
+
+Quick access to:
+
+Task list
+
+Messages
+
+Notifications
+
+5.3 Calendar Integration
+
+Google Calendar Integration (per user, optional):
+
+One-way: system → Google Calendar initially
+
+Shifts appear as events in employee calendars
+
+Authorized per-user through OAuth or similar
+
+5.4 AI Scheduling Assistant
+
+Manager-facing tool (especially handy on desktop but accessible on mobile):
+
+Queries like:
+
+“Who is available Thursday 2–6 pm?”
+
+“Show me who is at 40+ hours this week.”
+
+“Suggest coverage for this open shift.”
+
+Suggestions only—final changes require manager confirmation.
+
+6. Time & Attendance (Clock In / Clock Out)
+
+Employees clock in/out via the web app (mobile or desktop):
+
+Each event records:
+
+Employee ID
+
+Timestamp (server authoritative)
+
+GPS location (when permission granted)
+
+Optional notes
+
+Managers can:
+
+View & audit time entries
+
+Correct entries with changes logged
+
+Export time data for payroll
+
+Event-triggered tasks can be attached to these actions (see Task Management).
+
+7. Communication & Messaging
+7.1 Manager ↔ Employee Messaging
+
+1:1 private messaging
+
+Text + photo attachments
+
+Works on both mobile and desktop browsers
+
+7.2 Employee ↔ Employee Private Messaging
+
+1:1 messaging for staff coordination
+
+Text + photos
+
+Common use case: “Where is X item?” with photos being sent back and forth
+
+7.3 Logging & Retention
+
+All messages:
+
+Logged
+
+Time-stamped
+
+Retained for audit
+
+UI may allow “archive” or “hide” but not true deletion from system storage by normal users
+
+8. Notifications (Including Lock Screen)
+8.1 Notification Types
+
+New task assigned
+
+Task due/overdue
+
+Schedule changes
+
+Broadcast shift requests
+
+New messages
+
+Purchase approval decisions (approved/denied)
+
+Upcoming shift reminders
+
+8.2 Delivery
+
+In-app notifications (mobile and desktop)
+
+Browser notifications / PWA push notifications:
+
+Lock-screen notifications where OS supports
+
+Notification tray entries
+
+Basic per-user preferences (as platform permits) for non-critical categories
+
+9. Task Management System
+
+Central to the system:
+
+One-off tasks
+
+Recurring tasks (e.g., opening/closing)
+
+Event-triggered tasks
+
+Tasks requiring photos
+
+Tasks used as purchase approval requests
+
+9.1 Task Entity
+
+Each task stores:
+
+Task ID
+
+Title
+
+Description / instructions
+
+Assigned employee (or “to be assigned”)
+
+Priority (optional)
+
+Due date/time (optional)
+
+Status:
+
+Not Started
+
+In Progress
+
+Completed
+
+Cancelled
+
+Required evidence:
+
+Photo required (yes/no)
+
+Notes required (yes/no)
+
+Metadata:
+
+Created by
+
+Created time
+
+Last updated time
+
+Source:
+
+Manual
+
+Recurring template
+
+Event-triggered
+
+Purchase approval request
+
+9.2 Task Lists & Views
+
+Employee view:
+
+All tasks assigned to that employee
+
+Filters: by status, due time, type (procedure/approval/etc.)
+
+Manager view:
+
+Task lists by employee, by location, by status
+
+Ability to reassign tasks, adjust due times, close/reopen tasks
+
+9.3 Assigning Tasks
+
+Managers:
+
+Create and assign tasks directly
+
+Create per-employee copies of a multi-target task (e.g., a checklist)
+
+Employees:
+
+Cannot assign tasks to others (except through structured flows like purchase requests)
+
+Can create “request approval to purchase” tasks that go to managers
+
+10. Recurring Tasks (Procedures)
+
+Used for:
+
+Opening procedures
+
+Closing procedures
+
+Daily/weekly/monthly routines
+
+10.1 Task Templates
+
+Manager-defined templates include:
+
+Template name (e.g., “Open Store – Main Location”)
+
+Steps/subtasks (optional)
+
+Target role/team/location
+
+Evidence requirements:
+
+Photo-required steps
+
+Notes-required steps
+
+10.2 Recurrence Rules
+
+Frequency:
+
+Daily / Weekly / Monthly / Custom
+
+Trigger conditions:
+
+Time of day
+
+First clock-in at a location within a time window
+
+Last clock-out at a location
+
+System creates concrete task instances from these templates automatically.
+
+11. Event-Triggered Tasks
+
+Tasks can be triggered by events, especially:
+
+Clock-in
+
+Clock-out
+
+11.1 Examples
+
+First clock-in at Location A between 7–9 am:
+
+Auto-assign “Opening Procedure – Location A” to that employee
+
+Last clock-out at Location B after 8 pm:
+
+Auto-assign “Closing Procedure – Location B” to that employee
+
+11.2 Configuration
+
+Managers can configure:
+
+Which event (first/last clock at location/time window)
+
+Which template to spawn
+
+Whether tasks are:
+
+Assigned to a specific employee
+
+Available for any on-shift staff to claim (future enhancement)
+
+These tasks are linked back to their triggering event for traceability.
+
+12. Tasks Requiring Photos
+
+Some tasks require visual confirmation.
+
+12.1 Behavior
+
+Task definition may specify:
+
+“Photo required to complete”
+
+On completion attempt:
+
+App opens camera or file chooser (where allowed)
+
+User must attach at least one photo
+
+Photos store:
+
+Timestamp
+
+GPS location
+
+Task ID
+
+Use cases:
+
+Opening/closing proof
+
+Cleanliness checks
+
+Item condition confirmation
+
+13. Purchase Approval Request Tasks
+
+A specialized, structured flow.
+
+13.1 Creation (Employee/Purchaser)
+
+Employee creates a Purchase Approval Request:
+
+Description of item(s)
+
+Proposed price
+
+Optional additional details (seller, bundle description, urgency)
+
+One or more photos of the item/price tags/etc.
+
+Automatic capture of:
+
+Timestamp
+
+GPS location
+
+This generates a task assigned to a Manager.
+
+13.2 Manager Review
+
+Manager sees:
+
+Item description
+
+Photos
+
+Proposed price
+
+Requester
+
+Time and location of request
+
+Manager actions:
+
+Approve
+
+Deny
+
+Provide optional notes/instructions (e.g., “Try $20 instead”)
+
+13.3 Feedback to Employee
+
+Employee is notified (in-app + push):
+
+Approved/denied status
+
+Manager notes
+
+Task moves to Completed with decision recorded.
+
+13.4 Linkage to Expenses
+
+After approval and purchase:
+
+Employee can link:
+
+The purchase approval task
+
+A specific ATM withdrawal
+
+Resulting product/product-group records
+
+This forms a full chain:
+Approval → ATM withdrawal → Product listing.
+
+14. Expense Tracking & ATM Reconciliation
+14.1 ATM Withdrawal Records
+
+Each withdrawal has:
+
+Withdrawal ID
+
+Amount
+
+Date & time
+
+Purchaser ID
+
+GPS location (plus optional reverse-geocode)
+
+Status:
+
+Unassigned
+
+Partially Assigned
+
+Fully Spent
+
+14.2 Product/Group Linkage
+
+Attach withdrawals to:
+
+Single product
+
+Product groups
+
+Support partial allocations
+
+Status becomes Fully Spent when fully allocated
+
+14.3 Photos & Documentation
+
+Photos attached to withdrawals and products
+
+Each with:
+
+Timestamp
+
+GPS location
+
+Link to appropriate entities
+
+14.4 Export for Accounting
+
+CSV and JSON exports for:
+
+Withdrawals
+
+Allocations
+
+Task/approval metadata if needed
+
+15. Location & Google Maps Integration
+
+Google Maps API (or equivalent) used for:
+
+Reverse-geocoding (GPS → address/area)
+
+Optional map views in manager UI (especially on desktop)
+
+Location capture for:
+
+Clock-ins/outs
+
+ATM withdrawals
+
+Photos
+
+Tasks requiring evidence
+
+16. Data Ownership, Logging & Export
+
+Core datasets:
+
+Users & roles
+
+Schedules & shifts
+
+Time records
+
+Messages
+
+Tasks & templates
+
+Purchase approvals
+
+ATM withdrawals & allocations
+
+Location-tagged events
+
+Exports:
+
+CSV for each major dataset
+
+JSON for integrations
+
+Logging:
+
+Changes to key records (time, tasks, approvals, schedules) tracked with:
+
+Who
+
+When
+
+Before/after where practical
+
+17. System Philosophy
+
+Mobile-first, but desktop-capable
+
+Webserver-based system with a single codebase serving:
+
+Mobile field staff
+
+Desktop manager consoles
+
+Low friction for real-world use
+
+High accountability and auditability for back office
+
+18. Optional Phase-Two Enhancements (Not Required for MVP)
+
+Advanced notification controls / quiet hours
+
+OCR for receipts and tags
+
+Task dependencies and checklists with pass/fail logic
+
+Geofencing and “nudge” style alerts
+
+Manager dashboards (desktop-focused):
+
+Live map of who is clocked in where
+
+Task completion heatmaps
+
+Purchase success/ROI analytics
+
+This version explicitly bakes in: central webserver architecture, browser-based client, mobile-first but PC-friendly UI, and keeps all the existing task/scheduling/expense logic intact.

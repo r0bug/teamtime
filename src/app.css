@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+	:root {
+		--color-primary: 59 130 246;
+		--color-primary-dark: 37 99 235;
+	}
+
+	html {
+		@apply antialiased;
+	}
+
+	body {
+		@apply bg-gray-50 text-gray-900 min-h-screen;
+	}
+}
+
+@layer components {
+	.btn {
+		@apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+	}
+
+	.btn-primary {
+		@apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
+	}
+
+	.btn-secondary {
+		@apply btn bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500;
+	}
+
+	.btn-danger {
+		@apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+	}
+
+	.btn-ghost {
+		@apply btn bg-transparent text-gray-700 hover:bg-gray-100 focus:ring-gray-500;
+	}
+
+	.btn-sm {
+		@apply px-3 py-1.5 text-sm;
+	}
+
+	.btn-lg {
+		@apply px-6 py-3 text-lg;
+	}
+
+	.input {
+		@apply block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm;
+	}
+
+	.input-error {
+		@apply border-red-500 focus:border-red-500 focus:ring-red-500;
+	}
+
+	.label {
+		@apply block text-sm font-medium text-gray-700 mb-1;
+	}
+
+	.card {
+		@apply bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden;
+	}
+
+	.card-header {
+		@apply px-4 py-3 border-b border-gray-200 bg-gray-50;
+	}
+
+	.card-body {
+		@apply p-4;
+	}
+
+	.badge {
+		@apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+	}
+
+	.badge-primary {
+		@apply badge bg-primary-100 text-primary-800;
+	}
+
+	.badge-success {
+		@apply badge bg-green-100 text-green-800;
+	}
+
+	.badge-warning {
+		@apply badge bg-yellow-100 text-yellow-800;
+	}
+
+	.badge-danger {
+		@apply badge bg-red-100 text-red-800;
+	}
+
+	.badge-gray {
+		@apply badge bg-gray-100 text-gray-800;
+	}
+}
+
+@layer utilities {
+	.safe-bottom {
+		padding-bottom: env(safe-area-inset-bottom, 0);
+	}
+
+	.safe-top {
+		padding-top: env(safe-area-inset-top, 0);
+	}
+
+	.touch-target {
+		min-height: 44px;
+		min-width: 44px;
+	}
+}
+
+/* Mobile-first responsive utilities */
+@media (max-width: 639px) {
+	.mobile-full {
+		width: 100%;
+	}
+}
+
+/* PWA standalone mode styles */
+@media all and (display-mode: standalone) {
+	body {
+		-webkit-user-select: none;
+		user-select: none;
+	}
+}

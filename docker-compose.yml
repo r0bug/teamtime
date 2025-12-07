@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: teamtime-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: teamtime
+      POSTGRES_PASSWORD: teamtime_dev_password
+      POSTGRES_DB: teamtime
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teamtime -d teamtime"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
