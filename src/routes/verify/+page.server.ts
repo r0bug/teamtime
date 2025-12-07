@@ -17,7 +17,7 @@ export const load: PageServerLoad = async ({ cookies }) => {
 };
 
 export const actions: Actions = {
-	default: async ({ request, cookies, getClientAddress }) => {
+	verify: async ({ request, cookies, getClientAddress }) => {
 		const pendingAuth = cookies.get('pending_auth');
 		if (!pendingAuth) {
 			throw redirect(302, '/login');

@@ -43,6 +43,7 @@
 
 				<form
 					method="POST"
+					action="?/verify"
 					use:enhance={() => {
 						loading = true;
 						return async ({ update }) => {

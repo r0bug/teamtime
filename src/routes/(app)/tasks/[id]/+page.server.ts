@@ -1,0 +1,117 @@
+import type { Actions, PageServerLoad } from './$types';
+import { fail, redirect, error } from '@sveltejs/kit';
+import { db, tasks, users, taskCompletions } from '$lib/server/db';
+import { eq } from 'drizzle-orm';
+
+export const load: PageServerLoad = async ({ params, locals }) => {
+	if (!locals.user) {
+		throw redirect(302, '/login');
+	}
+
+	const [task] = await db
+		.select({
+			id: tasks.id,
+			title: tasks.title,
+			description: tasks.description,
+			priority: tasks.priority,
+			status: tasks.status,
+			dueAt: tasks.dueAt,
+			photoRequired: tasks.photoRequired,
+			notesRequired: tasks.notesRequired,
+			assignedTo: tasks.assignedTo,
+			assigneeName: users.name,
+			createdAt: tasks.createdAt
+		})
+		.from(tasks)
+		.leftJoin(users, eq(tasks.assignedTo, users.id))
+		.where(eq(tasks.id, params.id))
+		.limit(1);
+
+	if (!task) {
+		throw error(404, 'Task not found');
+	}
+
+	const completions = await db
+		.select({
+			id: taskCompletions.id,
+			completedAt: taskCompletions.completedAt,
+			notes: taskCompletions.notes,
+			completedByName: users.name
+		})
+		.from(taskCompletions)
+		.leftJoin(users, eq(taskCompletions.completedBy, users.id))
+		.where(eq(taskCompletions.taskId, params.id));
+
+	const allUsers = locals.user.role === 'manager'
+		? await db.select({ id: users.id, name: users.name }).from(users).where(eq(users.isActive, true))
+		: [];
+
+	return { task, completions, users: allUsers, isManager: locals.user.role === 'manager' };
+};
+
+export const actions: Actions = {
+	update: async ({ request, params, locals }) => {
+		if (!locals.user || locals.user.role !== 'manager') {
+			return fail(403, { error: 'Unauthorized' });
+		}
+
+		const formData = await request.formData();
+		const title = formData.get('title')?.toString().trim();
+		const description = formData.get('description')?.toString().trim() || null;
+		const assignedTo = formData.get('assignedTo')?.toString() || null;
+		const priority = formData.get('priority')?.toString() as 'low' | 'medium' | 'high' | 'urgent';
+		const status = formData.get('status')?.toString() as 'not_started' | 'in_progress' | 'completed' | 'cancelled';
+		const dueAt = formData.get('dueAt')?.toString();
+
+		if (!title) {
+			return fail(400, { error: 'Title is required' });
+		}
+
+		await db
+			.update(tasks)
+			.set({
+				title,
+				description,
+				assignedTo,
+				priority,
+				status,
+				dueAt: dueAt ? new Date(dueAt) : null,
+				updatedAt: new Date()
+			})
+			.where(eq(tasks.id, params.id));
+
+		return { success: true };
+	},
+
+	complete: async ({ request, params, locals }) => {
+		if (!locals.user) {
+			return fail(403, { error: 'Unauthorized' });
+		}
+
+		const formData = await request.formData();
+		const notes = formData.get('notes')?.toString() || null;
+
+		await db.insert(taskCompletions).values({
+			taskId: params.id,
+			completedBy: locals.user.id,
+			notes
+		});
+
+		await db
+			.update(tasks)
+			.set({ status: 'completed', updatedAt: new Date() })
+			.where(eq(tasks.id, params.id));
+
+		return { success: true, completed: true };
+	},
+
+	delete: async ({ params, locals }) => {
+		if (!locals.user || locals.user.role !== 'manager') {
+			return fail(403, { error: 'Unauthorized' });
+		}
+
+		await db.delete(tasks).where(eq(tasks.id, params.id));
+
+		throw redirect(302, '/tasks');
+	}
+};
