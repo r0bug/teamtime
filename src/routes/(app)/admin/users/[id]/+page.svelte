@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import type { PageData, ActionData } from './$types';
+	import Avatar from '$lib/components/Avatar.svelte';
 
 	export let data: PageData;
 	export let form: ActionData;
@@ -23,7 +24,11 @@
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
 				</svg>
 			</a>
-			<h1 class="text-2xl font-bold">Edit User</h1>
+			<Avatar src={user.avatarUrl} name={user.name} size="lg" />
+			<div>
+				<h1 class="text-2xl font-bold">{user.name}</h1>
+				<p class="text-sm text-gray-500 capitalize">{user.role}</p>
+			</div>
 		</div>
 
 		{#if form?.error}

@@ -30,6 +30,7 @@ export const users = pgTable('users', {
 	role: userRoleEnum('role').notNull().default('staff'),
 	name: text('name').notNull(),
 	phone: text('phone'),
+	avatarUrl: text('avatar_url'),
 	isActive: boolean('is_active').notNull().default(true),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
@@ -324,6 +325,14 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
 	keys: jsonb('keys').$type<{ p256dh: string; auth: string }>().notNull(),
 	deviceInfo: text('device_info'),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// App settings table
+export const appSettings = pgTable('app_settings', {
+	id: serial('id').primaryKey(),
+	key: text('key').notNull().unique(),
+	value: text('value').notNull(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
 

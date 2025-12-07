@@ -17,6 +17,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			phone: users.phone,
 			role: users.role,
 			isActive: users.isActive,
+			avatarUrl: users.avatarUrl,
 			createdAt: users.createdAt
 		})
 		.from(users)

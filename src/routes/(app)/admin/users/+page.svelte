@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import Avatar from '$lib/components/Avatar.svelte';
 
 	export let data: PageData;
 
@@ -76,9 +77,7 @@
 						<tr class="hover:bg-gray-50">
 							<td class="px-4 py-4">
 								<div class="flex items-center">
-									<div class="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center text-white font-medium flex-shrink-0">
-										{user.name.charAt(0).toUpperCase()}
-									</div>
+									<Avatar src={user.avatarUrl} name={user.name} size="md" />
 									<div class="ml-3">
 										<div class="font-medium text-gray-900">{user.name}</div>
 										<div class="text-sm text-gray-500 lg:hidden">{user.email}</div>

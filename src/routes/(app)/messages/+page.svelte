@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import Avatar from '$lib/components/Avatar.svelte';
 
 	export let data: PageData;
 
@@ -14,6 +15,11 @@
 		if (conv.type === 'broadcast') return 'Broadcast';
 		const otherParticipants = conv.participants.filter((p: { id: string }) => p.id !== currentUser?.id);
 		return otherParticipants.map((p: { name: string }) => p.name).join(', ') || 'Unknown';
+	}
+
+	function getConversationAvatar(conv: typeof conversations[0]) {
+		const otherParticipants = conv.participants.filter((p: { id: string }) => p.id !== currentUser?.id);
+		return otherParticipants[0]?.avatarUrl || null;
 	}
 
 	function formatTime(dateStr: string | Date) {
@@ -58,9 +64,7 @@
 	<div class="flex-1 overflow-y-auto">
 		{#each conversations as conv}
 			<a href="/messages/{conv.id}" class="flex items-center p-4 hover:bg-gray-50 border-b {conv.unreadCount > 0 ? 'bg-primary-50' : ''}">
-				<div class="w-12 h-12 rounded-full bg-primary-600 flex items-center justify-center text-white font-medium flex-shrink-0">
-					{getConversationName(conv).charAt(0).toUpperCase()}
-				</div>
+				<Avatar src={getConversationAvatar(conv)} name={getConversationName(conv)} size="lg" />
 				<div class="ml-3 flex-1 min-w-0">
 					<div class="flex items-center justify-between">
 						<h3 class="font-semibold text-gray-900 truncate">{getConversationName(conv)}</h3>
@@ -129,9 +133,7 @@
 							class="flex items-center p-3 rounded-lg hover:bg-gray-100"
 							on:click={closeModal}
 						>
-							<div class="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center text-white font-medium">
-								{user.name.charAt(0).toUpperCase()}
-							</div>
+							<Avatar src={user.avatarUrl} name={user.name} size="md" />
 							<div class="ml-3">
 								<div class="font-medium">{user.name}</div>
 								<div class="text-sm text-gray-500 capitalize">{user.role}</div>

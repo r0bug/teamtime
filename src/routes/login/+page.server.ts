@@ -1,10 +1,19 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
-import { db, users, sessions, twoFactorCodes } from '$lib/server/db';
+import { db, users, sessions, twoFactorCodes, appSettings } from '$lib/server/db';
 import { eq, and, gt } from 'drizzle-orm';
 import { verifyPin, generate2FACode } from '$lib/server/auth/pin';
 import { lucia } from '$lib/server/auth';
 import { send2FACode } from '$lib/server/email';
+
+async function is2FAEnabled(): Promise<boolean> {
+	const [setting] = await db
+		.select()
+		.from(appSettings)
+		.where(eq(appSettings.key, '2fa_enabled'))
+		.limit(1);
+	return setting?.value === 'true';
+}
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (locals.user) {
@@ -46,56 +55,77 @@ export const actions: Actions = {
 			return fail(400, { error: 'Invalid email or PIN' });
 		}
 
-		// Check if 2FA is needed (new device or long time since last 2FA)
 		const userAgent = request.headers.get('user-agent') || '';
 		const ipAddress = getClientAddress();
 
-		// For now, check if there's a recent session with 2FA from same device
-		const recentSession = await db
-			.select()
-			.from(sessions)
-			.where(
-				and(
-					eq(sessions.userId, user.id),
-					eq(sessions.ipAddress, ipAddress),
-					gt(sessions.last2faAt, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) // 30 days
+		// Check if 2FA is enabled globally
+		const twoFAEnabled = await is2FAEnabled();
+
+		if (twoFAEnabled) {
+			// Check if there's a recent session with 2FA from same device
+			const recentSession = await db
+				.select()
+				.from(sessions)
+				.where(
+					and(
+						eq(sessions.userId, user.id),
+						eq(sessions.ipAddress, ipAddress),
+						gt(sessions.last2faAt, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) // 30 days
+					)
 				)
-			)
-			.limit(1);
+				.limit(1);
 
-		if (recentSession.length === 0) {
-			// Need 2FA
-			const code = generate2FACode();
-			const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+			if (recentSession.length === 0) {
+				// Need 2FA
+				const code = generate2FACode();
+				const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-			await db.insert(twoFactorCodes).values({
-				userId: user.id,
-				code,
-				expiresAt
+				await db.insert(twoFactorCodes).values({
+					userId: user.id,
+					code,
+					expiresAt
+				});
+
+				// Send code via email
+				await send2FACode(user.email, code);
+
+				// Store pending auth in cookie
+				cookies.set('pending_auth', JSON.stringify({ userId: user.id, email: user.email }), {
+					path: '/',
+					httpOnly: true,
+					secure: process.env.NODE_ENV === 'production',
+					sameSite: 'lax',
+					maxAge: 60 * 10 // 10 minutes
+				});
+
+				throw redirect(302, '/verify');
+			}
+
+			// Create session with existing 2FA time
+			const session = await lucia.createSession(user.id, {
+				deviceFingerprint: null,
+				ipAddress,
+				userAgent,
+				lastActive: new Date(),
+				last2faAt: recentSession[0].last2faAt
 			});
 
-			// Send code via email
-			await send2FACode(user.email, code);
-
-			// Store pending auth in cookie
-			cookies.set('pending_auth', JSON.stringify({ userId: user.id, email: user.email }), {
-				path: '/',
-				httpOnly: true,
-				secure: process.env.NODE_ENV === 'production',
-				sameSite: 'lax',
-				maxAge: 60 * 10 // 10 minutes
+			const sessionCookie = lucia.createSessionCookie(session.id);
+			cookies.set(sessionCookie.name, sessionCookie.value, {
+				path: '.',
+				...sessionCookie.attributes
 			});
 
-			throw redirect(302, '/verify');
+			throw redirect(302, '/dashboard');
 		}
 
-		// Create session without 2FA
+		// 2FA disabled - create session directly
 		const session = await lucia.createSession(user.id, {
 			deviceFingerprint: null,
 			ipAddress,
 			userAgent,
 			lastActive: new Date(),
-			last2faAt: recentSession[0].last2faAt // Carry over last 2FA time
+			last2faAt: null
 		});
 
 		const sessionCookie = lucia.createSessionCookie(session.id);

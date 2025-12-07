@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
 	import type { PageData, ActionData } from './$types';
+	import AvatarUpload from '$lib/components/AvatarUpload.svelte';
 
 	export let data: PageData;
 	export let form: ActionData;
@@ -9,7 +11,12 @@
 
 	let name = user?.name || '';
 	let phone = user?.phone || '';
+	let currentAvatar = user?.avatarUrl || null;
 	let loading = false;
+
+	function handleAvatarChange() {
+		invalidateAll();
+	}
 </script>
 
 <svelte:head>
@@ -18,6 +25,21 @@
 
 <div class="p-4 lg:p-8 max-w-2xl mx-auto">
 	<h1 class="text-2xl font-bold mb-6">Settings</h1>
+
+	<!-- Profile Photo Section -->
+	<div class="card mb-6">
+		<div class="card-header">
+			<h2 class="font-semibold">Profile Photo</h2>
+		</div>
+		<div class="card-body">
+			<AvatarUpload
+				currentAvatar={currentAvatar}
+				name={user?.name || ''}
+				size="lg"
+				on:change={handleAvatarChange}
+			/>
+		</div>
+	</div>
 
 	<!-- Profile Section -->
 	<div class="card mb-6">

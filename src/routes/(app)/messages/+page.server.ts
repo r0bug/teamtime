@@ -7,7 +7,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	// Get all users for new chat
 	const allUsers = await db
-		.select({ id: users.id, name: users.name, role: users.role })
+		.select({ id: users.id, name: users.name, role: users.role, avatarUrl: users.avatarUrl })
 		.from(users)
 		.where(and(
 			ne(users.id, user.id),
@@ -41,7 +41,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 			const participants = await db
 				.select({
 					id: users.id,
-					name: users.name
+					name: users.name,
+					avatarUrl: users.avatarUrl
 				})
 				.from(conversationParticipants)
 				.innerJoin(users, eq(users.id, conversationParticipants.userId))
