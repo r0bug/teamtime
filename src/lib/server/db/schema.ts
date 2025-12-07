@@ -31,6 +31,8 @@ export const users = pgTable('users', {
 	name: text('name').notNull(),
 	phone: text('phone'),
 	avatarUrl: text('avatar_url'),
+	hourlyRate: decimal('hourly_rate', { precision: 10, scale: 2 }),
+	twoFactorEnabled: boolean('two_factor_enabled').notNull().default(true),
 	isActive: boolean('is_active').notNull().default(true),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()

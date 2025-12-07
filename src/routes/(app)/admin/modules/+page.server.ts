@@ -1,71 +1,80 @@
-import type { Actions, PageServerLoad } from './$types';
+import type { PageServerLoad, Actions } from './$types';
 import { redirect, fail } from '@sveltejs/kit';
 import { db, appSettings } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
-import { isAdmin } from '$lib/server/auth/roles';
+import { isAdmin, canManageModules } from '$lib/server/auth/roles';
 
-// Define available modules
-const AVAILABLE_MODULES = [
-	{ key: 'module_tasks', name: 'Tasks', description: 'Task management and assignments' },
-	{ key: 'module_schedule', name: 'Schedule', description: 'Shift scheduling and time tracking' },
-	{ key: 'module_messages', name: 'Messages', description: 'Internal messaging system' },
-	{ key: 'module_expenses', name: 'Expenses', description: 'ATM withdrawals and expense tracking' },
-	{ key: 'module_purchases', name: 'Purchase Requests', description: 'Purchase approval workflow' },
-	{ key: 'module_notifications', name: 'Notifications', description: 'Push notifications and alerts' },
-	{ key: 'module_locations', name: 'Locations', description: 'Location management' },
-	{ key: 'module_reports', name: 'Reports', description: 'Analytics and reporting' }
+const DEFAULT_MODULES = [
+	{ key: 'module_tasks', name: 'Tasks', description: 'Task management and assignments', enabled: true },
+	{ key: 'module_schedule', name: 'Schedule', description: 'Shift scheduling and time tracking', enabled: true },
+	{ key: 'module_messages', name: 'Messages', description: 'Internal messaging system', enabled: true },
+	{ key: 'module_expenses', name: 'Expenses', description: 'ATM withdrawals and expense tracking', enabled: true },
+	{ key: 'module_purchase_requests', name: 'Purchase Requests', description: 'Purchase approval workflow', enabled: true },
+	{ key: 'module_notifications', name: 'Notifications', description: 'Push notifications and alerts', enabled: true },
+	{ key: 'module_locations', name: 'Locations', description: 'Location management', enabled: true },
+	{ key: 'module_reports', name: 'Reports', description: 'Analytics and reporting', enabled: true }
 ];
 
 export const load: PageServerLoad = async ({ locals }) => {
-	if (!isAdmin(locals.user)) {
-		throw redirect(302, '/dashboard');
+	if (!canManageModules(locals.user)) {
+		throw redirect(302, '/admin');
 	}
 
 	// Get current module settings
-	const settings = await db.select().from(appSettings);
-	const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+	const settings = await db
+		.select()
+		.from(appSettings);
 
-	const modules = AVAILABLE_MODULES.map(module => ({
+	const settingsMap = settings.reduce((acc, setting) => {
+		acc[setting.key] = setting.value;
+		return acc;
+	}, {} as Record<string, string>);
+
+	// Merge with defaults
+	const modules = DEFAULT_MODULES.map(module => ({
 		...module,
-		enabled: settingsMap.get(module.key) !== 'false'
+		enabled: settingsMap[module.key] !== 'false'
 	}));
 
-	return { modules };
+	return {
+		modules
+	};
 };
 
 export const actions: Actions = {
-	toggle: async ({ request, locals }) => {
-		if (!isAdmin(locals.user)) {
-			return fail(403, { error: 'Unauthorized' });
+	toggleModule: async ({ request, locals }) => {
+		if (!canManageModules(locals.user)) {
+			return fail(403, { error: 'Only admins can manage modules' });
 		}
 
 		const formData = await request.formData();
-		const moduleKey = formData.get('moduleKey')?.toString();
+		const moduleKey = formData.get('moduleKey') as string;
 		const enabled = formData.get('enabled') === 'true';
 
 		if (!moduleKey) {
-			return fail(400, { error: 'Module key is required' });
+			return fail(400, { error: 'Module key required' });
 		}
 
-		// Check if setting exists
-		const existing = await db
-			.select()
-			.from(appSettings)
-			.where(eq(appSettings.key, moduleKey))
-			.limit(1);
-
-		if (existing.length > 0) {
+		try {
+			// Upsert the setting
 			await db
-				.update(appSettings)
-				.set({ value: enabled ? 'true' : 'false', updatedAt: new Date() })
-				.where(eq(appSettings.key, moduleKey));
-		} else {
-			await db.insert(appSettings).values({
-				key: moduleKey,
-				value: enabled ? 'true' : 'false'
-			});
-		}
+				.insert(appSettings)
+				.values({
+					key: moduleKey,
+					value: enabled ? 'true' : 'false'
+				})
+				.onConflictDoUpdate({
+					target: appSettings.key,
+					set: {
+						value: enabled ? 'true' : 'false',
+						updatedAt: new Date()
+					}
+				});
 
-		return { success: true };
+			return { success: true, message: 'Module setting updated' };
+		} catch (error) {
+			console.error('Error updating module:', error);
+			return fail(500, { error: 'Failed to update module setting' });
+		}
 	}
 };

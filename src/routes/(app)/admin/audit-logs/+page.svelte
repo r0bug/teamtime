@@ -1,144 +1,139 @@
 <script lang="ts">
-	export let data;
+	import { goto } from '$app/navigation';
+	import type { PageData } from './$types';
 
-	function formatDate(date: string) {
-		return new Date(date).toLocaleString();
+	export let data: PageData;
+
+	function formatDate(date: Date | string) {
+		return new Date(date).toLocaleString('en-US', {
+			month: 'short',
+			day: 'numeric',
+			year: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit'
+		});
 	}
 
-	function formatJson(obj: unknown) {
-		if (!obj) return '-';
-		try {
-			return JSON.stringify(obj, null, 2);
-		} catch {
-			return String(obj);
-		}
+	function getActionColor(action: string) {
+		if (action.includes('create') || action.includes('insert')) return 'bg-green-100 text-green-800';
+		if (action.includes('update') || action.includes('edit')) return 'bg-blue-100 text-blue-800';
+		if (action.includes('delete') || action.includes('remove')) return 'bg-red-100 text-red-800';
+		return 'bg-gray-100 text-gray-800';
+	}
+
+	function changePage(newPage: number) {
+		goto('/admin/audit-logs?page=' + newPage);
 	}
 </script>
 
 <svelte:head>
-	<title>Audit Logs - Admin</title>
+	<title>Audit Logs - TeamTime</title>
 </svelte:head>
 
-<div class="p-4 lg:p-6">
+<div class="p-4 lg:p-8 max-w-7xl mx-auto">
 	<div class="mb-6">
 		<h1 class="text-2xl font-bold text-gray-900">Audit Logs</h1>
-		<p class="text-gray-600">View all system activity and access logs</p>
+		<p class="text-gray-600 mt-1">View system activity and changes</p>
 	</div>
 
-	<div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+	<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+		<p class="text-sm text-yellow-800">
+			<strong>Admin Only:</strong> This page shows all system activities including logins, data changes, and security events.
+		</p>
+	</div>
+
+	<div class="card">
+		<div class="card-header flex justify-between items-center">
+			<h2 class="font-semibold">Activity Log</h2>
+			<span class="text-sm text-gray-500">{data.totalCount} total entries</span>
+		</div>
 		<div class="overflow-x-auto">
-			<table class="min-w-full divide-y divide-gray-200">
+			<table class="w-full">
 				<thead class="bg-gray-50">
 					<tr>
-						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-							Time
-						</th>
-						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-							User
-						</th>
-						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-							Action
-						</th>
-						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-							Entity
-						</th>
-						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-							IP Address
-						</th>
-						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-							Details
-						</th>
+						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
+						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Entity</th>
+						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP Address</th>
+						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
 					</tr>
 				</thead>
 				<tbody class="bg-white divide-y divide-gray-200">
-					{#each data.logs as log}
-						<tr class="hover:bg-gray-50">
-							<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-								{formatDate(log.createdAt)}
-							</td>
-							<td class="px-4 py-3 whitespace-nowrap text-sm">
-								{#if log.userName}
-									<span class="text-gray-900">{log.userName}</span>
-									<span class="text-gray-500 text-xs block">{log.userEmail}</span>
-								{:else}
-									<span class="text-gray-400">System</span>
-								{/if}
-							</td>
-							<td class="px-4 py-3 whitespace-nowrap text-sm">
-								<span class="px-2 py-1 rounded-full text-xs font-medium
-									{log.action.includes('create') ? 'bg-green-100 text-green-800' : ''}
-									{log.action.includes('update') ? 'bg-blue-100 text-blue-800' : ''}
-									{log.action.includes('delete') ? 'bg-red-100 text-red-800' : ''}
-									{log.action.includes('login') ? 'bg-purple-100 text-purple-800' : ''}
-								">
-									{log.action}
-								</span>
-							</td>
-							<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-								{log.entityType}
-								{#if log.entityId}
-									<span class="text-gray-400 text-xs">({log.entityId.slice(0, 8)}...)</span>
-								{/if}
-							</td>
-							<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-								{log.ipAddress || '-'}
-							</td>
-							<td class="px-4 py-3 text-sm">
-								{#if log.beforeData || log.afterData}
-									<details class="cursor-pointer">
-										<summary class="text-blue-600 hover:text-blue-800">View changes</summary>
-										<div class="mt-2 text-xs bg-gray-50 rounded p-2 max-w-md overflow-auto">
-											{#if log.beforeData}
-												<div class="mb-2">
-													<span class="font-semibold text-red-600">Before:</span>
-													<pre class="whitespace-pre-wrap">{formatJson(log.beforeData)}</pre>
-												</div>
-											{/if}
-											{#if log.afterData}
-												<div>
-													<span class="font-semibold text-green-600">After:</span>
-													<pre class="whitespace-pre-wrap">{formatJson(log.afterData)}</pre>
-												</div>
-											{/if}
-										</div>
-									</details>
-								{:else}
-									<span class="text-gray-400">-</span>
-								{/if}
-							</td>
-						</tr>
-					{:else}
+					{#if data.logs.length === 0}
 						<tr>
 							<td colspan="6" class="px-4 py-8 text-center text-gray-500">
 								No audit logs found
 							</td>
 						</tr>
-					{/each}
+					{:else}
+						{#each data.logs as log}
+							<tr class="hover:bg-gray-50">
+								<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+									{formatDate(log.createdAt)}
+								</td>
+								<td class="px-4 py-3 whitespace-nowrap">
+									{#if log.userName}
+										<div class="text-sm font-medium text-gray-900">{log.userName}</div>
+										<div class="text-xs text-gray-500">{log.userEmail}</div>
+									{:else}
+										<span class="text-gray-400">System</span>
+									{/if}
+								</td>
+								<td class="px-4 py-3 whitespace-nowrap">
+									<span class="px-2 py-1 text-xs font-medium rounded-full {getActionColor(log.action)}">
+										{log.action}
+									</span>
+								</td>
+								<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+									<div>{log.entityType}</div>
+									{#if log.entityId}
+										<div class="text-xs text-gray-400 font-mono">{log.entityId.substring(0, 8)}...</div>
+									{/if}
+								</td>
+								<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600 font-mono">
+									{log.ipAddress || '-'}
+								</td>
+								<td class="px-4 py-3 text-sm text-gray-600">
+									{#if log.beforeData || log.afterData}
+										<button class="text-primary-600 hover:text-primary-700 text-xs">
+											View Changes
+										</button>
+									{:else}
+										-
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					{/if}
 				</tbody>
 			</table>
 		</div>
 
 		<!-- Pagination -->
-		<div class="bg-gray-50 px-4 py-3 flex items-center justify-between border-t">
-			<div class="flex gap-2">
-				{#if data.page > 1}
-					<a
-						href="?page={data.page - 1}"
-						class="px-3 py-1 bg-white border rounded hover:bg-gray-50"
+		{#if data.totalPages > 1}
+			<div class="card-footer flex items-center justify-between">
+				<div class="text-sm text-gray-500">
+					Page {data.page} of {data.totalPages}
+				</div>
+				<div class="flex space-x-2">
+					<button
+						on:click={() => changePage(data.page - 1)}
+						disabled={data.page <= 1}
+						class="btn-secondary text-sm disabled:opacity-50"
 					>
 						Previous
-					</a>
-				{/if}
-				<span class="px-3 py-1 text-gray-600">Page {data.page}</span>
-				{#if data.logs.length === 50}
-					<a
-						href="?page={data.page + 1}"
-						class="px-3 py-1 bg-white border rounded hover:bg-gray-50"
+					</button>
+					<button
+						on:click={() => changePage(data.page + 1)}
+						disabled={data.page >= data.totalPages}
+						class="btn-secondary text-sm disabled:opacity-50"
 					>
 						Next
-					</a>
-				{/if}
+					</button>
+				</div>
 			</div>
-		</div>
+		{/if}
 	</div>
 </div>

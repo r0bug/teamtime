@@ -1,18 +1,19 @@
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { db, auditLogs, users } from '$lib/server/db';
-import { desc, eq } from 'drizzle-orm';
-import { isAdmin } from '$lib/server/auth/roles';
+import { db, users, auditLogs } from '$lib/server/db';
+import { eq, desc, sql } from 'drizzle-orm';
+import { isAdmin, canViewAuditLogs } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	if (!isAdmin(locals.user)) {
-		throw redirect(302, '/dashboard');
+	if (!canViewAuditLogs(locals.user)) {
+		throw redirect(302, '/admin');
 	}
 
 	const page = parseInt(url.searchParams.get('page') || '1');
 	const limit = 50;
 	const offset = (page - 1) * limit;
 
+	// Get audit logs with user info
 	const logs = await db
 		.select({
 			id: auditLogs.id,
@@ -33,5 +34,18 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		.limit(limit)
 		.offset(offset);
 
-	return { logs, page };
+	// Get total count
+	const countResult = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(auditLogs);
+
+	const totalCount = countResult[0]?.count || 0;
+	const totalPages = Math.ceil(totalCount / limit);
+
+	return {
+		logs,
+		page,
+		totalPages,
+		totalCount
+	};
 };
