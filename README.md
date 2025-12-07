@@ -1,38 +1,77 @@
-# sv
+# TeamTime
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Mobile-first workforce operations system for scheduling, timekeeping, task management, and expense tracking.
 
-## Creating a project
+## Features
 
-If you're seeing this, you've probably already done this step. Congrats!
+- **Scheduling** — Drag-and-drop shift management with AI assistant
+- **Time & Attendance** — GPS-enabled clock in/out with audit trail
+- **Task Management** — One-off, recurring, and event-triggered tasks
+- **Messaging** — 1:1 and broadcast communications with photo support
+- **Expense Tracking** — ATM withdrawal reconciliation and purchase approvals
+- **Push Notifications** — PWA-enabled alerts for tasks, messages, and schedules
 
-```sh
-# create a new project in the current directory
-npx sv create
+## User Roles
 
-# create a new project in my-app
-npx sv create my-app
-```
+| Role | Description |
+|------|-------------|
+| **Admin** | Full system access: all communications, audit logs, module control |
+| **Manager** | Scheduling, task management, purchase approvals, user management |
+| **Purchaser** | Field purchasing with expense tracking and approval requests |
+| **Staff** | Basic access: clock in/out, tasks, messaging |
 
-## Developing
+## Admin Features
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+Administrators have exclusive access to:
 
-```sh
+- `/admin/audit-logs` — Complete system activity and access logs
+- `/admin/communications` — View all conversations and messages system-wide
+- `/admin/modules` — Enable/disable system modules
+
+## Tech Stack
+
+- **Frontend**: SvelteKit, TailwindCSS
+- **Backend**: Node.js, PostgreSQL
+- **Auth**: Lucia with PIN + 2FA
+- **ORM**: Drizzle
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Set up environment
+cp .env.example .env
+# Edit .env with your database credentials
+
+# Push database schema
+npm run db:push
+
+# Start development server
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
+## Production
 
-To create a production version of your app:
-
-```sh
+```bash
+# Build for production
 npm run build
+
+# Start production server
+node build
 ```
 
-You can preview the production build with `npm run preview`.
+## Environment Variables
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+```
+DATABASE_URL=postgresql://user:pass@localhost:5432/teamtime
+AUTH_SECRET=your-32-char-secret
+GOOGLE_MAPS_API_KEY=your-api-key
+VAPID_PUBLIC_KEY=your-vapid-public-key
+VAPID_PRIVATE_KEY=your-vapid-private-key
+```
+
+## Documentation
+
+See [Spec.md](./Spec.md) for the complete functional specification.

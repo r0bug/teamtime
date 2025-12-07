@@ -159,10 +159,35 @@ Location-capturing events
 
 Broadcast shift messages
 
-Role-based access controls tied to Manager / Purchaser / Staff roles
+Role-based access controls tied to Admin / Manager / Purchaser / Staff roles
 
 4. User Roles & Permissions
-4.1 Manager
+
+The system has four user roles in a hierarchical structure:
+- **Admin** — Full system access including all communications, audit logs, and module control
+- **Manager** — Operational management including scheduling, tasks, and purchase approvals
+- **Purchaser** — Field purchasing with expense tracking capabilities
+- **Staff** — Basic employee functions (clock in/out, tasks, messaging)
+
+4.1 Admin
+
+System administrators with full platform access:
+
+View all communications across the system (all conversations and messages)
+
+Access complete audit logs for system activity and security monitoring
+
+Enable/disable system modules (Tasks, Schedule, Messages, Expenses, etc.)
+
+All Manager permissions (inherited)
+
+User management and role assignment
+
+System configuration and settings
+
+Security monitoring and access control
+
+4.2 Manager
 
 Create and modify employee schedules
 
@@ -198,7 +223,7 @@ Photos
 
 Relevant tasks
 
-4.2 Purchaser
+4.3 Purchaser
 
 View schedule & tasks
 
@@ -222,7 +247,7 @@ Use messaging with managers and other employees
 
 Complete assigned tasks, including photo-required tasks
 
-4.3 Staff Employee
+4.4 Staff Employee
 
 View personal schedule and upcoming shifts
 
@@ -773,7 +798,63 @@ When
 
 Before/after where practical
 
-17. System Philosophy
+17. Admin Control Panel
+
+Admin users have access to specialized management interfaces:
+
+17.1 Audit Logs
+
+Complete system activity logging:
+
+All user actions (logins, data changes, approvals)
+
+Before/after data for modifications
+
+IP address and timestamp tracking
+
+User identification for each action
+
+Filterable and searchable log interface
+
+Export capabilities for compliance
+
+17.2 All Communications View
+
+System-wide communication oversight:
+
+View all conversations across the platform
+
+Access all messages (direct and broadcast)
+
+Participant and message count summaries
+
+Last activity timestamps
+
+Search and filter capabilities
+
+17.3 Module Control
+
+Enable/disable system modules:
+
+Tasks — Task management and assignments
+
+Schedule — Shift scheduling and time tracking
+
+Messages — Internal messaging system
+
+Expenses — ATM withdrawals and expense tracking
+
+Purchase Requests — Purchase approval workflow
+
+Notifications — Push notifications and alerts
+
+Locations — Location management
+
+Reports — Analytics and reporting
+
+Disabled modules are hidden from navigation but data is preserved.
+
+18. System Philosophy
 
 Mobile-first, but desktop-capable
 
@@ -787,7 +868,7 @@ Low friction for real-world use
 
 High accountability and auditability for back office
 
-18. Optional Phase-Two Enhancements (Not Required for MVP)
+19. Optional Phase-Two Enhancements (Not Required for MVP)
 
 Advanced notification controls / quiet hours
 
