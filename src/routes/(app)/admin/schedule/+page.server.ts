@@ -305,5 +305,90 @@ export const actions: Actions = {
 			console.error('Error updating shift:', error);
 			return fail(500, { error: 'Failed to update shift' });
 		}
+	},
+
+	createBulkShifts: async ({ request, locals }) => {
+		if (!isManager(locals.user)) {
+			return fail(403, { error: 'Not authorized' });
+		}
+
+		const formData = await request.formData();
+		const userId = formData.get('userId') as string;
+		const locationId = formData.get('locationId') as string;
+		const startTime = formData.get('startTime') as string; // Time only, e.g., "09:00"
+		const endTime = formData.get('endTime') as string; // Time only, e.g., "17:00"
+		const notes = formData.get('notes') as string;
+		const datesJson = formData.get('dates') as string;
+		const repeatCount = parseInt(formData.get('repeatCount') as string) || 1;
+
+		if (!userId || !startTime || !endTime || !datesJson) {
+			return fail(400, { error: 'User, start time, end time, and dates are required' });
+		}
+
+		let dates: string[];
+		try {
+			dates = JSON.parse(datesJson);
+		} catch {
+			return fail(400, { error: 'Invalid dates format' });
+		}
+
+		if (dates.length === 0) {
+			return fail(400, { error: 'At least one day must be selected' });
+		}
+
+		try {
+			const shiftsToCreate: {
+				userId: string;
+				locationId: string | null;
+				startTime: Date;
+				endTime: Date;
+				notes: string | null;
+				createdBy: string | undefined;
+			}[] = [];
+
+			// Parse start and end times
+			const [startHour, startMin] = startTime.split(':').map(Number);
+			const [endHour, endMin] = endTime.split(':').map(Number);
+
+			// Create shifts for each week
+			for (let week = 0; week < repeatCount; week++) {
+				for (const dateStr of dates) {
+					const baseDate = new Date(dateStr);
+					// Add weeks offset
+					baseDate.setDate(baseDate.getDate() + (week * 7));
+
+					const shiftStart = new Date(baseDate);
+					shiftStart.setHours(startHour, startMin, 0, 0);
+
+					const shiftEnd = new Date(baseDate);
+					shiftEnd.setHours(endHour, endMin, 0, 0);
+
+					// Handle overnight shifts (end time before start time)
+					if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
+						shiftEnd.setDate(shiftEnd.getDate() + 1);
+					}
+
+					shiftsToCreate.push({
+						userId,
+						locationId: locationId || null,
+						startTime: shiftStart,
+						endTime: shiftEnd,
+						notes: notes || null,
+						createdBy: locals.user?.id
+					});
+				}
+			}
+
+			// Insert all shifts
+			await db.insert(shifts).values(shiftsToCreate);
+
+			return {
+				success: true,
+				message: `Created ${shiftsToCreate.length} shift(s) successfully`
+			};
+		} catch (error) {
+			console.error('Error creating bulk shifts:', error);
+			return fail(500, { error: 'Failed to create shifts' });
+		}
 	}
 };

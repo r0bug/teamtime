@@ -37,18 +37,54 @@
 		return openDays.join(', ');
 	}
 
-	// Reactive hours state for editing
-	let editHours: { [key: number]: { openTime: string; closeTime: string; isClosed: boolean } } = {};
+	// Individual day states for proper reactivity
+	let day0: { openTime: string; closeTime: string; isClosed: boolean } = { openTime: '09:00', closeTime: '17:00', isClosed: false };
+	let day1: { openTime: string; closeTime: string; isClosed: boolean } = { openTime: '09:00', closeTime: '17:00', isClosed: false };
+	let day2: { openTime: string; closeTime: string; isClosed: boolean } = { openTime: '09:00', closeTime: '17:00', isClosed: false };
+	let day3: { openTime: string; closeTime: string; isClosed: boolean } = { openTime: '09:00', closeTime: '17:00', isClosed: false };
+	let day4: { openTime: string; closeTime: string; isClosed: boolean } = { openTime: '09:00', closeTime: '17:00', isClosed: false };
+	let day5: { openTime: string; closeTime: string; isClosed: boolean } = { openTime: '09:00', closeTime: '17:00', isClosed: false };
+	let day6: { openTime: string; closeTime: string; isClosed: boolean } = { openTime: '09:00', closeTime: '17:00', isClosed: false };
 
-	$: if (editingHoursLocation) {
-		editHours = {};
-		const hours = getLocationHours(editingHoursLocation.id);
-		for (let i = 0; i < 7; i++) {
-			editHours[i] = {
-				openTime: hours[i].openTime || '09:00',
-				closeTime: hours[i].closeTime || '17:00',
-				isClosed: hours[i].isClosed
-			};
+	$: dayStates = [day0, day1, day2, day3, day4, day5, day6];
+
+	// Initialize day states when modal opens
+	function initEditHours(locationId: string) {
+		const hours = getLocationHours(locationId);
+		day0 = { openTime: hours[0].openTime || '09:00', closeTime: hours[0].closeTime || '17:00', isClosed: hours[0].isClosed };
+		day1 = { openTime: hours[1].openTime || '09:00', closeTime: hours[1].closeTime || '17:00', isClosed: hours[1].isClosed };
+		day2 = { openTime: hours[2].openTime || '09:00', closeTime: hours[2].closeTime || '17:00', isClosed: hours[2].isClosed };
+		day3 = { openTime: hours[3].openTime || '09:00', closeTime: hours[3].closeTime || '17:00', isClosed: hours[3].isClosed };
+		day4 = { openTime: hours[4].openTime || '09:00', closeTime: hours[4].closeTime || '17:00', isClosed: hours[4].isClosed };
+		day5 = { openTime: hours[5].openTime || '09:00', closeTime: hours[5].closeTime || '17:00', isClosed: hours[5].isClosed };
+		day6 = { openTime: hours[6].openTime || '09:00', closeTime: hours[6].closeTime || '17:00', isClosed: hours[6].isClosed };
+	}
+
+	function setQuickHours(preset: 'weekdays' | 'all' | 'clear') {
+		if (preset === 'weekdays') {
+			day0 = { openTime: '', closeTime: '', isClosed: true };
+			day1 = { openTime: '09:00', closeTime: '17:00', isClosed: false };
+			day2 = { openTime: '09:00', closeTime: '17:00', isClosed: false };
+			day3 = { openTime: '09:00', closeTime: '17:00', isClosed: false };
+			day4 = { openTime: '09:00', closeTime: '17:00', isClosed: false };
+			day5 = { openTime: '09:00', closeTime: '17:00', isClosed: false };
+			day6 = { openTime: '', closeTime: '', isClosed: true };
+		} else if (preset === 'all') {
+			day0 = { openTime: '10:00', closeTime: '18:00', isClosed: false };
+			day1 = { openTime: '10:00', closeTime: '18:00', isClosed: false };
+			day2 = { openTime: '10:00', closeTime: '18:00', isClosed: false };
+			day3 = { openTime: '10:00', closeTime: '18:00', isClosed: false };
+			day4 = { openTime: '10:00', closeTime: '18:00', isClosed: false };
+			day5 = { openTime: '10:00', closeTime: '18:00', isClosed: false };
+			day6 = { openTime: '10:00', closeTime: '18:00', isClosed: false };
+		} else {
+			day0 = { openTime: '', closeTime: '', isClosed: true };
+			day1 = { openTime: '', closeTime: '', isClosed: true };
+			day2 = { openTime: '', closeTime: '', isClosed: true };
+			day3 = { openTime: '', closeTime: '', isClosed: true };
+			day4 = { openTime: '', closeTime: '', isClosed: true };
+			day5 = { openTime: '', closeTime: '', isClosed: true };
+			day6 = { openTime: '', closeTime: '', isClosed: true };
 		}
 	}
 </script>
@@ -116,7 +152,10 @@
 								</td>
 								<td class="px-4 py-3 whitespace-nowrap">
 									<button
-										on:click={() => editingHoursLocation = { ...location }}
+										on:click={() => {
+											editingHoursLocation = { ...location };
+											initEditHours(location.id);
+										}}
 										class="text-blue-600 hover:text-blue-700 text-sm font-medium mr-3"
 									>
 										Hours
@@ -262,77 +301,148 @@
 				<input type="hidden" name="locationId" value={editingHoursLocation.id} />
 
 				<div class="flex-1 overflow-y-auto p-6 pt-4 space-y-3">
-					{#each days as day, i}
-						<div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-							<div class="w-20 font-medium text-sm">{day}</div>
-							<label class="flex items-center">
-								<input
-									type="checkbox"
-									name="day_{i}_closed"
-									value="true"
-									bind:checked={editHours[i].isClosed}
-									class="mr-2"
-								/>
-								<span class="text-sm text-gray-600">Closed</span>
-							</label>
-							{#if !editHours[i].isClosed}
-								<div class="flex items-center gap-2 ml-auto">
-									<input
-										type="time"
-										name="day_{i}_open"
-										bind:value={editHours[i].openTime}
-										class="input py-1 px-2 text-sm w-28"
-									/>
-									<span class="text-gray-400">to</span>
-									<input
-										type="time"
-										name="day_{i}_close"
-										bind:value={editHours[i].closeTime}
-										class="input py-1 px-2 text-sm w-28"
-									/>
-								</div>
-							{:else}
-								<input type="hidden" name="day_{i}_open" value="" />
-								<input type="hidden" name="day_{i}_close" value="" />
-							{/if}
-						</div>
-					{/each}
+					<!-- Sunday -->
+					<div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+						<div class="w-20 font-medium text-sm">Sunday</div>
+						<label class="flex items-center cursor-pointer">
+							<input type="checkbox" name="day_0_closed" value="true" bind:checked={day0.isClosed} class="mr-2 cursor-pointer" />
+							<span class="text-sm text-gray-600">Closed</span>
+						</label>
+						{#if !day0.isClosed}
+							<div class="flex items-center gap-2 ml-auto">
+								<input type="time" name="day_0_open" bind:value={day0.openTime} class="input py-1 px-2 text-sm w-28" />
+								<span class="text-gray-400">to</span>
+								<input type="time" name="day_0_close" bind:value={day0.closeTime} class="input py-1 px-2 text-sm w-28" />
+							</div>
+						{:else}
+							<input type="hidden" name="day_0_open" value="" />
+							<input type="hidden" name="day_0_close" value="" />
+						{/if}
+					</div>
+
+					<!-- Monday -->
+					<div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+						<div class="w-20 font-medium text-sm">Monday</div>
+						<label class="flex items-center cursor-pointer">
+							<input type="checkbox" name="day_1_closed" value="true" bind:checked={day1.isClosed} class="mr-2 cursor-pointer" />
+							<span class="text-sm text-gray-600">Closed</span>
+						</label>
+						{#if !day1.isClosed}
+							<div class="flex items-center gap-2 ml-auto">
+								<input type="time" name="day_1_open" bind:value={day1.openTime} class="input py-1 px-2 text-sm w-28" />
+								<span class="text-gray-400">to</span>
+								<input type="time" name="day_1_close" bind:value={day1.closeTime} class="input py-1 px-2 text-sm w-28" />
+							</div>
+						{:else}
+							<input type="hidden" name="day_1_open" value="" />
+							<input type="hidden" name="day_1_close" value="" />
+						{/if}
+					</div>
+
+					<!-- Tuesday -->
+					<div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+						<div class="w-20 font-medium text-sm">Tuesday</div>
+						<label class="flex items-center cursor-pointer">
+							<input type="checkbox" name="day_2_closed" value="true" bind:checked={day2.isClosed} class="mr-2 cursor-pointer" />
+							<span class="text-sm text-gray-600">Closed</span>
+						</label>
+						{#if !day2.isClosed}
+							<div class="flex items-center gap-2 ml-auto">
+								<input type="time" name="day_2_open" bind:value={day2.openTime} class="input py-1 px-2 text-sm w-28" />
+								<span class="text-gray-400">to</span>
+								<input type="time" name="day_2_close" bind:value={day2.closeTime} class="input py-1 px-2 text-sm w-28" />
+							</div>
+						{:else}
+							<input type="hidden" name="day_2_open" value="" />
+							<input type="hidden" name="day_2_close" value="" />
+						{/if}
+					</div>
+
+					<!-- Wednesday -->
+					<div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+						<div class="w-20 font-medium text-sm">Wednesday</div>
+						<label class="flex items-center cursor-pointer">
+							<input type="checkbox" name="day_3_closed" value="true" bind:checked={day3.isClosed} class="mr-2 cursor-pointer" />
+							<span class="text-sm text-gray-600">Closed</span>
+						</label>
+						{#if !day3.isClosed}
+							<div class="flex items-center gap-2 ml-auto">
+								<input type="time" name="day_3_open" bind:value={day3.openTime} class="input py-1 px-2 text-sm w-28" />
+								<span class="text-gray-400">to</span>
+								<input type="time" name="day_3_close" bind:value={day3.closeTime} class="input py-1 px-2 text-sm w-28" />
+							</div>
+						{:else}
+							<input type="hidden" name="day_3_open" value="" />
+							<input type="hidden" name="day_3_close" value="" />
+						{/if}
+					</div>
+
+					<!-- Thursday -->
+					<div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+						<div class="w-20 font-medium text-sm">Thursday</div>
+						<label class="flex items-center cursor-pointer">
+							<input type="checkbox" name="day_4_closed" value="true" bind:checked={day4.isClosed} class="mr-2 cursor-pointer" />
+							<span class="text-sm text-gray-600">Closed</span>
+						</label>
+						{#if !day4.isClosed}
+							<div class="flex items-center gap-2 ml-auto">
+								<input type="time" name="day_4_open" bind:value={day4.openTime} class="input py-1 px-2 text-sm w-28" />
+								<span class="text-gray-400">to</span>
+								<input type="time" name="day_4_close" bind:value={day4.closeTime} class="input py-1 px-2 text-sm w-28" />
+							</div>
+						{:else}
+							<input type="hidden" name="day_4_open" value="" />
+							<input type="hidden" name="day_4_close" value="" />
+						{/if}
+					</div>
+
+					<!-- Friday -->
+					<div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+						<div class="w-20 font-medium text-sm">Friday</div>
+						<label class="flex items-center cursor-pointer">
+							<input type="checkbox" name="day_5_closed" value="true" bind:checked={day5.isClosed} class="mr-2 cursor-pointer" />
+							<span class="text-sm text-gray-600">Closed</span>
+						</label>
+						{#if !day5.isClosed}
+							<div class="flex items-center gap-2 ml-auto">
+								<input type="time" name="day_5_open" bind:value={day5.openTime} class="input py-1 px-2 text-sm w-28" />
+								<span class="text-gray-400">to</span>
+								<input type="time" name="day_5_close" bind:value={day5.closeTime} class="input py-1 px-2 text-sm w-28" />
+							</div>
+						{:else}
+							<input type="hidden" name="day_5_open" value="" />
+							<input type="hidden" name="day_5_close" value="" />
+						{/if}
+					</div>
+
+					<!-- Saturday -->
+					<div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+						<div class="w-20 font-medium text-sm">Saturday</div>
+						<label class="flex items-center cursor-pointer">
+							<input type="checkbox" name="day_6_closed" value="true" bind:checked={day6.isClosed} class="mr-2 cursor-pointer" />
+							<span class="text-sm text-gray-600">Closed</span>
+						</label>
+						{#if !day6.isClosed}
+							<div class="flex items-center gap-2 ml-auto">
+								<input type="time" name="day_6_open" bind:value={day6.openTime} class="input py-1 px-2 text-sm w-28" />
+								<span class="text-gray-400">to</span>
+								<input type="time" name="day_6_close" bind:value={day6.closeTime} class="input py-1 px-2 text-sm w-28" />
+							</div>
+						{:else}
+							<input type="hidden" name="day_6_open" value="" />
+							<input type="hidden" name="day_6_close" value="" />
+						{/if}
+					</div>
 
 					<!-- Quick set buttons -->
 					<div class="flex gap-2 pt-2 border-t">
-						<button
-							type="button"
-							on:click={() => {
-								for (let i = 1; i <= 5; i++) {
-									editHours[i] = { openTime: '09:00', closeTime: '17:00', isClosed: false };
-								}
-								editHours[0] = { openTime: '', closeTime: '', isClosed: true };
-								editHours[6] = { openTime: '', closeTime: '', isClosed: true };
-							}}
-							class="text-xs text-primary-600 hover:text-primary-700"
-						>
+						<button type="button" on:click={() => setQuickHours('weekdays')} class="text-xs text-primary-600 hover:text-primary-700">
 							Mon-Fri 9-5
 						</button>
-						<button
-							type="button"
-							on:click={() => {
-								for (let i = 0; i <= 6; i++) {
-									editHours[i] = { openTime: '10:00', closeTime: '18:00', isClosed: false };
-								}
-							}}
-							class="text-xs text-primary-600 hover:text-primary-700"
-						>
+						<button type="button" on:click={() => setQuickHours('all')} class="text-xs text-primary-600 hover:text-primary-700">
 							7 Days 10-6
 						</button>
-						<button
-							type="button"
-							on:click={() => {
-								for (let i = 0; i <= 6; i++) {
-									editHours[i] = { openTime: '', closeTime: '', isClosed: true };
-								}
-							}}
-							class="text-xs text-gray-600 hover:text-gray-700"
-						>
+						<button type="button" on:click={() => setQuickHours('clear')} class="text-xs text-gray-600 hover:text-gray-700">
 							Clear All
 						</button>
 					</div>

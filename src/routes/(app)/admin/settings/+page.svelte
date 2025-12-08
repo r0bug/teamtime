@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
 	import type { PageData, ActionData } from './$types';
 
 	export let data: PageData;
@@ -132,8 +133,9 @@
 					{#if editingSiteTitle}
 						<form method="POST" action="?/updateSiteTitle" use:enhance={() => {
 							return async ({ update }) => {
-								editingSiteTitle = false;
 								await update();
+								await invalidateAll();
+								editingSiteTitle = false;
 							};
 						}} class="mt-3 flex items-center space-x-2">
 							<input

@@ -98,7 +98,65 @@ Browser-based and PWA push notifications
 
 Lock-screen notifications where OS/PWA stack supports them
 
-2.4 Offline Tolerance
+2.4 Mobile Navigation
+
+The mobile experience provides full feature parity with desktop:
+
+Hamburger Menu (Top Header)
+
+Tap the menu icon (☰) in the top-left corner to open the slide-out navigation panel
+
+Full access to all navigation items including admin features for managers/admins
+
+User profile section at top showing name and role
+
+Bottom Navigation Bar
+
+Fixed bottom bar with 5 quick-access items: Home, Schedule, Tasks, Messages, Expenses
+
+Role-filtered (Expenses only shown to purchasers and above)
+
+Active state indication for current route
+
+Slide-out Navigation Panel
+
+Organized sections: Main, Admin (for managers/admins), Settings
+
+Full navigation hierarchy matching desktop sidebar
+
+Logout option at bottom
+
+Closes automatically when navigating or tapping backdrop
+
+2.5 PWA Install Prompt
+
+On mobile devices, users are prompted to install the app:
+
+Android/Chrome
+
+Automatic browser install prompt intercepted
+
+Custom banner shows "Install App" button
+
+One-tap installation to home screen
+
+iOS Safari
+
+Instructions displayed: "Tap Share → Add to Home Screen"
+
+Visual guide with share icon
+
+Prompt Behavior
+
+Only shown on mobile devices
+
+Not shown if already installed (standalone mode)
+
+Dismissible with "don't show again" persistence via localStorage
+
+Appears above bottom navigation bar
+
+2.6 Offline Tolerance
 
 Temporary offline operation with queued sync for:
 

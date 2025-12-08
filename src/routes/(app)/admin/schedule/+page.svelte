@@ -7,10 +7,21 @@
 	export let form: ActionData;
 
 	let showCreateModal = false;
+	let createStep: 1 | 2 = 1; // Step 1: Select days/times, Step 2: Repeat options
 	let editingShift: typeof data.shifts[0] | null = null;
 	let loading = false;
 	let viewMode: 'grid' | 'list' = 'grid';
 	let selectedLocation = '';
+
+	// Create shift state
+	let createUserId = '';
+	let createLocationId = '';
+	let createStartTime = '09:00';
+	let createEndTime = '17:00';
+	let createNotes = '';
+	let selectedDays: boolean[] = [false, false, false, false, false, false, false];
+	let repeatOption: 'once' | 'future' = 'once';
+	let repeatCount = 1;
 
 	// Quick create state
 	let quickCreateDate = '';
@@ -24,13 +35,73 @@
 	const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 	const dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+	function openCreateModal() {
+		showCreateModal = true;
+		createStep = 1;
+		createUserId = '';
+		createLocationId = '';
+		createStartTime = '09:00';
+		createEndTime = '17:00';
+		createNotes = '';
+		selectedDays = [false, false, false, false, false, false, false];
+		repeatOption = 'once';
+		repeatCount = 1;
+	}
+
+	function closeCreateModal() {
+		showCreateModal = false;
+		createStep = 1;
+		quickCreateDate = '';
+	}
+
+	function proceedToStep2() {
+		if (!createUserId) {
+			alert('Please select an employee');
+			return;
+		}
+		if (!selectedDays.some(d => d)) {
+			alert('Please select at least one day');
+			return;
+		}
+		createStep = 2;
+	}
+
+	function goBackToStep1() {
+		createStep = 1;
+	}
+
+	// Get selected day dates for display (using UTC)
+	function getSelectedDayDates(): { dayIndex: number; date: Date; label: string }[] {
+		return weekDates
+			.map((date, i) => ({ dayIndex: i, date, label: `${dayShort[date.getUTCDay()]} ${date.getUTCMonth() + 1}/${date.getUTCDate()}` }))
+			.filter((_, i) => selectedDays[i]);
+	}
+
+	// Build form data for bulk creation
+	function buildBulkFormData(): FormData {
+		const formData = new FormData();
+		formData.append('userId', createUserId);
+		formData.append('locationId', createLocationId);
+		formData.append('startTime', createStartTime);
+		formData.append('endTime', createEndTime);
+		formData.append('notes', createNotes);
+		formData.append('repeatCount', repeatOption === 'future' ? repeatCount.toString() : '1');
+
+		// Add selected day dates
+		const selectedDates = weekDates.filter((_, i) => selectedDays[i]).map(d => d.toISOString().split('T')[0]);
+		formData.append('dates', JSON.stringify(selectedDates));
+
+		return formData;
+	}
+
 	// Hours for the grid (6am - 10pm)
 	const hours = Array.from({ length: 17 }, (_, i) => i + 6);
 
-	// Generate week dates
+	// Generate week dates (using UTC to match server)
 	$: weekDates = Array.from({ length: 7 }, (_, i) => {
-		const d = new Date(data.startDate);
-		d.setDate(d.getDate() + i);
+		// Parse as UTC midnight to avoid timezone shifts
+		const d = new Date(data.startDate + 'T00:00:00Z');
+		d.setUTCDate(d.getUTCDate() + i);
 		return d;
 	});
 
@@ -56,9 +127,14 @@
 		return hour >= openHour && hour < closeHour;
 	}
 
-	// Get shifts for a specific date
+	// Get shifts for a specific date (comparing UTC dates)
 	function getShiftsForDate(date: Date) {
-		const dateStr = date.toISOString().split('T')[0];
+		// Get the UTC date string for the column date
+		const year = date.getUTCFullYear();
+		const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+		const day = String(date.getUTCDate()).padStart(2, '0');
+		const dateStr = `${year}-${month}-${day}`;
+
 		return data.shifts.filter(s => {
 			const shiftDate = new Date(s.startTime).toISOString().split('T')[0];
 			return shiftDate === dateStr;
@@ -75,12 +151,13 @@
 		});
 	}
 
-	// Calculate shift position and height in grid
+	// Calculate shift position and height in grid (using UTC to match server storage)
 	function getShiftStyle(shift: typeof data.shifts[0]) {
 		const start = new Date(shift.startTime);
 		const end = new Date(shift.endTime);
-		const startHour = start.getHours() + start.getMinutes() / 60;
-		const endHour = end.getHours() + end.getMinutes() / 60;
+		// Use UTC hours since shifts are stored in UTC
+		const startHour = start.getUTCHours() + start.getUTCMinutes() / 60;
+		const endHour = end.getUTCHours() + end.getUTCMinutes() / 60;
 		const top = (startHour - 6) * 48; // 48px per hour
 		const height = (endHour - startHour) * 48;
 		return `top: ${top}px; height: ${height}px;`;
@@ -103,11 +180,14 @@
 	}
 
 	function formatTime(date: Date | string) {
-		return new Date(date).toLocaleTimeString('en-US', {
-			hour: 'numeric',
-			minute: '2-digit',
-			hour12: true
-		});
+		// Use UTC time since shifts are stored in UTC
+		const d = new Date(date);
+		const hours = d.getUTCHours();
+		const minutes = d.getUTCMinutes();
+		const ampm = hours >= 12 ? 'PM' : 'AM';
+		const hour12 = hours % 12 || 12;
+		const minStr = minutes.toString().padStart(2, '0');
+		return `${hour12}:${minStr} ${ampm}`;
 	}
 
 	function formatDate(date: Date | string) {
@@ -340,7 +420,7 @@
 				</svg>
 				Print
 			</button>
-			<button on:click={() => showCreateModal = true} class="btn-primary">
+			<button on:click={openCreateModal} class="btn-primary">
 				+ Add Shift
 			</button>
 		</div>
@@ -465,8 +545,8 @@
 				<div class="bg-gray-100 border-b border-r p-2 font-medium text-xs text-gray-600"></div>
 				{#each weekDates as date, i}
 					<div class="bg-gray-100 border-b p-2 text-center">
-						<div class="font-medium text-sm">{dayShort[date.getDay()]}</div>
-						<div class="text-lg font-bold">{date.getDate()}</div>
+						<div class="font-medium text-sm">{dayShort[date.getUTCDay()]}</div>
+						<div class="text-lg font-bold">{date.getUTCDate()}</div>
 					</div>
 				{/each}
 
@@ -486,7 +566,7 @@
 						<!-- Hour cells with store hours background -->
 						{#each hours as hour}
 							{@const cellId = `${dayIndex}-${hour}`}
-							{@const isOpen = isWithinStoreHours(date.getDay(), hour, selectedLocation || undefined)}
+							{@const isOpen = isWithinStoreHours(date.getUTCDay(), hour, selectedLocation || undefined)}
 							<div
 								class="hour-row cursor-pointer hover:bg-blue-50 transition-colors {isOpen ? 'store-hours-bg' : 'closed-hours-bg'} {dragOverCell === cellId ? 'drag-over' : ''}"
 								on:click={() => handleCellClick(date, hour)}
@@ -599,69 +679,148 @@
 <!-- Create Shift Modal -->
 {#if showCreateModal}
 	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 no-print">
-		<div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+		<div class="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
 			<div class="p-6">
-				<h2 class="text-xl font-bold mb-4">Create Shift</h2>
-				<form method="POST" action="?/createShift" use:enhance={() => {
+				<h2 class="text-xl font-bold mb-4">Create Shifts</h2>
+
+				<form method="POST" action="?/createBulkShifts" use:enhance={() => {
 					loading = true;
 					return async ({ update }) => {
 						loading = false;
-						showCreateModal = false;
-						quickCreateDate = '';
+						closeCreateModal();
 						await update();
 					};
-				}} class="space-y-4">
-					<div>
-						<label for="userId" class="label">Employee</label>
-						<select id="userId" name="userId" required class="input">
-							<option value="">Select employee...</option>
-							{#each data.users as user}
-								<option value={user.id}>{user.name} ({user.role})</option>
-							{/each}
-						</select>
-					</div>
-					<div>
-						<label for="locationId" class="label">Location (optional)</label>
-						<select id="locationId" name="locationId" class="input">
-							<option value="">No location</option>
-							{#each data.locations as location}
-								<option value={location.id}>{location.name}</option>
-							{/each}
-						</select>
-					</div>
-					<div>
-						<label for="startTime" class="label">Start Time</label>
-						<input
-							type="datetime-local"
-							id="startTime"
-							name="startTime"
-							required
-							class="input"
-							value={quickCreateDate}
-						/>
-					</div>
-					<div>
-						<label for="endTime" class="label">End Time</label>
-						<input
-							type="datetime-local"
-							id="endTime"
-							name="endTime"
-							required
-							class="input"
-							value={quickCreateDate ? new Date(new Date(quickCreateDate).getTime() + 4 * 60 * 60 * 1000).toISOString().slice(0, 16) : ''}
-						/>
-					</div>
-					<div>
-						<label for="notes" class="label">Notes (optional)</label>
-						<textarea id="notes" name="notes" rows="2" class="input"></textarea>
-					</div>
-					<div class="flex space-x-3 pt-4">
-						<button type="button" on:click={() => { showCreateModal = false; quickCreateDate = ''; }} class="btn-secondary flex-1">
-							Cancel
-						</button>
-						<button type="submit" disabled={loading} class="btn-primary flex-1">
-							{loading ? 'Creating...' : 'Create Shift'}
-						</button>
+				}}>
+					<div class="space-y-4">
+						<div>
+							<label for="userId" class="label">Employee</label>
+							<select id="userId" name="userId" bind:value={createUserId} required class="input">
+								<option value="">Select employee...</option>
+								{#each data.users as user}
+									<option value={user.id}>{user.name} ({user.role})</option>
+								{/each}
+							</select>
+						</div>
+
+						<div>
+							<label for="locationId" class="label">Location (optional)</label>
+							<select id="locationId" name="locationId" bind:value={createLocationId} class="input">
+								<option value="">No location</option>
+								{#each data.locations as location}
+									<option value={location.id}>{location.name}</option>
+								{/each}
+							</select>
+						</div>
+
+						<div class="grid grid-cols-2 gap-4">
+							<div>
+								<label for="startTime" class="label">Start Time</label>
+								<input type="time" id="startTime" name="startTime" bind:value={createStartTime} class="input" />
+							</div>
+							<div>
+								<label for="endTime" class="label">End Time</label>
+								<input type="time" id="endTime" name="endTime" bind:value={createEndTime} class="input" />
+							</div>
+						</div>
+
+						<!-- Days of the Week -->
+						<div>
+							<label class="label">Select Days</label>
+							<p class="text-xs text-gray-500 mb-2">Week of {formatDate(data.startDate)}</p>
+							<div class="grid grid-cols-7 gap-1">
+								{#each weekDates as date, i}
+									<button
+										type="button"
+										on:click={() => selectedDays[i] = !selectedDays[i]}
+										class="p-2 rounded-lg border text-center transition-colors {selectedDays[i] ? 'bg-primary-600 text-white border-primary-600' : 'bg-white border-gray-300 hover:border-primary-400'}"
+									>
+										<div class="text-xs font-medium">{dayShort[date.getUTCDay()]}</div>
+										<div class="text-lg font-bold">{date.getUTCDate()}</div>
+									</button>
+								{/each}
+							</div>
+							<!-- Quick select buttons -->
+							<div class="flex gap-2 mt-2">
+								<button type="button" on:click={() => selectedDays = [false, true, true, true, true, true, false]} class="text-xs text-primary-600 hover:text-primary-700">
+									Mon-Fri
+								</button>
+								<button type="button" on:click={() => selectedDays = [true, true, true, true, true, true, true]} class="text-xs text-primary-600 hover:text-primary-700">
+									All Days
+								</button>
+								<button type="button" on:click={() => selectedDays = [false, false, false, false, false, false, false]} class="text-xs text-gray-600 hover:text-gray-700">
+									Clear
+								</button>
+							</div>
+						</div>
+
+						<!-- Hidden dates field -->
+						<input type="hidden" name="dates" value={JSON.stringify(weekDates.filter((_, i) => selectedDays[i]).map(d => d.toISOString().split('T')[0]))} />
+
+						<!-- Repeat Toggle -->
+						<div class="border-t pt-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<label class="font-medium text-sm">Repeat for future weeks</label>
+									<p class="text-xs text-gray-500">Apply same schedule to upcoming weeks</p>
+								</div>
+								<button
+									type="button"
+									on:click={() => repeatOption = repeatOption === 'once' ? 'future' : 'once'}
+									class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {repeatOption === 'future' ? 'bg-primary-600' : 'bg-gray-200'}"
+								>
+									<span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {repeatOption === 'future' ? 'translate-x-5' : 'translate-x-0'}" />
+								</button>
+							</div>
+
+							{#if repeatOption === 'future'}
+								<div class="mt-3 flex items-center gap-2">
+									<label for="repeatCount" class="text-sm">Number of weeks:</label>
+									<select id="repeatCount" name="repeatCount" bind:value={repeatCount} class="input w-24">
+										<option value={2}>2</option>
+										<option value={3}>3</option>
+										<option value={4}>4</option>
+										<option value={6}>6</option>
+										<option value={8}>8</option>
+									</select>
+									<span class="text-xs text-gray-500">(including this week)</span>
+								</div>
+							{:else}
+								<input type="hidden" name="repeatCount" value="1" />
+							{/if}
+						</div>
+
+						<div>
+							<label for="notes" class="label">Notes (optional)</label>
+							<textarea id="notes" name="notes" bind:value={createNotes} rows="2" class="input"></textarea>
+						</div>
+
+						<!-- Summary -->
+						{#if selectedDays.some(d => d)}
+							<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+								<span class="font-medium text-blue-800">
+									{#if repeatOption === 'future'}
+										Creating {selectedDays.filter(d => d).length * repeatCount} shifts
+									{:else}
+										Creating {selectedDays.filter(d => d).length} shift(s)
+									{/if}
+								</span>
+								<span class="text-blue-600">
+									for {getSelectedDayDates().map(d => d.label).join(', ')}
+									{#if repeatOption === 'future'}
+										(and {repeatCount - 1} more week{repeatCount > 2 ? 's' : ''})
+									{/if}
+								</span>
+							</div>
+						{/if}
+
+						<div class="flex space-x-3 pt-4">
+							<button type="button" on:click={closeCreateModal} class="btn-secondary flex-1">
+								Cancel
+							</button>
+							<button type="submit" disabled={loading || !createUserId || !selectedDays.some(d => d)} class="btn-primary flex-1">
+								{loading ? 'Creating...' : 'Create Shifts'}
+							</button>
+						</div>
 					</div>
 				</form>
 			</div>

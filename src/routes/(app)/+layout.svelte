@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
+	import { browser } from '$app/environment';
 	import type { LayoutData } from './$types';
 	import Avatar from '$lib/components/Avatar.svelte';
 
@@ -9,6 +11,69 @@
 	$: isAdmin = user?.role === 'admin';
 	$: isManager = user?.role === 'manager' || user?.role === 'admin';
 	$: isPurchaser = user?.role === 'purchaser' || isManager;
+
+	// Mobile menu state
+	let mobileMenuOpen = false;
+
+	// PWA install prompt state
+	let deferredPrompt: any = null;
+	let showInstallPrompt = false;
+	let isIOS = false;
+	let isStandalone = false;
+
+	onMount(() => {
+		if (browser) {
+			// Check if already installed (standalone mode)
+			isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+				(window.navigator as any).standalone === true;
+
+			// Check if iOS
+			isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+			// Check if mobile
+			const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+			// Listen for PWA install prompt (Android/Chrome)
+			window.addEventListener('beforeinstallprompt', (e: Event) => {
+				e.preventDefault();
+				deferredPrompt = e;
+				if (isMobile && !isStandalone) {
+					showInstallPrompt = true;
+				}
+			});
+
+			// Show iOS prompt if on iOS and not installed
+			if (isIOS && !isStandalone && isMobile) {
+				// Check if user dismissed before (using localStorage)
+				const dismissed = localStorage.getItem('pwa-install-dismissed');
+				if (!dismissed) {
+					showInstallPrompt = true;
+				}
+			}
+		}
+	});
+
+	async function installPWA() {
+		if (deferredPrompt) {
+			deferredPrompt.prompt();
+			const { outcome } = await deferredPrompt.userChoice;
+			if (outcome === 'accepted') {
+				showInstallPrompt = false;
+			}
+			deferredPrompt = null;
+		}
+	}
+
+	function dismissInstallPrompt() {
+		showInstallPrompt = false;
+		if (browser) {
+			localStorage.setItem('pwa-install-dismissed', 'true');
+		}
+	}
+
+	function closeMobileMenu() {
+		mobileMenuOpen = false;
+	}
 
 	$: navItems = [
 		{ href: '/dashboard', label: 'Home', icon: 'home', show: true },
@@ -136,8 +201,17 @@
 		<!-- Mobile Header -->
 		<header class="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-gray-200 safe-top">
 			<div class="flex items-center justify-between h-14 px-4">
+				<button
+					on:click={() => mobileMenuOpen = true}
+					class="p-2 -ml-2 text-gray-600 hover:text-gray-900"
+					aria-label="Open menu"
+				>
+					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+					</svg>
+				</button>
 				<h1 class="text-lg font-bold text-primary-600">TeamTime</h1>
-				<div class="flex items-center space-x-2">
+				<div class="flex items-center space-x-1">
 					<a href="/notifications" class="p-2 text-gray-600 hover:text-gray-900 relative">
 						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -149,6 +223,140 @@
 				</div>
 			</div>
 		</header>
+
+		<!-- Mobile Slide-out Menu -->
+		{#if mobileMenuOpen}
+			<div class="lg:hidden fixed inset-0 z-50">
+				<!-- Backdrop -->
+				<div
+					class="fixed inset-0 bg-black bg-opacity-50"
+					on:click={closeMobileMenu}
+					on:keypress={(e) => e.key === 'Escape' && closeMobileMenu()}
+					role="button"
+					tabindex="0"
+					aria-label="Close menu"
+				></div>
+
+				<!-- Menu Panel -->
+				<div class="fixed inset-y-0 left-0 w-72 bg-white shadow-xl safe-top safe-bottom overflow-y-auto">
+					<div class="flex items-center justify-between h-14 px-4 border-b border-gray-200">
+						<h2 class="text-lg font-bold text-primary-600">Menu</h2>
+						<button
+							on:click={closeMobileMenu}
+							class="p-2 text-gray-600 hover:text-gray-900"
+							aria-label="Close menu"
+						>
+							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+							</svg>
+						</button>
+					</div>
+
+					<!-- User Info -->
+					<div class="p-4 border-b border-gray-200 bg-gray-50">
+						<div class="flex items-center">
+							<Avatar src={user?.avatarUrl} name={user?.name || ''} size="md" />
+							<div class="ml-3">
+								<p class="text-sm font-medium text-gray-900">{user?.name}</p>
+								<p class="text-xs text-gray-500 capitalize">{user?.role}</p>
+							</div>
+						</div>
+					</div>
+
+					<!-- Navigation -->
+					<nav class="p-2">
+						<p class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Main</p>
+						{#each navItems as item}
+							<a
+								href={item.href}
+								on:click={closeMobileMenu}
+								class="flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors {isActive(item.href) ? 'bg-primary-50 text-primary-700' : 'text-gray-700 hover:bg-gray-100'}"
+							>
+								<span class="w-5 h-5 mr-3">
+									{#if item.icon === 'home'}
+										<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+									{:else if item.icon === 'calendar'}
+										<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+									{:else if item.icon === 'clipboard'}
+										<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
+									{:else if item.icon === 'chat'}
+										<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+									{:else if item.icon === 'dollar'}
+										<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+									{/if}
+								</span>
+								{item.label}
+							</a>
+						{/each}
+
+						{#if isManager}
+							<div class="pt-4 mt-4 border-t border-gray-200">
+								<p class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Admin</p>
+								{#each adminItems as item}
+									<a
+										href={item.href}
+										on:click={closeMobileMenu}
+										class="flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors {isActive(item.href) ? 'bg-primary-50 text-primary-700' : 'text-gray-700 hover:bg-gray-100'}"
+									>
+										<span class="w-5 h-5 mr-3">
+											{#if item.icon === 'dashboard'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+											{:else if item.icon === 'users'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+											{:else if item.icon === 'chat'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+											{:else if item.icon === 'calendar'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+											{:else if item.icon === 'download'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+											{:else if item.icon === 'location'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+											{:else if item.icon === 'shield'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+											{:else if item.icon === 'puzzle'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" /></svg>
+											{:else if item.icon === 'cog'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+											{:else if item.icon === 'chart'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+											{:else if item.icon === 'clock'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+											{:else if item.icon === 'document'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+											{/if}
+										</span>
+										{item.label}
+									</a>
+								{/each}
+							</div>
+						{/if}
+
+						<!-- Settings & Logout -->
+						<div class="pt-4 mt-4 border-t border-gray-200">
+							<a
+								href="/settings"
+								on:click={closeMobileMenu}
+								class="flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors {isActive('/settings') ? 'bg-primary-50 text-primary-700' : 'text-gray-700 hover:bg-gray-100'}"
+							>
+								<span class="w-5 h-5 mr-3">
+									<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+								</span>
+								Settings
+							</a>
+							<a
+								href="/logout"
+								class="flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors text-red-600 hover:bg-red-50"
+							>
+								<span class="w-5 h-5 mr-3">
+									<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+								</span>
+								Logout
+							</a>
+						</div>
+					</nav>
+				</div>
+			</div>
+		{/if}
 
 		<!-- Page Content -->
 		<main class="pt-14 pb-20 lg:pt-0 lg:pb-0 min-h-screen">
@@ -183,3 +391,43 @@
 		</nav>
 	</div>
 </div>
+
+<!-- PWA Install Prompt -->
+{#if showInstallPrompt}
+	<div class="lg:hidden fixed bottom-20 left-4 right-4 z-50 bg-white rounded-xl shadow-2xl border border-gray-200 p-4 safe-bottom">
+		<div class="flex items-start gap-3">
+			<div class="flex-shrink-0 w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center">
+				<svg class="w-7 h-7 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+				</svg>
+			</div>
+			<div class="flex-1 min-w-0">
+				<h3 class="text-sm font-semibold text-gray-900">Install TeamTime</h3>
+				{#if isIOS}
+					<p class="text-xs text-gray-500 mt-0.5">
+						Tap <span class="inline-flex items-center"><svg class="w-4 h-4 mx-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L12 14M12 2L8 6M12 2L16 6M4 14V20H20V14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span> then "Add to Home Screen"
+					</p>
+				{:else}
+					<p class="text-xs text-gray-500 mt-0.5">Add to your home screen for quick access</p>
+				{/if}
+			</div>
+			<button
+				on:click={dismissInstallPrompt}
+				class="flex-shrink-0 p-1 text-gray-400 hover:text-gray-600"
+				aria-label="Dismiss"
+			>
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+				</svg>
+			</button>
+		</div>
+		{#if !isIOS && deferredPrompt}
+			<button
+				on:click={installPWA}
+				class="mt-3 w-full py-2.5 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
+			>
+				Install App
+			</button>
+		{/if}
+	</div>
+{/if}
