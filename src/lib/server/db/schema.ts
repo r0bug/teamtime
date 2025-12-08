@@ -27,6 +27,7 @@ export const users = pgTable('users', {
 	email: text('email').notNull().unique(),
 	username: text('username').notNull().unique(),
 	pinHash: text('pin_hash').notNull(),
+	passwordHash: text('password_hash'), // Optional password for password-based login
 	role: userRoleEnum('role').notNull().default('staff'),
 	name: text('name').notNull(),
 	phone: text('phone'),
@@ -351,6 +352,35 @@ export const auditLogs = pgTable('audit_logs', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
+// Store hours table - operating hours per location per day
+export const storeHours = pgTable('store_hours', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	locationId: uuid('location_id')
+		.notNull()
+		.references(() => locations.id, { onDelete: 'cascade' }),
+	dayOfWeek: integer('day_of_week').notNull(), // 0=Sunday, 1=Monday, etc.
+	openTime: text('open_time'), // HH:MM format, null = closed
+	closeTime: text('close_time'), // HH:MM format, null = closed
+	isClosed: boolean('is_closed').notNull().default(false),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Info posts table - announcements and documentation for staff
+export const infoPosts = pgTable('info_posts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	title: text('title').notNull(),
+	content: text('content').notNull(),
+	category: text('category').notNull().default('general'), // general, contacts, how-to, policy
+	isPinned: boolean('is_pinned').notNull().default(false),
+	isActive: boolean('is_active').notNull().default(true),
+	createdBy: uuid('created_by')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
 	sessions: many(sessions),
@@ -499,3 +529,5 @@ export type AtmWithdrawal = typeof atmWithdrawals.$inferSelect;
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
+export type StoreHours = typeof storeHours.$inferSelect;
+export type InfoPost = typeof infoPosts.$inferSelect;

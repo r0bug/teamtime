@@ -1,13 +1,20 @@
 import type { PageServerLoad, Actions } from './$types';
 import { redirect, fail } from '@sveltejs/kit';
-import { db, users } from '$lib/server/db';
+import { db, users, appSettings } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager, isAdmin } from '$lib/server/auth/roles';
-import { hashPin, validatePinFormat } from '$lib/server/auth/pin';
+import { hashPin, validatePinFormat, generatePin } from '$lib/server/auth/pin';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!isManager(locals.user)) {
 		throw redirect(302, '/dashboard');
+	}
+
+	// Load settings
+	const settings = await db.select().from(appSettings);
+	const settingsMap: Record<string, string> = {};
+	for (const s of settings) {
+		settingsMap[s.key] = s.value;
 	}
 
 	const allUsers = await db
@@ -28,7 +35,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	return {
 		isAdmin: isAdmin(locals.user),
-		users: allUsers
+		users: allUsers,
+		showLaborCost: settingsMap['show_labor_cost'] === 'true',
+		canResetPins: isAdmin(locals.user) || settingsMap['managers_can_reset_pins'] === 'true',
+		pinOnlyLogin: settingsMap['pin_only_login'] !== 'false' // Default to true
 	};
 };
 
@@ -144,6 +154,90 @@ export const actions: Actions = {
 				return fail(400, { error: 'Email or username already exists' });
 			}
 			return fail(500, { error: 'Failed to create user' });
+		}
+	},
+
+	resetPin: async ({ request, locals }) => {
+		if (!isManager(locals.user)) {
+			return fail(403, { error: 'Not authorized' });
+		}
+
+		// Check if user has permission to reset PINs
+		const [setting] = await db
+			.select()
+			.from(appSettings)
+			.where(eq(appSettings.key, 'managers_can_reset_pins'))
+			.limit(1);
+
+		const managersCanReset = setting?.value === 'true';
+		const userIsAdmin = isAdmin(locals.user);
+
+		if (!userIsAdmin && !managersCanReset) {
+			return fail(403, { error: 'PIN reset is not enabled for managers' });
+		}
+
+		const formData = await request.formData();
+		const userId = formData.get('userId') as string;
+		const pin = formData.get('pin') as string;
+
+		if (!userId) {
+			return fail(400, { error: 'User ID required' });
+		}
+
+		if (!pin || !validatePinFormat(pin)) {
+			return fail(400, { error: 'PIN must be 4-8 digits' });
+		}
+
+		try {
+			const pinHash = await hashPin(pin);
+
+			await db
+				.update(users)
+				.set({
+					pinHash,
+					updatedAt: new Date()
+				})
+				.where(eq(users.id, userId));
+
+			return { success: true, message: 'PIN updated successfully' };
+		} catch (error) {
+			console.error('Error resetting PIN:', error);
+			return fail(500, { error: 'Failed to reset PIN' });
+		}
+	},
+
+	setPassword: async ({ request, locals }) => {
+		if (!isManager(locals.user)) {
+			return fail(403, { error: 'Not authorized' });
+		}
+
+		const formData = await request.formData();
+		const userId = formData.get('userId') as string;
+		const password = formData.get('password') as string;
+
+		if (!userId) {
+			return fail(400, { error: 'User ID required' });
+		}
+
+		if (!password || password.length < 8) {
+			return fail(400, { error: 'Password must be at least 8 characters' });
+		}
+
+		try {
+			const passwordHash = await hashPin(password); // Same hashing for passwords
+
+			await db
+				.update(users)
+				.set({
+					passwordHash,
+					updatedAt: new Date()
+				})
+				.where(eq(users.id, userId));
+
+			return { success: true, message: 'Password set successfully' };
+		} catch (error) {
+			console.error('Error setting password:', error);
+			return fail(500, { error: 'Failed to set password' });
 		}
 	}
 };

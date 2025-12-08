@@ -1,13 +1,101 @@
 import type { PageServerLoad, Actions } from './$types';
 import { redirect, fail } from '@sveltejs/kit';
-import { db, users, shifts, locations } from '$lib/server/db';
-import { eq, and, gte, lte, desc } from 'drizzle-orm';
+import { db, users, shifts, locations, storeHours, appSettings } from '$lib/server/db';
+import { eq, and, gte, lte } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+
+interface PayPeriodConfig {
+	type: 'semi-monthly' | 'bi-weekly' | 'weekly' | 'monthly';
+	period1Start: number;
+	period1End: number;
+	period1Payday: number;
+	period2Start: number;
+	period2End: number;
+	period2Payday: number;
+}
+
+interface PayPeriod {
+	startDate: Date;
+	endDate: Date;
+	label: string;
+	isCurrent: boolean;
+}
+
+const DEFAULT_CONFIG: PayPeriodConfig = {
+	type: 'semi-monthly',
+	period1Start: 26,
+	period1End: 10,
+	period1Payday: 1,
+	period2Start: 11,
+	period2End: 25,
+	period2Payday: 16
+};
+
+function getCurrentPayPeriod(config: PayPeriodConfig): PayPeriod | null {
+	const now = new Date();
+	const day = now.getDate();
+	const month = now.getMonth();
+	const year = now.getFullYear();
+
+	if (config.type === 'semi-monthly') {
+		// Check if we're in period 2 (e.g., 11-25)
+		if (day >= config.period2Start && day <= config.period2End) {
+			return {
+				startDate: new Date(year, month, config.period2Start),
+				endDate: new Date(year, month, config.period2End, 23, 59, 59),
+				label: `${config.period2Start}th - ${config.period2End}th`,
+				isCurrent: true
+			};
+		}
+		// Check if we're in period 1 (e.g., 26-10, crosses month)
+		if (day >= config.period1Start) {
+			// We're at end of month, period goes to next month
+			return {
+				startDate: new Date(year, month, config.period1Start),
+				endDate: new Date(year, month + 1, config.period1End, 23, 59, 59),
+				label: `${config.period1Start}th - ${config.period1End}th`,
+				isCurrent: true
+			};
+		}
+		if (day <= config.period1End) {
+			// We're at beginning of month, period started last month
+			return {
+				startDate: new Date(year, month - 1, config.period1Start),
+				endDate: new Date(year, month, config.period1End, 23, 59, 59),
+				label: `${config.period1Start}th - ${config.period1End}th`,
+				isCurrent: true
+			};
+		}
+	}
+	return null;
+}
+
+function formatShortDate(date: Date): string {
+	return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!isManager(locals.user)) {
 		throw redirect(302, '/dashboard');
 	}
+
+	// Load pay period config
+	const setting = await db
+		.select()
+		.from(appSettings)
+		.where(eq(appSettings.key, 'pay_period_config'))
+		.limit(1);
+
+	let payPeriodConfig: PayPeriodConfig = DEFAULT_CONFIG;
+	if (setting.length > 0) {
+		try {
+			payPeriodConfig = JSON.parse(setting[0].value);
+		} catch {
+			payPeriodConfig = DEFAULT_CONFIG;
+		}
+	}
+
+	const currentPayPeriod = getCurrentPayPeriod(payPeriodConfig);
 
 	// Get date range from query params or default to current week
 	const startParam = url.searchParams.get('start');
@@ -66,12 +154,64 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		.where(eq(locations.isActive, true))
 		.orderBy(locations.name);
 
+	// Get store hours for all locations
+	const allStoreHours = await db
+		.select()
+		.from(storeHours)
+		.orderBy(storeHours.dayOfWeek);
+
+	// Get all shifts within current pay period for hours calculation
+	let payPeriodShifts: typeof allShifts = [];
+	if (currentPayPeriod) {
+		payPeriodShifts = await db
+			.select({
+				id: shifts.id,
+				userId: shifts.userId,
+				userName: users.name,
+				locationId: shifts.locationId,
+				locationName: locations.name,
+				startTime: shifts.startTime,
+				endTime: shifts.endTime,
+				notes: shifts.notes
+			})
+			.from(shifts)
+			.innerJoin(users, eq(shifts.userId, users.id))
+			.leftJoin(locations, eq(shifts.locationId, locations.id))
+			.where(and(
+				gte(shifts.startTime, currentPayPeriod.startDate),
+				lte(shifts.startTime, currentPayPeriod.endDate)
+			))
+			.orderBy(shifts.startTime);
+	}
+
+	// Calculate hours per employee for pay period
+	const employeePayPeriodHours: { [userId: string]: { name: string; hours: number } } = {};
+	for (const shift of payPeriodShifts) {
+		if (!employeePayPeriodHours[shift.userId]) {
+			employeePayPeriodHours[shift.userId] = { name: shift.userName, hours: 0 };
+		}
+		const hours = (new Date(shift.endTime).getTime() - new Date(shift.startTime).getTime()) / (1000 * 60 * 60);
+		employeePayPeriodHours[shift.userId].hours += hours;
+	}
+
 	return {
 		shifts: allShifts,
 		users: allUsers,
 		locations: allLocations,
+		storeHours: allStoreHours,
 		startDate: startOfWeek.toISOString().split('T')[0],
-		endDate: endOfWeek.toISOString().split('T')[0]
+		endDate: endOfWeek.toISOString().split('T')[0],
+		// Pay period data
+		currentPayPeriod: currentPayPeriod ? {
+			startDate: currentPayPeriod.startDate.toISOString().split('T')[0],
+			endDate: currentPayPeriod.endDate.toISOString().split('T')[0],
+			label: `${formatShortDate(currentPayPeriod.startDate)} - ${formatShortDate(currentPayPeriod.endDate)}`
+		} : null,
+		employeePayPeriodHours: Object.entries(employeePayPeriodHours).map(([userId, data]) => ({
+			userId,
+			name: data.name,
+			hours: data.hours
+		}))
 	};
 };
 
@@ -127,6 +267,43 @@ export const actions: Actions = {
 		} catch (error) {
 			console.error('Error deleting shift:', error);
 			return fail(500, { error: 'Failed to delete shift' });
+		}
+	},
+
+	updateShift: async ({ request, locals }) => {
+		if (!isManager(locals.user)) {
+			return fail(403, { error: 'Not authorized' });
+		}
+
+		const formData = await request.formData();
+		const shiftId = formData.get('shiftId') as string;
+		const userId = formData.get('userId') as string;
+		const locationId = formData.get('locationId') as string;
+		const startTime = formData.get('startTime') as string;
+		const endTime = formData.get('endTime') as string;
+		const notes = formData.get('notes') as string;
+
+		if (!shiftId || !startTime || !endTime) {
+			return fail(400, { error: 'Shift ID, start time, and end time are required' });
+		}
+
+		try {
+			await db
+				.update(shifts)
+				.set({
+					userId: userId || undefined,
+					locationId: locationId || null,
+					startTime: new Date(startTime),
+					endTime: new Date(endTime),
+					notes: notes || null,
+					updatedAt: new Date()
+				})
+				.where(eq(shifts.id, shiftId));
+
+			return { success: true, message: 'Shift updated successfully' };
+		} catch (error) {
+			console.error('Error updating shift:', error);
+			return fail(500, { error: 'Failed to update shift' });
 		}
 	}
 };

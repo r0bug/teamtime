@@ -5,6 +5,7 @@ import { eq, and, gt } from 'drizzle-orm';
 import { verifyPin, generate2FACode } from '$lib/server/auth/pin';
 import { lucia } from '$lib/server/auth';
 import { send2FACode } from '$lib/server/email';
+import { verify } from '@node-rs/argon2';
 
 async function is2FAEnabled(): Promise<boolean> {
 	const [setting] = await db
@@ -15,11 +16,34 @@ async function is2FAEnabled(): Promise<boolean> {
 	return setting?.value === 'true';
 }
 
+async function isPinOnlyLogin(): Promise<boolean> {
+	const [setting] = await db
+		.select()
+		.from(appSettings)
+		.where(eq(appSettings.key, 'pin_only_login'))
+		.limit(1);
+	// Default to true (PIN login) if setting doesn't exist
+	return setting?.value !== 'false';
+}
+
 export const load: PageServerLoad = async ({ locals }) => {
 	if (locals.user) {
 		throw redirect(302, '/dashboard');
 	}
-	return {};
+
+	const pinOnly = await isPinOnlyLogin();
+
+	// Get site title for branding
+	const [titleSetting] = await db
+		.select()
+		.from(appSettings)
+		.where(eq(appSettings.key, 'site_title'))
+		.limit(1);
+
+	return {
+		pinOnlyLogin: pinOnly,
+		siteTitle: titleSetting?.value || 'TeamTime'
+	};
 };
 
 export const actions: Actions = {
@@ -27,9 +51,20 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const email = formData.get('email')?.toString().toLowerCase().trim();
 		const pin = formData.get('pin')?.toString();
+		const password = formData.get('password')?.toString();
 
-		if (!email || !pin) {
+		const pinOnly = await isPinOnlyLogin();
+
+		if (!email) {
+			return fail(400, { error: 'Email is required' });
+		}
+
+		if (pinOnly && !pin) {
 			return fail(400, { error: 'Email and PIN are required' });
+		}
+
+		if (!pinOnly && !password) {
+			return fail(400, { error: 'Email and password are required' });
 		}
 
 		// Find user
@@ -42,17 +77,33 @@ export const actions: Actions = {
 		if (!user) {
 			// Use same delay as valid user to prevent timing attacks
 			await new Promise((r) => setTimeout(r, 500));
-			return fail(400, { error: 'Invalid email or PIN' });
+			return fail(400, { error: pinOnly ? 'Invalid email or PIN' : 'Invalid email or password' });
 		}
 
 		if (!user.isActive) {
 			return fail(400, { error: 'Account is disabled. Contact your administrator.' });
 		}
 
-		// Verify PIN
-		const validPin = await verifyPin(pin, user.pinHash);
-		if (!validPin) {
-			return fail(400, { error: 'Invalid email or PIN' });
+		// Verify credentials based on login mode
+		if (pinOnly) {
+			// Verify PIN
+			const validPin = await verifyPin(pin!, user.pinHash);
+			if (!validPin) {
+				return fail(400, { error: 'Invalid email or PIN' });
+			}
+		} else {
+			// Verify password
+			if (!user.passwordHash) {
+				return fail(400, { error: 'Password not set. Contact your administrator.' });
+			}
+			try {
+				const validPassword = await verify(user.passwordHash, password!);
+				if (!validPassword) {
+					return fail(400, { error: 'Invalid email or password' });
+				}
+			} catch {
+				return fail(400, { error: 'Invalid email or password' });
+			}
 		}
 
 		const userAgent = request.headers.get('user-agent') || '';

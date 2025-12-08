@@ -1,22 +1,27 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 
+	export let data: PageData;
 	export let form: ActionData;
 
 	let email = '';
 	let pin = '';
+	let password = '';
 	let loading = false;
+
+	$: pinOnlyLogin = data.pinOnlyLogin;
+	$: siteTitle = data.siteTitle || 'TeamTime';
 </script>
 
 <svelte:head>
-	<title>Login - TeamTime</title>
+	<title>Login - {siteTitle}</title>
 </svelte:head>
 
 <div class="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-12">
 	<div class="max-w-md w-full space-y-8">
 		<div class="text-center">
-			<h1 class="text-3xl font-bold text-gray-900">TeamTime</h1>
+			<h1 class="text-3xl font-bold text-gray-900">{siteTitle}</h1>
 			<p class="mt-2 text-gray-600">Mobile Workforce Operations</p>
 		</div>
 
@@ -55,23 +60,39 @@
 						/>
 					</div>
 
-					<div>
-						<label for="pin" class="label">PIN</label>
-						<input
-							type="password"
-							id="pin"
-							name="pin"
-							bind:value={pin}
-							required
-							inputmode="numeric"
-							pattern="[0-9]*"
-							minlength="4"
-							maxlength="8"
-							autocomplete="current-password"
-							class="input"
-							placeholder="Enter your PIN"
-						/>
-					</div>
+					{#if pinOnlyLogin}
+						<div>
+							<label for="pin" class="label">PIN</label>
+							<input
+								type="password"
+								id="pin"
+								name="pin"
+								bind:value={pin}
+								required
+								inputmode="numeric"
+								pattern="[0-9]*"
+								minlength="4"
+								maxlength="8"
+								autocomplete="current-password"
+								class="input"
+								placeholder="Enter your PIN"
+							/>
+						</div>
+					{:else}
+						<div>
+							<label for="password" class="label">Password</label>
+							<input
+								type="password"
+								id="password"
+								name="password"
+								bind:value={password}
+								required
+								autocomplete="current-password"
+								class="input"
+								placeholder="Enter your password"
+							/>
+						</div>
+					{/if}
 
 					<button
 						type="submit"
@@ -90,11 +111,19 @@
 					</button>
 				</form>
 
-				<div class="text-center">
-					<a href="/forgot-pin" class="text-sm text-primary-600 hover:text-primary-700">
-						Forgot your PIN?
-					</a>
-				</div>
+				{#if pinOnlyLogin}
+					<div class="text-center">
+						<a href="/forgot-pin" class="text-sm text-primary-600 hover:text-primary-700">
+							Forgot your PIN?
+						</a>
+					</div>
+				{:else}
+					<div class="text-center">
+						<a href="/forgot-password" class="text-sm text-primary-600 hover:text-primary-700">
+							Forgot your password?
+						</a>
+					</div>
+				{/if}
 			</div>
 		</div>
 

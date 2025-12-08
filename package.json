@@ -20,6 +20,7 @@
 		"@sveltejs/kit": "^2.5.0",
 		"@sveltejs/vite-plugin-svelte": "^3.1.0",
 		"@tailwindcss/forms": "^0.5.7",
+		"@types/archiver": "^7.0.0",
 		"@types/node": "^20.11.0",
 		"@types/uuid": "^9.0.7",
 		"@types/web-push": "^3.6.3",
@@ -33,9 +34,10 @@
 		"vite": "^5.1.0"
 	},
 	"dependencies": {
+		"@googlemaps/js-api-loader": "^1.16.6",
 		"@lucia-auth/adapter-drizzle": "^1.0.7",
 		"@node-rs/argon2": "^1.7.2",
-		"@googlemaps/js-api-loader": "^1.16.6",
+		"archiver": "^7.0.1",
 		"drizzle-orm": "^0.29.3",
 		"lucia": "^3.1.1",
 		"oslo": "^1.2.0",

@@ -3,9 +3,10 @@ import { fail, redirect } from '@sveltejs/kit';
 import { db, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { hashPin, validatePinFormat, generatePin } from '$lib/server/auth/pin';
+import { isManager } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	if (!locals.user || locals.user.role !== 'manager') {
+	if (!isManager(locals.user)) {
 		throw redirect(302, '/dashboard');
 	}
 
@@ -17,7 +18,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 export const actions: Actions = {
 	create: async ({ request, locals }) => {
-		if (!locals.user || locals.user.role !== 'manager') {
+		if (!isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 
