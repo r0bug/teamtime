@@ -37,7 +37,7 @@ interface DatabaseUserAttributes {
 	id: string;
 	email: string;
 	username: string;
-	role: 'manager' | 'purchaser' | 'staff';
+	role: 'admin' | 'manager' | 'purchaser' | 'staff';
 	name: string;
 	phone: string | null;
 	isActive: boolean;
