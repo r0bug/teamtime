@@ -1,7 +1,7 @@
 // AI System Types for TeamTime "Shackled Mentats"
 
 // Agent identifiers
-export type AIAgent = 'office_manager' | 'revenue_optimizer';
+export type AIAgent = 'office_manager' | 'revenue_optimizer' | 'architect';
 
 // LLM Providers
 export type AIProvider = 'anthropic' | 'openai';

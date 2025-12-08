@@ -5,11 +5,27 @@ import { relations } from 'drizzle-orm';
 export const userRoleEnum = pgEnum('user_role', ['admin', 'manager', 'purchaser', 'staff']);
 
 // AI System Enums
-export const aiAgentEnum = pgEnum('ai_agent', ['office_manager', 'revenue_optimizer']);
+export const aiAgentEnum = pgEnum('ai_agent', ['office_manager', 'revenue_optimizer', 'architect']);
 export const aiProviderEnum = pgEnum('ai_provider', ['anthropic', 'openai']);
 export const aiMemoryScopeEnum = pgEnum('ai_memory_scope', ['user', 'location', 'global']);
 export const aiPolicyScopeEnum = pgEnum('ai_policy_scope', ['global', 'location', 'role']);
 export const aiToneEnum = pgEnum('ai_tone', ['helpful_parent', 'professional', 'casual', 'formal']);
+export const architectureStatusEnum = pgEnum('architecture_status', [
+	'proposed',
+	'approved',
+	'in_progress',
+	'implemented',
+	'rejected',
+	'superseded'
+]);
+export const architectureCategoryEnum = pgEnum('architecture_category', [
+	'schema',
+	'api',
+	'ui',
+	'integration',
+	'security',
+	'architecture'
+]);
 export const taskStatusEnum = pgEnum('task_status', ['not_started', 'in_progress', 'completed', 'cancelled']);
 export const taskPriorityEnum = pgEnum('task_priority', ['low', 'medium', 'high', 'urgent']);
 export const taskSourceEnum = pgEnum('task_source', ['manual', 'recurring', 'event_triggered', 'purchase_approval']);
@@ -517,6 +533,115 @@ export const aiPolicyNotes = pgTable('ai_policy_notes', {
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
 
+// ============================================
+// ARCHITECTURE ADVISOR (ADA) TABLES
+// ============================================
+
+// Architecture Decisions - ADRs created by Ada
+export const architectureDecisions = pgTable('architecture_decisions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	title: text('title').notNull(),
+	status: architectureStatusEnum('status').notNull().default('proposed'),
+	category: architectureCategoryEnum('category').notNull(),
+
+	// ADR Content
+	context: text('context').notNull(), // Why is this needed?
+	decision: text('decision').notNull(), // What are we doing?
+	consequences: text('consequences'), // Tradeoffs and implications
+
+	// Claude Code Integration
+	claudeCodePrompt: text('claude_code_prompt'), // Generated prompt for Claude Code
+	implementationPlan: jsonb('implementation_plan').$type<{
+		phases: { name: string; tasks: string[]; dependencies?: string[] }[];
+	}>(),
+
+	// Related files and implementation tracking
+	relatedFiles: jsonb('related_files').$type<string[]>(),
+	implementedAt: timestamp('implemented_at', { withTimezone: true }),
+
+	// Audit
+	createdByAiRunId: uuid('created_by_ai_run_id'),
+	createdByChatId: uuid('created_by_chat_id'),
+	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Architecture Chats - Interactive sessions with Ada
+export const architectureChats = pgTable('architecture_chats', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	title: text('title'),
+
+	// Conversation history
+	messages: jsonb('messages').$type<{
+		role: 'user' | 'assistant';
+		content: string;
+		timestamp: string;
+		toolCalls?: { name: string; params: unknown; result?: unknown }[];
+	}[]>().notNull().default([]),
+
+	// Context configuration
+	contextModules: jsonb('context_modules').$type<string[]>(), // Which context to include
+
+	// Usage tracking
+	tokensUsed: integer('tokens_used').default(0),
+	costCents: integer('cost_cents').default(0),
+	decisionsCreated: jsonb('decisions_created').$type<string[]>().default([]),
+	promptsGenerated: integer('prompts_generated').default(0),
+
+	// Audit
+	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Presentation mode enum for multi-model results
+export const presentationModeEnum = pgEnum('presentation_mode', [
+	'synthesized',
+	'side_by_side',
+	'primary_with_notes'
+]);
+
+// Architect-specific configuration for multi-model consultation
+export const architectConfig = pgTable('architect_config', {
+	id: serial('id').primaryKey(),
+
+	// Tier 1: Quick responses (simple questions)
+	quickProvider: aiProviderEnum('quick_provider').notNull().default('anthropic'),
+	quickModel: text('quick_model').notNull().default('claude-sonnet-4-20250514'),
+
+	// Tier 2: Standard conversation
+	standardProvider: aiProviderEnum('standard_provider').notNull().default('anthropic'),
+	standardModel: text('standard_model').notNull().default('claude-opus-4-20250514'),
+
+	// Tier 3: Deliberation - Primary (main recommendation)
+	deliberatePrimaryProvider: aiProviderEnum('deliberate_primary_provider').notNull().default('anthropic'),
+	deliberatePrimaryModel: text('deliberate_primary_model').notNull().default('claude-opus-4-20250514'),
+
+	// Tier 3: Deliberation - Reviewer (different provider for perspective)
+	deliberateReviewProvider: aiProviderEnum('deliberate_review_provider').notNull().default('openai'),
+	deliberateReviewModel: text('deliberate_review_model').notNull().default('gpt-4o'),
+
+	// Tier 3: Deliberation - Synthesizer
+	deliberateSynthProvider: aiProviderEnum('deliberate_synth_provider').notNull().default('anthropic'),
+	deliberateSynthModel: text('deliberate_synth_model').notNull().default('claude-sonnet-4-20250514'),
+
+	// Deliberation triggers
+	triggerOnADRCreation: boolean('trigger_on_adr_creation').notNull().default(true),
+	triggerOnPromptGeneration: boolean('trigger_on_prompt_generation').notNull().default(true),
+	triggerOnSchemaDesign: boolean('trigger_on_schema_design').notNull().default(true),
+	triggerOnExplicitRequest: boolean('trigger_on_explicit_request').notNull().default(true),
+
+	// Presentation mode: how to show multi-model results
+	presentationMode: presentationModeEnum('presentation_mode').notNull().default('synthesized'),
+
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type ArchitectConfig = typeof architectConfig.$inferSelect;
+export type NewArchitectConfig = typeof architectConfig.$inferInsert;
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
 	sessions: many(sessions),
@@ -699,6 +824,26 @@ export const aiPolicyNotesRelations = relations(aiPolicyNotes, ({ one }) => ({
 	})
 }));
 
+// Architecture Advisor Relations
+export const architectureDecisionsRelations = relations(architectureDecisions, ({ one }) => ({
+	createdByUser: one(users, {
+		fields: [architectureDecisions.createdByUserId],
+		references: [users.id]
+	}),
+	chat: one(architectureChats, {
+		fields: [architectureDecisions.createdByChatId],
+		references: [architectureChats.id]
+	})
+}));
+
+export const architectureChatsRelations = relations(architectureChats, ({ one, many }) => ({
+	createdByUser: one(users, {
+		fields: [architectureChats.createdByUserId],
+		references: [users.id]
+	}),
+	decisions: many(architectureDecisions)
+}));
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -728,3 +873,9 @@ export type AIMemory = typeof aiMemory.$inferSelect;
 export type NewAIMemory = typeof aiMemory.$inferInsert;
 export type AIPolicyNote = typeof aiPolicyNotes.$inferSelect;
 export type NewAIPolicyNote = typeof aiPolicyNotes.$inferInsert;
+
+// Architecture Advisor Types
+export type ArchitectureDecision = typeof architectureDecisions.$inferSelect;
+export type NewArchitectureDecision = typeof architectureDecisions.$inferInsert;
+export type ArchitectureChat = typeof architectureChats.$inferSelect;
+export type NewArchitectureChat = typeof architectureChats.$inferInsert;
