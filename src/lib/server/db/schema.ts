@@ -3,6 +3,13 @@ import { relations } from 'drizzle-orm';
 
 // Enums
 export const userRoleEnum = pgEnum('user_role', ['admin', 'manager', 'purchaser', 'staff']);
+
+// AI System Enums
+export const aiAgentEnum = pgEnum('ai_agent', ['office_manager', 'revenue_optimizer']);
+export const aiProviderEnum = pgEnum('ai_provider', ['anthropic', 'openai']);
+export const aiMemoryScopeEnum = pgEnum('ai_memory_scope', ['user', 'location', 'global']);
+export const aiPolicyScopeEnum = pgEnum('ai_policy_scope', ['global', 'location', 'role']);
+export const aiToneEnum = pgEnum('ai_tone', ['helpful_parent', 'professional', 'casual', 'formal']);
 export const taskStatusEnum = pgEnum('task_status', ['not_started', 'in_progress', 'completed', 'cancelled']);
 export const taskPriorityEnum = pgEnum('task_priority', ['low', 'medium', 'high', 'urgent']);
 export const taskSourceEnum = pgEnum('task_source', ['manual', 'recurring', 'event_triggered', 'purchase_approval']);
@@ -381,6 +388,135 @@ export const infoPosts = pgTable('info_posts', {
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
 
+// ============================================
+// AI SYSTEM TABLES ("Shackled Mentats")
+// ============================================
+
+// AI Configuration - one row per agent
+export const aiConfig = pgTable('ai_config', {
+	id: serial('id').primaryKey(),
+	agent: aiAgentEnum('agent').notNull().unique(),
+	enabled: boolean('enabled').notNull().default(false),
+	provider: aiProviderEnum('provider').notNull().default('anthropic'),
+	model: text('model').notNull().default('claude-3-haiku-20240307'),
+	tone: aiToneEnum('tone').notNull().default('helpful_parent'),
+	instructions: text('instructions'), // Custom instructions appended to system prompt
+	cronSchedule: text('cron_schedule').notNull().default('*/15 7-19 * * *'),
+	maxTokensContext: integer('max_tokens_context').notNull().default(4000),
+	temperature: decimal('temperature', { precision: 2, scale: 1 }).notNull().default('0.3'),
+	dryRunMode: boolean('dry_run_mode').notNull().default(false),
+	// Recipient settings - which users get AI messages
+	sendToAllAdmins: boolean('send_to_all_admins').notNull().default(true),
+	specificRecipientIds: jsonb('specific_recipient_ids').$type<string[]>().default([]),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// AI Actions Log - complete audit trail of all AI decisions
+export const aiActions = pgTable('ai_actions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	agent: aiAgentEnum('agent').notNull(),
+	runId: uuid('run_id').notNull(), // Groups actions from same run
+	runStartedAt: timestamp('run_started_at', { withTimezone: true }).notNull(),
+
+	// Context snapshot for quick queries
+	contextSnapshot: jsonb('context_snapshot').$type<{
+		clockedIn?: number;
+		expectedButMissing?: number;
+		overdueTasks?: number;
+		pendingApprovals?: number;
+		unassignedWithdrawals?: number;
+		activeMemories?: number;
+		activePolicies?: number;
+		totalUsers?: number;
+	}>(),
+	contextTokens: integer('context_tokens'),
+
+	// LLM interaction
+	reasoning: text('reasoning'), // AI's explanation of its decision
+	toolName: text('tool_name'), // null if observation only
+	toolParams: jsonb('tool_params').$type<Record<string, unknown>>(),
+
+	// Execution status
+	executed: boolean('executed').notNull().default(false),
+	executionResult: jsonb('execution_result').$type<Record<string, unknown>>(),
+	blockedReason: text('blocked_reason'), // Why action wasn't executed
+	error: text('error'),
+
+	// Linked entities
+	targetUserId: uuid('target_user_id').references(() => users.id, { onDelete: 'set null' }),
+	createdTaskId: uuid('created_task_id').references(() => tasks.id, { onDelete: 'set null' }),
+	createdMessageId: uuid('created_message_id').references(() => messages.id, { onDelete: 'set null' }),
+
+	// Cost tracking
+	tokensUsed: integer('tokens_used'),
+	costCents: integer('cost_cents'),
+
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// AI Cooldowns - prevent repeated actions
+export const aiCooldowns = pgTable('ai_cooldowns', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	agent: aiAgentEnum('agent').notNull(),
+	userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+	actionType: text('action_type').notNull(), // e.g., 'send_message', 'late_reminder'
+	relatedEntityId: uuid('related_entity_id'), // e.g., task ID, shift ID
+	relatedEntityType: text('related_entity_type'), // e.g., 'task', 'shift'
+	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+	reason: text('reason'),
+	aiActionId: uuid('ai_action_id').references(() => aiActions.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// AI Memory - long-term observations written by Revenue Optimizer
+export const aiMemory = pgTable('ai_memory', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	scope: aiMemoryScopeEnum('scope').notNull(),
+
+	// Scope targets
+	userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+	locationId: uuid('location_id').references(() => locations.id, { onDelete: 'cascade' }),
+
+	memoryType: text('memory_type').notNull(), // 'pattern', 'preference', 'observation', 'performance'
+	content: text('content').notNull(),
+
+	// Confidence tracking
+	confidence: decimal('confidence', { precision: 3, scale: 2 }).notNull().default('0.50'),
+	observationCount: integer('observation_count').notNull().default(1),
+	lastObservedAt: timestamp('last_observed_at', { withTimezone: true }).notNull().defaultNow(),
+
+	// Lifecycle
+	isActive: boolean('is_active').notNull().default(true),
+	expiresAt: timestamp('expires_at', { withTimezone: true }),
+
+	// Audit
+	createdByRunId: uuid('created_by_run_id'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// AI Policy Notes - dynamic behavior modifiers
+export const aiPolicyNotes = pgTable('ai_policy_notes', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	scope: aiPolicyScopeEnum('scope').notNull().default('global'),
+
+	// Scope targets
+	locationId: uuid('location_id').references(() => locations.id, { onDelete: 'cascade' }),
+	targetRole: userRoleEnum('target_role'),
+
+	content: text('content').notNull(),
+	priority: integer('priority').notNull().default(50), // 1-100, higher = more important
+
+	isActive: boolean('is_active').notNull().default(true),
+
+	// Audit
+	updatedByRunId: uuid('updated_by_run_id'),
+	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
 	sessions: many(sessions),
@@ -514,6 +650,55 @@ export const messagesRelations = relations(messages, ({ one, many }) => ({
 	photos: many(messagePhotos)
 }));
 
+// AI System Relations
+export const aiActionsRelations = relations(aiActions, ({ one }) => ({
+	targetUser: one(users, {
+		fields: [aiActions.targetUserId],
+		references: [users.id]
+	}),
+	createdTask: one(tasks, {
+		fields: [aiActions.createdTaskId],
+		references: [tasks.id]
+	}),
+	createdMessage: one(messages, {
+		fields: [aiActions.createdMessageId],
+		references: [messages.id]
+	})
+}));
+
+export const aiCooldownsRelations = relations(aiCooldowns, ({ one }) => ({
+	user: one(users, {
+		fields: [aiCooldowns.userId],
+		references: [users.id]
+	}),
+	aiAction: one(aiActions, {
+		fields: [aiCooldowns.aiActionId],
+		references: [aiActions.id]
+	})
+}));
+
+export const aiMemoryRelations = relations(aiMemory, ({ one }) => ({
+	user: one(users, {
+		fields: [aiMemory.userId],
+		references: [users.id]
+	}),
+	location: one(locations, {
+		fields: [aiMemory.locationId],
+		references: [locations.id]
+	})
+}));
+
+export const aiPolicyNotesRelations = relations(aiPolicyNotes, ({ one }) => ({
+	location: one(locations, {
+		fields: [aiPolicyNotes.locationId],
+		references: [locations.id]
+	}),
+	createdByUser: one(users, {
+		fields: [aiPolicyNotes.createdByUserId],
+		references: [users.id]
+	})
+}));
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -531,3 +716,15 @@ export type Message = typeof messages.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type StoreHours = typeof storeHours.$inferSelect;
 export type InfoPost = typeof infoPosts.$inferSelect;
+
+// AI System Types
+export type AIConfig = typeof aiConfig.$inferSelect;
+export type NewAIConfig = typeof aiConfig.$inferInsert;
+export type AIAction = typeof aiActions.$inferSelect;
+export type NewAIAction = typeof aiActions.$inferInsert;
+export type AICooldown = typeof aiCooldowns.$inferSelect;
+export type NewAICooldown = typeof aiCooldowns.$inferInsert;
+export type AIMemory = typeof aiMemory.$inferSelect;
+export type NewAIMemory = typeof aiMemory.$inferInsert;
+export type AIPolicyNote = typeof aiPolicyNotes.$inferSelect;
+export type NewAIPolicyNote = typeof aiPolicyNotes.$inferInsert;

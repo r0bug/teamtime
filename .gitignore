@@ -37,3 +37,7 @@ vite.config.ts.timestamp-*
 # Logs
 *.log
 npm-debug.log*
+
+# AI System - API Keys (local only)
+.ai-keys.json
+ai-keys.json

@@ -1,0 +1,211 @@
+// Send Recommendation Tool - Allows Revenue Optimizer to send insights to admins
+import { db, conversations, conversationParticipants, messages, users } from '$lib/server/db';
+import { eq, and } from 'drizzle-orm';
+import type { AITool, ToolExecutionContext } from '../../types';
+
+interface SendRecommendationParams {
+	title: string;
+	content: string;
+	category: 'scheduling' | 'performance' | 'cost' | 'workflow' | 'training' | 'general';
+	urgency: 'low' | 'medium' | 'high';
+}
+
+interface SendRecommendationResult {
+	success: boolean;
+	messagesSent?: number;
+	error?: string;
+}
+
+// Find or create a direct conversation between AI system and a user
+async function getOrCreateAIConversation(adminId: string, userId: string): Promise<string> {
+	// Look for existing direct conversation
+	const existingConvs = await db
+		.select({ conversationId: conversationParticipants.conversationId })
+		.from(conversationParticipants)
+		.where(eq(conversationParticipants.userId, userId));
+
+	for (const conv of existingConvs) {
+		const adminInConv = await db
+			.select()
+			.from(conversationParticipants)
+			.where(and(
+				eq(conversationParticipants.conversationId, conv.conversationId),
+				eq(conversationParticipants.userId, adminId)
+			))
+			.limit(1);
+
+		if (adminInConv.length > 0) {
+			const convDetails = await db
+				.select()
+				.from(conversations)
+				.where(and(
+					eq(conversations.id, conv.conversationId),
+					eq(conversations.type, 'direct')
+				))
+				.limit(1);
+
+			if (convDetails.length > 0) {
+				return conv.conversationId;
+			}
+		}
+	}
+
+	// Create new conversation
+	const [newConv] = await db
+		.insert(conversations)
+		.values({
+			type: 'direct',
+			createdBy: adminId
+		})
+		.returning({ id: conversations.id });
+
+	await db.insert(conversationParticipants).values([
+		{ conversationId: newConv.id, userId: adminId },
+		{ conversationId: newConv.id, userId: userId }
+	]);
+
+	return newConv.id;
+}
+
+export const sendRecommendationTool: AITool<SendRecommendationParams, SendRecommendationResult> = {
+	name: 'send_recommendation',
+	description: 'Send a strategic recommendation or insight to all admin users. Use this for sharing analysis results, suggestions for improvement, or important observations.',
+	agent: 'revenue_optimizer',
+	parameters: {
+		type: 'object',
+		properties: {
+			title: {
+				type: 'string',
+				description: 'Short title summarizing the recommendation (max 100 chars)'
+			},
+			content: {
+				type: 'string',
+				description: 'The full recommendation with context and suggested actions'
+			},
+			category: {
+				type: 'string',
+				enum: ['scheduling', 'performance', 'cost', 'workflow', 'training', 'general'],
+				description: 'Category of the recommendation'
+			},
+			urgency: {
+				type: 'string',
+				enum: ['low', 'medium', 'high'],
+				description: 'How urgent this recommendation is'
+			}
+		},
+		required: ['title', 'content', 'category', 'urgency']
+	},
+
+	requiresApproval: false,
+	cooldown: {
+		perUser: 0,
+		global: 30 // Only send recommendations every 30 min
+	},
+	rateLimit: {
+		maxPerHour: 5 // Limit to 5 recommendations per run
+	},
+
+	validate(params: SendRecommendationParams) {
+		if (!params.title || params.title.trim().length < 5) {
+			return { valid: false, error: 'Title must be at least 5 characters' };
+		}
+		if (params.title.length > 100) {
+			return { valid: false, error: 'Title too long (max 100 chars)' };
+		}
+		if (!params.content || params.content.trim().length < 20) {
+			return { valid: false, error: 'Content must be at least 20 characters' };
+		}
+		if (params.content.length > 2000) {
+			return { valid: false, error: 'Content too long (max 2000 chars)' };
+		}
+		if (!params.category) {
+			return { valid: false, error: 'Category is required' };
+		}
+		if (!params.urgency) {
+			return { valid: false, error: 'Urgency is required' };
+		}
+		return { valid: true };
+	},
+
+	async execute(params: SendRecommendationParams, context: ToolExecutionContext): Promise<SendRecommendationResult> {
+		if (context.dryRun) {
+			return {
+				success: true,
+				error: `Dry run - would send ${params.urgency} urgency ${params.category} recommendation to admins`
+			};
+		}
+
+		try {
+			// Get all admin users
+			const admins = await db
+				.select({ id: users.id, name: users.name })
+				.from(users)
+				.where(eq(users.role, 'admin'));
+
+			if (admins.length === 0) {
+				return { success: false, error: 'No admin users found' };
+			}
+
+			// Format the message
+			const urgencyEmoji = params.urgency === 'high' ? '!' : params.urgency === 'medium' ? '' : '';
+			const categoryLabel = params.category.charAt(0).toUpperCase() + params.category.slice(1);
+
+			const messageContent = [
+				`**${urgencyEmoji}${params.title}${urgencyEmoji}**`,
+				'',
+				`*Category: ${categoryLabel} | Urgency: ${params.urgency}*`,
+				'',
+				params.content,
+				'',
+				'---',
+				'*This recommendation was generated by the Revenue Optimizer AI based on data analysis.*'
+			].join('\n');
+
+			// Use first admin as sender
+			const senderId = admins[0].id;
+			let messagesSent = 0;
+
+			// Send to each admin
+			for (const admin of admins) {
+				const conversationId = await getOrCreateAIConversation(senderId, admin.id);
+
+				await db
+					.insert(messages)
+					.values({
+						conversationId,
+						senderId,
+						content: messageContent,
+						isSystemMessage: true
+					});
+
+				await db
+					.update(conversations)
+					.set({ updatedAt: new Date() })
+					.where(eq(conversations.id, conversationId));
+
+				messagesSent++;
+			}
+
+			return {
+				success: true,
+				messagesSent
+			};
+		} catch (error) {
+			console.error('[AI Tool] send_recommendation error:', error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	},
+
+	formatResult(result: SendRecommendationResult): string {
+		if (result.success && result.messagesSent) {
+			return `Recommendation sent to ${result.messagesSent} admin(s)`;
+		}
+		if (result.success) {
+			return result.error || 'Recommendation operation completed';
+		}
+		return `Failed to send recommendation: ${result.error}`;
+	}
+};
