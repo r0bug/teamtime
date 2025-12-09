@@ -1,14 +1,12 @@
-# Claude Build-Test-Repair Protocol: Mobile Workforce Operations System
+# TeamTime - Mobile Workforce Operations System
 
-## Mission
+## System Overview
 
-You will build a complete Mobile Workforce Operations System, then systematically test every component, generate a repair TODO list, fix all issues, and repeat this test-repair cycle **3 full times** until the system is production-ready.
+TeamTime is a comprehensive mobile workforce management system designed for small to medium businesses. It provides time tracking, task management, expense handling, and intelligent AI-powered assistance through the "Mentats" system.
 
 ---
 
-## Part 1: Initial Build
-
-### Technology Stack (Mandatory)
+## Technology Stack
 
 ```
 Frontend:       SvelteKit (TypeScript, SSR + SPA)
@@ -20,540 +18,870 @@ Realtime:       Server-Sent Events (SSE)
 Styling:        Tailwind CSS (mobile-first)
 Maps:           Google Maps JavaScript API
 PWA:            Workbox + web-push
+AI Integration: Anthropic Claude, OpenAI GPT-4
 Dev Environment: Docker Compose (PostgreSQL container)
 ```
 
-### Build Sequence
+---
 
-Complete each phase fully before moving to the next. Create all files, not pseudocode.
+## Core Features
 
-#### Phase 1: Foundation
-- [ ] Initialize SvelteKit project with TypeScript
-- [ ] Configure Tailwind CSS
-- [ ] Set up Docker Compose with PostgreSQL
-- [ ] Create Drizzle config and connection
-- [ ] Build complete schema for all tables (see Schema Reference below)
-- [ ] Run migrations
-- [ ] Configure Lucia v3 auth with PostgreSQL adapter
-- [ ] Create PIN hashing utilities (argon2)
-- [ ] Build login flow (email → PIN)
-- [ ] Build 2FA email verification flow
-- [ ] Create session management with device fingerprinting
-- [ ] Build base layout with mobile bottom nav / desktop sidebar
-- [ ] Create role-based route guards
+### 1. User Management & Authentication
+- **Email + PIN authentication** with Argon2 hashing
+- **Two-factor authentication** via email verification codes
+- **Role-based access control**: Admin, Manager, Purchaser, Staff
+- **Session management** with device fingerprinting
+- **Avatar uploads** for user profiles
 
-#### Phase 2: User Management
-- [ ] User CRUD API endpoints
-- [ ] User list view (manager only)
-- [ ] User detail/edit view
-- [ ] Role assignment
-- [ ] PIN reset flow
+### 2. Time & Attendance
+- **Clock in/out** with GPS location capture
+- **Reverse geocoding** for address display
+- **Time entry corrections** by managers with audit trail
+- **Pay period reporting** with CSV export
+- **Store hours management** per location
 
-#### Phase 3: Locations
-- [ ] Location CRUD API endpoints
-- [ ] Location list and detail views
-- [ ] Google Maps integration for geocoding
-- [ ] Location picker component
+### 3. Scheduling
+- **Shift creation and assignment**
+- **Employee schedule view** (day/week)
+- **Manager calendar interface**
+- **Shift templates** for recurring schedules
 
-#### Phase 4: Scheduling
-- [ ] Shift CRUD API endpoints
-- [ ] Employee schedule view (day/week)
-- [ ] Manager calendar view (drag-drop)
-- [ ] Shift assignment logic
-- [ ] Next shift display on home screen
-- [ ] Shift templates
+### 4. Task Management
+- **Task creation** with priority levels (low/medium/high/urgent)
+- **Task templates** for repeatable workflows
+- **Recurring tasks** with configurable schedules
+- **Event-triggered tasks** (on clock-in/clock-out)
+- **Photo-required completions**
+- **Task status tracking**: not_started, in_progress, completed, cancelled
 
-#### Phase 5: Time & Attendance
-- [ ] Clock in/out API endpoints
-- [ ] GPS capture on clock events
-- [ ] Reverse geocoding for display
-- [ ] Time entry list view
-- [ ] Manager time correction with audit log
-- [ ] Time export to CSV
+### 5. Purchase Approval System
+- **Purchase request creation** with photos
+- **Manager approval/denial workflow**
+- **Push notifications** for requests and decisions
+- **GPS location capture** for accountability
 
-#### Phase 6: Task System - Core
-- [ ] Task CRUD API endpoints
-- [ ] Task template CRUD
-- [ ] Employee task list view
-- [ ] Manager task board view
-- [ ] Task status transitions
-- [ ] Task assignment/reassignment
+### 6. Expense Tracking
+- **ATM withdrawal logging**
+- **Expense allocation** to purchase requests
+- **Receipt photo capture**
+- **Expense reporting** with CSV export
 
-#### Phase 7: Task System - Advanced
-- [ ] Recurring task generation (cron job or on-demand)
-- [ ] Event-triggered tasks (clock-in/out hooks)
-- [ ] Photo-required task completion
-- [ ] Task completion API with photo upload
-- [ ] Photo storage and retrieval
+### 7. Messaging System
+- **Direct messaging** between users
+- **Broadcast messages** from managers
+- **Photo attachments**
+- **Real-time delivery** via SSE
+- **Unread count tracking**
 
-#### Phase 8: Purchase Approval Flow
-- [ ] Purchase request creation API
-- [ ] Photo capture for purchase requests
-- [ ] Manager approval/deny API
-- [ ] Push notification on new request
-- [ ] Push notification on decision
-- [ ] Purchase request list views (requester & manager)
+### 8. Notifications
+- **In-app notification center**
+- **Push notifications** (PWA)
+- **Configurable notification preferences**
+- **Types**: task_assigned, task_due, task_overdue, schedule_change, shift_request, new_message, purchase_decision, shift_reminder
 
-#### Phase 9: ATM & Expense Tracking
-- [ ] ATM withdrawal CRUD API
-- [ ] Withdrawal allocation API
-- [ ] Link withdrawals to purchase requests
-- [ ] Withdrawal status calculations
-- [ ] Expense report views
-- [ ] CSV export
-
-#### Phase 10: Messaging
-- [ ] Conversation creation API
-- [ ] Message send API
-- [ ] Photo attachments in messages
-- [ ] SSE for real-time message delivery
-- [ ] Conversation list view
-- [ ] Chat view with message history
-- [ ] Unread count tracking
-- [ ] Manager broadcast messages
-
-#### Phase 11: Notifications
-- [ ] In-app notification system
-- [ ] Notification preferences
-- [ ] PWA service worker setup
-- [ ] Web push subscription management
-- [ ] Push notification sending
-- [ ] Notification center UI
-
-#### Phase 12: PWA & Offline
-- [ ] PWA manifest
-- [ ] Service worker with Workbox
-- [ ] Offline queue for critical actions
-- [ ] Sync on reconnection
-- [ ] Install prompt
-
-#### Phase 13: Reporting & Audit
-- [ ] Audit log table and triggers
-- [ ] Time report generation
-- [ ] Expense report generation
-- [ ] Task completion reports
-- [ ] Export endpoints (CSV, JSON)
+### 9. Info Posts / Knowledge Base
+- **Staff announcements**
+- **How-to guides and policies**
+- **Pinned important content**
+- **Category organization**
 
 ---
 
-## Schema Reference
+## AI Mentats System
 
-Create these tables in Drizzle schema format:
+TeamTime includes an intelligent AI assistant system called "Mentats" - autonomous AI agents that help manage operations.
+
+### Office Manager Mentat
+- **Schedule**: Runs every 15 minutes during business hours (7am-7pm)
+- **Capabilities**:
+  - Monitor attendance and flag late arrivals
+  - Track overdue tasks and send reminders
+  - Support new employee onboarding
+  - Send helpful tips and check-ins
+- **Tools**: send_message, create_task
+- **Configurable tone**: helpful_parent, professional, casual, formal
+
+### Revenue Optimizer Mentat (Backroom Boy)
+- **Schedule**: Runs nightly at 11pm
+- **Capabilities**:
+  - Analyze attendance and task completion patterns
+  - Write long-term memories about users and locations
+  - Create behavioral policies for Office Manager
+  - Send strategic recommendations to admins
+- **Tools**: write_memory, create_policy, send_recommendation
+- **Memory types**: pattern, preference, observation, performance
+
+### Ada - Architecture Advisor
+- **Interactive mode**: On-demand chat interface
+- **Capabilities**:
+  - Analyze codebase and suggest architectural improvements
+  - Generate Claude Code prompts for implementation
+  - Create Architecture Decision Records (ADRs)
+  - Multi-model deliberation for complex decisions
+- **Tools**: create_claude_code_prompt, create_architecture_decision, analyze_change_impact
+- **Multi-tier consultation**:
+  - Quick: Simple questions (fast model)
+  - Standard: Normal conversation (capable model)
+  - Deliberate: Complex decisions (multi-model with synthesis)
+
+### AI System Features
+- **Dry run mode** for testing without execution
+- **Cooldown system** to prevent spam
+- **Cost tracking** per action
+- **Complete audit trail** of all AI decisions
+- **Admin-configurable** models and providers
+
+---
+
+## Database Schema
+
+### Core Tables
 
 ```typescript
-// All tables need: id mod (uuid or serial), created_at, updated_at where appropriate
+// Users - system users with role-based access
+users: {
+  id: uuid (PK),
+  email: text (unique),
+  username: text (unique),
+  pinHash: text,
+  passwordHash: text (optional),
+  role: enum (admin/manager/purchaser/staff),
+  name: text,
+  phone: text,
+  avatarUrl: text,
+  hourlyRate: decimal,
+  twoFactorEnabled: boolean (default: true),
+  isActive: boolean (default: true),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
 
-users: id mod, email, username, pin_hash, role (enum: manager/purchaser/staff), 
-       name, phone, is_active, created_at, updated_at
+// Sessions - Lucia auth sessions
+sessions: {
+  id: text (PK),
+  userId: uuid (FK → users),
+  deviceFingerprint: text,
+  ipAddress: text,
+  userAgent: text,
+  lastActive: timestamp,
+  last2faAt: timestamp,
+  expiresAt: timestamp,
+  createdAt: timestamp
+}
 
-sessions: id mod, user_id (FK), device_fingerprint, ip_address, user_agent,
-          last_active, last_2fa_at, expires_at, created_at
+// Two-factor authentication codes
+twoFactorCodes: {
+  id: uuid (PK),
+  userId: uuid (FK → users),
+  code: text,
+  expiresAt: timestamp,
+  used: boolean (default: false),
+  createdAt: timestamp
+}
 
-two_factor_codes: id mod, user_id (FK), code, expires_at, used, created_at
+// Locations - work locations
+locations: {
+  id: uuid (PK),
+  name: text,
+  address: text,
+  lat: decimal,
+  lng: decimal,
+  isActive: boolean (default: true),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
 
-locations: id mod, name, address, lat, lng, is_active, created_at, updated_at
+// Store hours - operating hours per location
+storeHours: {
+  id: uuid (PK),
+  locationId: uuid (FK → locations),
+  dayOfWeek: integer (0-6),
+  openTime: text (HH:MM),
+  closeTime: text (HH:MM),
+  isClosed: boolean,
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
 
-shifts: id mod, user_id (FK), location_id (FK), start_time, end_time, 
-        notes, created_by (FK), created_at, updated_at
+// Shifts - scheduled work shifts
+shifts: {
+  id: uuid (PK),
+  userId: uuid (FK → users),
+  locationId: uuid (FK → locations),
+  startTime: timestamp,
+  endTime: timestamp,
+  notes: text,
+  createdBy: uuid (FK → users),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
 
-time_entries: id mod, user_id (FK), shift_id (FK nullable), 
-              clock_in, clock_in_lat, clock_in_lng, clock_in_address,
-              clock_out, clock_out_lat, clock_out_lng, clock_out_address,
-              notes, created_at, updated_at, updated_by (FK)
+// Time entries - clock in/out records
+timeEntries: {
+  id: uuid (PK),
+  userId: uuid (FK → users),
+  shiftId: uuid (FK → shifts, nullable),
+  clockIn: timestamp,
+  clockInLat: decimal,
+  clockInLng: decimal,
+  clockInAddress: text,
+  clockOut: timestamp,
+  clockOutLat: decimal,
+  clockOutLng: decimal,
+  clockOutAddress: text,
+  notes: text,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  updatedBy: uuid (FK → users)
+}
+```
 
-task_templates: id mod, name, description, steps (jsonb), photo_required, 
-                notes_required, recurrence_rule (jsonb), trigger_event (enum),
-                trigger_conditions (jsonb), location_id (FK nullable),
-                is_active, created_by (FK), created_at, updated_at
+### Task System Tables
 
-tasks: id mod, template_id (FK nullable), title, description, assigned_to (FK),
-       priority (enum), due_at, status (enum), photo_required, notes_required,
-       source (enum), linked_event_id, created_by (FK), created_at, updated_at
+```typescript
+// Task templates - reusable task definitions
+taskTemplates: {
+  id: uuid (PK),
+  name: text,
+  description: text,
+  steps: jsonb (array of {step, title, description}),
+  photoRequired: boolean,
+  notesRequired: boolean,
+  recurrenceRule: jsonb ({frequency, interval, daysOfWeek, timeOfDay}),
+  triggerEvent: enum (clock_in/clock_out/first_clock_in/last_clock_out),
+  triggerConditions: jsonb ({locationId, timeWindowStart, timeWindowEnd}),
+  locationId: uuid (FK → locations),
+  isActive: boolean,
+  createdBy: uuid (FK → users),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
 
-task_completions: id mod, task_id (FK), completed_by (FK), completed_at,
-                  notes, lat, lng, address, created_at
+// Tasks - individual task instances
+tasks: {
+  id: uuid (PK),
+  templateId: uuid (FK → taskTemplates),
+  title: text,
+  description: text,
+  assignedTo: uuid (FK → users),
+  priority: enum (low/medium/high/urgent),
+  dueAt: timestamp,
+  status: enum (not_started/in_progress/completed/cancelled),
+  photoRequired: boolean,
+  notesRequired: boolean,
+  source: enum (manual/recurring/event_triggered/purchase_approval),
+  linkedEventId: uuid,
+  createdBy: uuid (FK → users),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
 
-task_photos: id mod, task_id (FK nullable), task_completion_id (FK nullable),
-             file_path, original_name, mime_type, size_bytes, 
-             lat, lng, captured_at, created_at
+// Task completions - completion records
+taskCompletions: {
+  id: uuid (PK),
+  taskId: uuid (FK → tasks),
+  completedBy: uuid (FK → users),
+  completedAt: timestamp,
+  notes: text,
+  lat: decimal,
+  lng: decimal,
+  address: text,
+  createdAt: timestamp
+}
 
-purchase_requests: id mod, task_id (FK), requester_id (FK), description,
-                   proposed_price, seller_info, lat, lng, address,
-                   status (enum: pending/approved/denied), decided_by (FK nullable),
-                   decided_at, decision_notes, created_at
+// Task photos - photos attached to tasks
+taskPhotos: {
+  id: uuid (PK),
+  taskId: uuid (FK → tasks),
+  taskCompletionId: uuid (FK → taskCompletions),
+  filePath: text,
+  originalName: text,
+  mimeType: text,
+  sizeBytes: integer,
+  lat: decimal,
+  lng: decimal,
+  capturedAt: timestamp,
+  createdAt: timestamp
+}
+```
 
-atm_withdrawals: id mod, user_id (FK), amount, withdrawn_at, lat, lng, address,
-                 receipt_photo_path, status (enum), notes, created_at, updated_at
+### Financial Tables
 
-withdrawal_allocations: id mod, withdrawal_id (FK), amount, product_description,
-                        purchase_request_id (FK nullable), created_at
+```typescript
+// Purchase requests - approval workflow
+purchaseRequests: {
+  id: uuid (PK),
+  taskId: uuid (FK → tasks),
+  requesterId: uuid (FK → users),
+  description: text,
+  proposedPrice: decimal,
+  sellerInfo: text,
+  lat: decimal,
+  lng: decimal,
+  address: text,
+  status: enum (pending/approved/denied),
+  decidedBy: uuid (FK → users),
+  decidedAt: timestamp,
+  decisionNotes: text,
+  createdAt: timestamp
+}
 
-allocation_photos: id mod, allocation_id (FK), file_path, original_name,
-                   lat, lng, captured_at, created_at
+// ATM withdrawals - cash tracking
+atmWithdrawals: {
+  id: uuid (PK),
+  userId: uuid (FK → users),
+  amount: decimal,
+  withdrawnAt: timestamp,
+  lat: decimal,
+  lng: decimal,
+  address: text,
+  receiptPhotoPath: text,
+  status: enum (unassigned/partially_assigned/fully_spent),
+  notes: text,
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
 
-conversations: id mod, type (enum: direct/broadcast), title, created_by (FK),
-               created_at, updated_at
+// Withdrawal allocations - expense assignment
+withdrawalAllocations: {
+  id: uuid (PK),
+  withdrawalId: uuid (FK → atmWithdrawals),
+  amount: decimal,
+  productDescription: text,
+  purchaseRequestId: uuid (FK → purchaseRequests),
+  createdAt: timestamp
+}
 
-conversation_participants: id mod mod, conversation_id (FK), user_id (FK),
-                           joined_at, last_read_at, is_archived
+// Allocation photos - receipt photos
+allocationPhotos: {
+  id: uuid (PK),
+  allocationId: uuid (FK → withdrawalAllocations),
+  filePath: text,
+  originalName: text,
+  lat: decimal,
+  lng: decimal,
+  capturedAt: timestamp,
+  createdAt: timestamp
+}
+```
 
-messages: id mod, conversation_id (FK), sender_id (FK), content, 
-          is_system_message, created_at
+### Messaging Tables
 
-message_photos: id mod, message_id (FK), file_path, original_name, created_at
+```typescript
+// Conversations - message threads
+conversations: {
+  id: uuid (PK),
+  type: enum (direct/broadcast),
+  title: text,
+  createdBy: uuid (FK → users),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
 
-notifications: id mod, user_id (FK), type (enum), title, body, data (jsonb),
-               is_read, read_at, created_at
+// Conversation participants
+conversationParticipants: {
+  id: uuid (PK),
+  conversationId: uuid (FK → conversations),
+  userId: uuid (FK → users),
+  joinedAt: timestamp,
+  lastReadAt: timestamp,
+  isArchived: boolean
+}
 
-push_subscriptions: id mod, user_id (FK), endpoint, keys (jsonb), 
-                    device_info, created_at, updated_at
+// Messages
+messages: {
+  id: uuid (PK),
+  conversationId: uuid (FK → conversations),
+  senderId: uuid (FK → users),
+  content: text,
+  isSystemMessage: boolean,
+  createdAt: timestamp
+}
 
-audit_logs: id mod, user_id (FK), action, entity_type, entity_id,
-            before_data (jsonb), after_data (jsonb), ip_address, created_at
+// Message photos
+messagePhotos: {
+  id: uuid (PK),
+  messageId: uuid (FK → messages),
+  filePath: text,
+  originalName: text,
+  createdAt: timestamp
+}
+```
+
+### Notification Tables
+
+```typescript
+// Notifications
+notifications: {
+  id: uuid (PK),
+  userId: uuid (FK → users),
+  type: enum (task_assigned/task_due/task_overdue/schedule_change/
+              shift_request/new_message/purchase_decision/shift_reminder),
+  title: text,
+  body: text,
+  data: jsonb,
+  isRead: boolean,
+  readAt: timestamp,
+  createdAt: timestamp
+}
+
+// Push subscriptions - web push
+pushSubscriptions: {
+  id: uuid (PK),
+  userId: uuid (FK → users),
+  endpoint: text (unique),
+  keys: jsonb ({p256dh, auth}),
+  deviceInfo: text,
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
+```
+
+### System Tables
+
+```typescript
+// App settings - key-value configuration
+appSettings: {
+  id: serial (PK),
+  key: text (unique),
+  value: text,
+  updatedAt: timestamp
+}
+
+// Audit logs - complete action history
+auditLogs: {
+  id: uuid (PK),
+  userId: uuid (FK → users),
+  action: text,
+  entityType: text,
+  entityId: text,
+  beforeData: jsonb,
+  afterData: jsonb,
+  ipAddress: text,
+  createdAt: timestamp
+}
+
+// Info posts - staff announcements
+infoPosts: {
+  id: uuid (PK),
+  title: text,
+  content: text,
+  category: text (general/contacts/how-to/policy),
+  isPinned: boolean,
+  isActive: boolean,
+  createdBy: uuid (FK → users),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
+```
+
+### AI System Tables
+
+```typescript
+// AI configuration - per-agent settings
+aiConfig: {
+  id: serial (PK),
+  agent: enum (office_manager/revenue_optimizer/architect),
+  enabled: boolean,
+  provider: enum (anthropic/openai),
+  model: text,
+  tone: enum (helpful_parent/professional/casual/formal),
+  instructions: text,
+  cronSchedule: text,
+  maxTokensContext: integer,
+  temperature: decimal,
+  dryRunMode: boolean,
+  sendToAllAdmins: boolean,
+  specificRecipientIds: jsonb (array),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
+
+// AI actions log - complete audit trail
+aiActions: {
+  id: uuid (PK),
+  agent: enum,
+  runId: uuid,
+  runStartedAt: timestamp,
+  contextSnapshot: jsonb,
+  contextTokens: integer,
+  reasoning: text,
+  toolName: text,
+  toolParams: jsonb,
+  executed: boolean,
+  executionResult: jsonb,
+  blockedReason: text,
+  error: text,
+  targetUserId: uuid (FK → users),
+  createdTaskId: uuid (FK → tasks),
+  createdMessageId: uuid (FK → messages),
+  tokensUsed: integer,
+  costCents: integer,
+  createdAt: timestamp
+}
+
+// AI cooldowns - prevent repeated actions
+aiCooldowns: {
+  id: uuid (PK),
+  agent: enum,
+  userId: uuid (FK → users),
+  actionType: text,
+  relatedEntityId: uuid,
+  relatedEntityType: text,
+  expiresAt: timestamp,
+  reason: text,
+  aiActionId: uuid (FK → aiActions),
+  createdAt: timestamp
+}
+
+// AI memory - long-term observations
+aiMemory: {
+  id: uuid (PK),
+  scope: enum (user/location/global),
+  userId: uuid (FK → users),
+  locationId: uuid (FK → locations),
+  memoryType: text (pattern/preference/observation/performance),
+  content: text,
+  confidence: decimal,
+  observationCount: integer,
+  lastObservedAt: timestamp,
+  isActive: boolean,
+  expiresAt: timestamp,
+  createdByRunId: uuid,
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
+
+// AI policy notes - dynamic behavior rules
+aiPolicyNotes: {
+  id: uuid (PK),
+  scope: enum (global/location/role),
+  locationId: uuid (FK → locations),
+  targetRole: enum,
+  content: text,
+  priority: integer (1-100),
+  isActive: boolean,
+  updatedByRunId: uuid,
+  createdByUserId: uuid (FK → users),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
+```
+
+### Architecture Advisor Tables
+
+```typescript
+// Architecture decisions - ADRs
+architectureDecisions: {
+  id: uuid (PK),
+  title: text,
+  status: enum (proposed/approved/in_progress/implemented/rejected/superseded),
+  category: enum (schema/api/ui/integration/security/architecture),
+  context: text,
+  decision: text,
+  consequences: text,
+  claudeCodePrompt: text,
+  implementationPlan: jsonb ({phases: [{name, tasks, dependencies}]}),
+  relatedFiles: jsonb (array),
+  implementedAt: timestamp,
+  createdByAiRunId: uuid,
+  createdByChatId: uuid,
+  createdByUserId: uuid (FK → users),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
+
+// Architecture chats - conversation sessions
+architectureChats: {
+  id: uuid (PK),
+  title: text,
+  messages: jsonb (array of {role, content, timestamp, toolCalls}),
+  contextModules: jsonb (array),
+  tokensUsed: integer,
+  costCents: integer,
+  decisionsCreated: jsonb (array),
+  promptsGenerated: integer,
+  createdByUserId: uuid (FK → users),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
+
+// Architect configuration - multi-model settings
+architectConfig: {
+  id: serial (PK),
+  // Quick tier (simple questions)
+  quickProvider: enum,
+  quickModel: text,
+  // Standard tier (normal conversation)
+  standardProvider: enum,
+  standardModel: text,
+  // Deliberate tier (complex decisions)
+  deliberatePrimaryProvider: enum,
+  deliberatePrimaryModel: text,
+  deliberateReviewProvider: enum,
+  deliberateReviewModel: text,
+  deliberateSynthProvider: enum,
+  deliberateSynthModel: text,
+  // Triggers
+  triggerOnADRCreation: boolean,
+  triggerOnPromptGeneration: boolean,
+  triggerOnSchemaDesign: boolean,
+  triggerOnExplicitRequest: boolean,
+  // Presentation
+  presentationMode: enum (synthesized/side_by_side/primary_with_notes),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
 ```
 
 ---
 
-## Part 2: Comprehensive Test Protocol
+## API Endpoints
 
-After completing the build, execute this test protocol systematically. Document EVERY failure.
+### Authentication
+- `POST /api/auth/login` - Email + PIN login
+- `POST /api/auth/logout` - End session
+- `POST /api/auth/verify-2fa` - Verify 2FA code
 
-### Test Categories
+### Users
+- `GET /api/users` - List users (manager+)
+- `POST /api/users` - Create user (admin)
+- `GET /api/users/[id]` - Get user details
+- `PUT /api/users/[id]` - Update user
+- `DELETE /api/users/[id]` - Deactivate user (admin)
 
-#### Category A: Database & Schema Tests
-```
-A1. Verify all tables exist with correct columns
-A2. Verify all foreign key constraints work
-A3. Verify all enums have correct values
-A4. Verify indexes exist on frequently queried columns
-A5. Test cascade deletes where appropriate
-A6. Test unique constraints
-A7. Verify default values populate correctly
-A8. Test jsonb columns accept valid JSON
-A9. Verify timestamp columns auto-populate
-A10. Test that invalid data is rejected
-```
+### Locations
+- `GET /api/locations` - List locations
+- `POST /api/locations` - Create location (manager+)
+- `GET /api/locations/[id]` - Get location details
+- `PUT /api/locations/[id]` - Update location
+- `DELETE /api/locations/[id]` - Deactivate location
 
-#### Category B: Authentication Tests
-```
-B1. Login with valid email and PIN succeeds
-B2. Login with invalid email fails gracefully
-B3. Login with wrong PIN fails (with rate limiting)
-B4. Session persists across page reloads
-B5. Session expires after configured time
-B6. 2FA triggers on new device fingerprint
-B7. 2FA code validates correctly
-B8. 2FA code expires after 10 minutes
-B9. 2FA code is single-use
-B10. Logout clears session
-B11. Multiple sessions per user work
-B12. PIN change invalidates other sessions (optional)
-B13. Role is correctly attached to session
-B14. Protected routes redirect unauthenticated users
-B15. Role-restricted routes enforce permissions
-```
+### Shifts
+- `GET /api/shifts` - List shifts (filtered by user/date)
+- `POST /api/shifts` - Create shift (manager+)
+- `GET /api/shifts/[id]` - Get shift details
+- `PUT /api/shifts/[id]` - Update shift
+- `DELETE /api/shifts/[id]` - Delete shift
 
-#### Category C: API Endpoint Tests
-For EACH API endpoint, test:
-```
-C-[endpoint]-1. Returns correct data on valid request
-C-[endpoint]-2. Returns 401 when unauthenticated
-C-[endpoint]-3. Returns 403 when unauthorized role
-C-[endpoint]-4. Returns 400 on invalid input
-C-[endpoint]-5. Returns 404 on non-existent resource
-C-[endpoint]-6. Handles empty/null fields correctly
-C-[endpoint]-7. Pagination works (where applicable)
-C-[endpoint]-8. Filtering works (where applicable)
-C-[endpoint]-9. Sorting works (where applicable)
-C-[endpoint]-10. Response matches expected schema
-```
+### Time Tracking
+- `POST /api/clock/in` - Clock in with GPS
+- `POST /api/clock/out` - Clock out with GPS
 
-**Endpoints to test:**
-- POST /api/auth/login
-- POST /api/auth/logout
-- POST /api/auth/verify-2fa
-- GET/POST/PUT/DELETE /api/users
-- GET/POST/PUT/DELETE /api/locations
-- GET/POST/PUT/DELETE /api/shifts
-- GET/POST/PUT /api/time-entries
-- POST /api/clock/in
-- POST /api/clock/out
-- GET/POST/PUT/DELETE /api/task-templates
-- GET/POST/PUT/DELETE /api/tasks
-- POST /api/tasks/[id]/complete
-- GET/POST /api/purchase-requests
-- POST /api/purchase-requests/[id]/decide
-- GET/POST/PUT /api/atm-withdrawals
-- POST /api/atm-withdrawals/[id]/allocate
-- GET/POST /api/conversations
-- GET/POST /api/conversations/[id]/messages
-- POST /api/uploads
-- GET /api/notifications
-- PUT /api/notifications/[id]/read
-- POST /api/push-subscriptions
-- GET /api/reports/time
-- GET /api/reports/expenses
+### Tasks
+- `GET /api/tasks` - List tasks
+- `POST /api/tasks` - Create task
+- `GET /api/tasks/[id]` - Get task details
+- `PUT /api/tasks/[id]` - Update task
+- `DELETE /api/tasks/[id]` - Delete task
+- `POST /api/tasks/[id]/complete` - Complete task with photo/notes
 
-#### Category D: Route/Page Tests
-For EACH route, test:
-```
-D-[route]-1. Page loads without errors
-D-[route]-2. Correct layout renders (mobile vs desktop)
-D-[route]-3. Required data loads
-D-[route]-4. Loading states display
-D-[route]-5. Error states display
-D-[route]-6. Empty states display
-D-[route]-7. Navigation works
-D-[route]-8. Role restrictions enforced
-D-[route]-9. Forms submit correctly
-D-[route]-10. Form validation works
-```
+### Purchase Requests
+- `GET /api/purchase-requests` - List requests
+- `POST /api/purchase-requests` - Create request
+- `POST /api/purchase-requests/[id]/decide` - Approve/deny (manager+)
 
-**Routes to test:**
-- /login
-- /verify (2FA)
-- / (home/dashboard)
-- /schedule
-- /schedule/manage (manager)
-- /tasks
-- /tasks/[id]
-- /tasks/new (manager)
-- /messages
-- /messages/[id]
-- /expenses
-- /expenses/withdrawals
-- /expenses/withdrawals/new
-- /expenses/withdrawals/[id]
-- /purchase-requests
-- /purchase-requests/new
-- /purchase-requests/[id]
-- /settings
-- /settings/notifications
-- /admin/users (manager)
-- /admin/locations (manager)
-- /admin/reports (manager)
+### ATM Withdrawals
+- `GET /api/atm-withdrawals` - List withdrawals
+- `POST /api/atm-withdrawals` - Log withdrawal
+- `POST /api/atm-withdrawals/[id]/allocate` - Allocate funds
 
-#### Category E: Workflow Integration Tests
-```
-E1. Complete employee shift lifecycle:
-    - View schedule → Clock in → Complete tasks → Clock out
-    
-E2. Complete purchase request lifecycle:
-    - Create request with photos → Manager receives notification →
-    - Manager approves → Employee notified → Link to withdrawal
-    
-E3. Complete ATM reconciliation lifecycle:
-    - Log withdrawal → Make purchases → Allocate funds →
-    - Status updates to fully spent
-    
-E4. Event-triggered task lifecycle:
-    - Configure template → Employee clocks in →
-    - Task auto-created → Employee completes with photo
-    
-E5. Messaging lifecycle:
-    - Start conversation → Send messages → Receive in real-time →
-    - Send photos → Mark as read
-    
-E6. Manager broadcast lifecycle:
-    - Create broadcast → All employees receive →
-    - Notifications sent → Employees respond
-    
-E7. Time correction lifecycle:
-    - Employee clocks in wrong → Manager corrects →
-    - Audit log created → Employee sees correction
-    
-E8. Recurring task lifecycle:
-    - Create template with recurrence → Tasks auto-generate →
-    - Complete task → Next instance generates
-    
-E9. Offline/sync lifecycle:
-    - Go offline → Perform actions → Queue builds →
-    - Come online → Queue syncs → Data consistent
-    
-E10. Multi-device session lifecycle:
-     - Login on device A → Login on device B →
-     - Both sessions work → 2FA triggers appropriately
-```
+### Conversations
+- `GET /api/conversations` - List conversations
+- `POST /api/conversations` - Start conversation
+- `GET /api/conversations/[id]/messages` - Get messages
+- `POST /api/conversations/[id]/messages` - Send message
 
-#### Category F: UI/UX Tests
-```
-F1. Mobile bottom navigation functions correctly
-F2. Desktop sidebar navigation functions correctly
-F3. Responsive breakpoints work (320px, 768px, 1024px, 1440px)
-F4. Touch targets are minimum 44px on mobile
-F5. Forms are usable on mobile keyboards
-F6. Camera capture works on mobile
-F7. GPS permission request is user-friendly
-F8. Loading spinners appear during async operations
-F9. Toast/alert notifications display correctly
-F10. Modal dialogs are accessible and closeable
-F11. Drag-drop works on desktop schedule
-F12. Swipe gestures work on mobile (if implemented)
-F13. Dark mode works (if implemented)
-F14. Font sizes are readable (minimum 16px body)
-F15. Color contrast meets WCAG AA
-F16. Focus states are visible for keyboard navigation
-F17. Error messages are clear and actionable
-F18. Success confirmations appear after actions
-F19. Destructive actions require confirmation
-F20. Back navigation works correctly
-```
+### Notifications
+- `GET /api/notifications` - List notifications
+- `PUT /api/notifications/[id]/read` - Mark as read
 
-#### Category G: Performance Tests
-```
-G1. Initial page load < 3 seconds
-G2. API responses < 500ms
-G3. Image uploads handle files up to 10MB
-G4. Lists handle 100+ items without lag
-G5. Real-time messages arrive < 1 second
-G6. Service worker caches static assets
-G7. No memory leaks on long sessions
-G8. Database queries use indexes (no full scans)
-```
+### Reports
+- `GET /api/reports/time` - Time report (CSV)
+- `GET /api/reports/expenses` - Expense report (CSV)
 
-#### Category H: Security Tests
-```
-H1. PIN is properly hashed (argon2)
-H2. Sessions use httpOnly cookies
-H3. CSRF protection is active
-H4. SQL injection is prevented (parameterized queries)
-H5. XSS is prevented (output encoding)
-H6. File uploads validate mime types
-H7. File uploads have size limits
-H8. API rate limiting is active
-H9. Sensitive data not logged
-H10. HTTPS enforced in production config
-```
+### File Uploads
+- `POST /api/uploads` - Upload file
+- `POST /api/avatar` - Upload avatar
 
-#### Category I: PWA Tests
+### Backup
+- `POST /api/backup` - Create system backup (admin)
+
+### AI System
+- `POST /api/ai/cron` - Trigger AI agent run
+
+### Architecture Advisor
+- `GET /api/architect/chats` - List chat sessions
+- `POST /api/architect/chats` - Create new session
+- `GET /api/architect/chats/[id]` - Get chat session
+- `DELETE /api/architect/chats/[id]` - Delete session
+- `POST /api/architect/chats/[id]/messages` - Send message to Ada
+- `GET /api/architect/decisions` - List ADRs
+- `POST /api/architect/decisions` - Create ADR
+- `GET /api/architect/decisions/[id]` - Get ADR details
+- `PUT /api/architect/decisions/[id]` - Update ADR
+
+---
+
+## UI Routes
+
+### Public Routes
+- `/` - Landing/redirect
+- `/login` - Email + PIN login
+- `/verify` - 2FA verification
+- `/forgot-pin` - PIN reset
+
+### Employee Routes
+- `/dashboard` - Home screen with clock status, next shift, tasks
+- `/schedule` - Personal schedule view
+- `/tasks` - Task list
+- `/tasks/[id]` - Task details/completion
+- `/tasks/new` - Create task (if permitted)
+- `/messages` - Conversation list
+- `/messages/[id]` - Chat view
+- `/messages/new` - Start conversation
+- `/expenses` - Expense overview
+- `/expenses/withdrawals/new` - Log withdrawal
+- `/expenses/withdrawals/[id]` - Withdrawal details
+- `/purchase-requests` - Request list
+- `/notifications` - Notification center
+- `/settings` - User settings
+- `/settings/notifications` - Notification preferences
+
+### Manager Routes
+- `/schedule/manage` - Staff scheduling calendar
+
+### Admin Routes
+- `/admin` - Admin dashboard
+- `/admin/users` - User management
+- `/admin/users/new` - Create user
+- `/admin/users/[id]` - Edit user
+- `/admin/locations` - Location management
+- `/admin/locations/new` - Create location
+- `/admin/locations/[id]` - Edit location
+- `/admin/schedule` - Master schedule view
+- `/admin/reports` - Reporting dashboard
+- `/admin/pay-periods` - Pay period management
+- `/admin/export-hours` - Export time data
+- `/admin/messages` - Message moderation
+- `/admin/communications` - Broadcast messages
+- `/admin/info` - Info posts management
+- `/admin/settings` - System settings
+- `/admin/audit-logs` - Audit log viewer
+- `/admin/modules` - Feature toggles
+- `/admin/ai` - AI Mentats configuration
+- `/admin/ai/prompts` - View AI system prompts
+- `/admin/architect` - Ada chat interface
+- `/admin/architect/decisions` - ADR list
+- `/admin/architect/decisions/[id]` - ADR details
+
+---
+
+## Security Features
+
+- **PIN hashing** with Argon2
+- **Session cookies** (httpOnly, secure)
+- **CSRF protection** via SvelteKit
+- **SQL injection prevention** via Drizzle ORM parameterized queries
+- **XSS prevention** via Svelte's default output encoding
+- **File upload validation** (mime type, size limits)
+- **Role-based route guards**
+- **2FA on new device detection**
+- **Audit logging** for sensitive actions
+
+---
+
+## PWA Features
+
+- **Installable** to home screen
+- **Offline support** via service worker
+- **Push notifications** for important events
+- **Background sync** for queued actions
+- **Mobile-optimized** UI with bottom navigation
+
+---
+
+## File Structure
+
 ```
-I1. App installs to home screen
-I2. App launches in standalone mode
-I3. Offline fallback page displays
-I4. Push notifications request permission
-I5. Push notifications receive and display
-I6. Service worker updates correctly
-I7. App icon displays correctly
-I8. Splash screen displays (where supported)
+src/
+├── lib/
+│   ├── ai/                    # AI Mentats system
+│   │   ├── architect/         # Ada Architecture Advisor
+│   │   │   ├── chat/          # Chat session management
+│   │   │   ├── context/       # Context assembly
+│   │   │   ├── tools/         # Ada's tools
+│   │   │   ├── config.ts      # Configuration
+│   │   │   ├── multi-model.ts # Multi-model consultation
+│   │   │   ├── triggers.ts    # Tier detection
+│   │   │   └── types.ts       # Type definitions
+│   │   ├── config/            # AI configuration
+│   │   ├── context/           # Context modules
+│   │   ├── orchestrators/     # Agent orchestrators
+│   │   ├── prompts/           # System prompts
+│   │   ├── providers/         # LLM providers
+│   │   └── tools/             # AI tools
+│   ├── components/            # Svelte components
+│   ├── server/
+│   │   ├── auth/              # Lucia auth setup
+│   │   └── db/                # Drizzle schema & connection
+│   └── utils/                 # Shared utilities
+├── routes/
+│   ├── (app)/                 # Authenticated routes
+│   │   ├── admin/             # Admin pages
+│   │   ├── dashboard/         # Home
+│   │   ├── expenses/          # Expense tracking
+│   │   ├── messages/          # Messaging
+│   │   ├── notifications/     # Notifications
+│   │   ├── purchase-requests/ # Purchase approval
+│   │   ├── schedule/          # Scheduling
+│   │   ├── settings/          # User settings
+│   │   └── tasks/             # Task management
+│   ├── api/                   # API endpoints
+│   ├── login/                 # Login page
+│   ├── verify/                # 2FA page
+│   └── forgot-pin/            # PIN reset
+├── app.html                   # HTML template
+├── hooks.server.ts            # Server hooks
+└── service-worker.ts          # PWA service worker
 ```
 
 ---
 
-## Part 3: Issue Tracking Format
+## Environment Variables
 
-Document all failures in this exact format:
-
-```markdown
-## Test Failure Report - Iteration [1/2/3]
-
-### Issue [NUMBER]
-- **Test ID:** [e.g., B7, C-users-3, E2]
-- **Category:** [Database/Auth/API/Route/Workflow/UX/Performance/Security/PWA]
-- **Severity:** [Critical/High/Medium/Low]
-- **Description:** [What failed]
-- **Expected:** [What should happen]
-- **Actual:** [What actually happened]
-- **File(s):** [Affected file paths]
-- **Reproduction:** [Steps to reproduce]
-- **Fix Required:** [Brief description of fix needed]
-```
-
-Severity Definitions:
-- **Critical:** App crashes, data loss, security vulnerability, complete feature broken
-- **High:** Major feature partially broken, significant UX issue
-- **Medium:** Minor feature issue, cosmetic problem with workaround
-- **Low:** Enhancement, minor polish, edge case
-
----
-
-## Part 4: Repair Protocol
-
-For each iteration, after documenting all issues:
-
-1. **Sort by severity** (Critical → High → Medium → Low)
-
-2. **Fix in order:**
-   - All Critical issues first
-   - Then all High issues
-   - Then Medium issues
-   - Low issues if time permits
-
-3. **For each fix:**
-   - State the Issue NUMBER you're fixing
-   - Show the code change
-   - Explain why this fixes the issue
-   - Re-run the specific test that failed
-
-4. **Commit message format:**
-   ```
-   fix(category): brief description [#ISSUE_NUMBER]
-   ```
-
----
-
-## Part 5: Iteration Protocol
-
-### Iteration 1: Foundation Verification
-- Run ALL tests (A through I)
-- Document ALL failures
-- Fix ALL Critical and High issues
-- Fix as many Medium/Low as possible
-- Generate summary: "Iteration 1 Complete: X issues found, Y fixed, Z remaining"
-
-### Iteration 2: Regression + Remaining
-- Re-run ALL tests (verify fixes didn't break other things)
-- Focus on previously unfixed Medium/Low issues
-- Look for issues missed in Iteration 1
-- Generate summary: "Iteration 2 Complete: X new issues, Y regressions, Z total fixed"
-
-### Iteration 3: Polish + Edge Cases
-- Run ALL tests again
-- Focus on edge cases
-- Test with realistic data volumes
-- Test error recovery paths
-- Generate summary: "Iteration 3 Complete: System ready for deployment"
-
-### Final Deliverable
-
-After 3 iterations, provide:
-
-```markdown
-## Final System Status Report
-
-### Build Summary
-- Total files created: [N]
-- Total lines of code: [N]
-- Database tables: [N]
-- API endpoints: [N]
-- UI routes: [N]
-
-### Test Results
-- Total tests executed: [N]
-- Iteration 1: [N] failures found, [N] fixed
-- Iteration 2: [N] failures found, [N] fixed  
-- Iteration 3: [N] failures found, [N] fixed
-- Final pass rate: [N]%
-
-### Known Issues (Unfixed)
-[List any remaining issues with justification for deferral]
-
-### Recommended Next Steps
-[Any follow-up work needed]
-
-### Deployment Checklist
-- [ ] Environment variables documented
-- [ ] Database migration scripts ready
-- [ ] Docker Compose production config
-- [ ] SSL/TLS configuration notes
-- [ ] Backup strategy documented
+```env
+DATABASE_URL=postgresql://user:pass@localhost:5432/teamtime
+GOOGLE_MAPS_API_KEY=your_key
+VAPID_PUBLIC_KEY=your_key
+VAPID_PRIVATE_KEY=your_key
+# AI keys stored in local file, not env
 ```
 
 ---
 
-## Execution Command
+## Deployment
 
-Begin now. Start with Phase 1 of the build. After completing all build phases, execute the full test protocol, then iterate through repairs 3 times. 
+1. Build: `npm run build`
+2. Database: Run Drizzle migrations
+3. Start: `node build` or use PM2
+4. Reverse proxy: nginx with SSL
 
-Do not skip steps. Do not summarize code—write complete, working files. Test thoroughly. Fix systematically.
+---
 
-**START BUILD: Phase 1 - Foundation**
+## Version History
+
+- **v1.0** - Core workforce management features
+- **v1.1** - AI Mentats system (Office Manager, Revenue Optimizer)
+- **v1.2** - Ada Architecture Advisor with multi-model consultation
+- **v1.3** - System prompts viewer, enhanced markdown rendering
+- **v1.4** - Ada tool result display improvements:
+  - Full tool result flow (execution → API → frontend display)
+  - Rich display for `create_claude_code_prompt` with View Prompt modal
+  - Rich display for `create_architecture_decision` with View Decision link
+  - Rich display for `analyze_change_impact` with risk levels, affected files, recommendations
+  - Generic JSON fallback for unknown tools
+
+---
+
+*Last Updated: December 2024*

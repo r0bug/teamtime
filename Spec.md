@@ -130,31 +130,38 @@ Closes automatically when navigating or tapping backdrop
 
 2.5 PWA Install Prompt
 
-On mobile devices, users are prompted to install the app:
+On mobile devices, users are prompted to install the app via a custom banner component (`InstallPrompt.svelte`):
 
 Android/Chrome
 
-Automatic browser install prompt intercepted
-
-Custom banner shows "Install App" button
-
-One-tap installation to home screen
+- Intercepts the browser's `beforeinstallprompt` event
+- Custom banner displays "Install TeamTime" with app icon
+- "Install App" button triggers native install dialog
+- User can accept or dismiss the native prompt
+- After acceptance, custom banner automatically hides
 
 iOS Safari
 
-Instructions displayed: "Tap Share → Add to Home Screen"
-
-Visual guide with share icon
+- Detects iOS via `navigator.userAgent` pattern matching
+- Displays manual instructions: "Tap [share icon] then 'Add to Home Screen'"
+- Visual share icon included inline for clarity
+- No native install API available on iOS
 
 Prompt Behavior
 
-Only shown on mobile devices
+- **Mobile-only**: Hidden on desktop via `lg:hidden` CSS class and user agent detection
+- **Standalone detection**: Uses `window.matchMedia('(display-mode: standalone)')` and `navigator.standalone` (iOS) to detect if already installed
+- **Dismissible**: X button stores dismissal in localStorage (`pwa-install-dismissed` key set to `'true'`)
+- **Persistent preference**: Once dismissed, prompt never shows again on that browser/device
+- **Positioning**: Fixed position `bottom-20` (5rem from bottom) to appear above the bottom navigation bar
+- **Z-index**: Uses `z-50` to layer above page content but below modal dialogs
 
-Not shown if already installed (standalone mode)
+Implementation Details
 
-Dismissible with "don't show again" persistence via localStorage
-
-Appears above bottom navigation bar
+- Component: `src/lib/components/InstallPrompt.svelte`
+- localStorage key: `pwa-install-dismissed`
+- The component is self-contained and manages its own visibility state
+- Imported and rendered in the root app layout (`src/routes/(app)/+layout.svelte`)
 
 2.6 Offline Tolerance
 
@@ -945,3 +952,85 @@ Task completion heatmaps
 Purchase success/ROI analytics
 
 This version explicitly bakes in: central webserver architecture, browser-based client, mobile-first but PC-friendly UI, and keeps all the existing task/scheduling/expense logic intact.
+
+20. Item Pricing & eBay Routing System
+
+A specialized workflow for documenting item pricing decisions and routing items to appropriate sales channels.
+
+20.1 Pricing Decisions
+
+Each pricing decision records:
+
+- Item description (required)
+- Price (required, must be positive)
+- Price justification (required, min 10 characters) — explains why this price was chosen
+- Destination: Store or eBay
+- eBay reason (required when destination is eBay) — explains why item should be listed online
+- One or more photos of the item (required)
+- GPS location (optional) — where the pricing decision was made
+- Location reference (optional) — links to a defined location
+- Timestamp of when priced
+
+Pricing decisions are immutable for audit purposes — once created, they cannot be edited or deleted.
+
+20.2 eBay Routing Workflow
+
+When an item is marked for eBay:
+
+1. System automatically creates an eBay listing task
+2. Task includes item description, price, justification, and photos
+3. Task appears in the eBay Tasks queue
+4. Users with "Can List on eBay" permission can claim and complete these tasks
+5. Task status tracks: Not Started → In Progress → Completed
+
+20.3 User Permissions
+
+Special permission flag on users: "Can List on eBay"
+
+- When enabled, user can view and claim eBay listing tasks
+- Managers and Admins always have access to eBay tasks
+- Permission is managed in the user admin panel
+
+20.4 Navigation & Access
+
+Staff access:
+
+- `/pricing` — View pricing history (own decisions, or all if manager)
+- `/pricing/new` — Create new pricing decision with photos
+- `/pricing/[id]` — View pricing decision details
+
+eBay-capable users:
+
+- `/ebay/tasks` — View and claim eBay listing tasks
+- Filter options: Show claimed tasks, Show completed tasks
+
+Admin access:
+
+- `/admin/pricing` — Pricing analytics dashboard
+- Stats by destination (Store vs eBay)
+- Stats by user (items priced, total value)
+- Recent pricing decisions
+- Date range filtering
+
+20.5 Data Model
+
+pricing_decisions table:
+
+- id, user_id, item_description, price, price_justification
+- destination (enum: 'store', 'ebay')
+- ebay_reason (nullable, required for eBay)
+- ebay_task_id (links to auto-created task)
+- location_id, lat, lng, address
+- priced_at, created_at
+
+pricing_decision_photos table:
+
+- id, pricing_decision_id, file_path
+- original_name, mime_type, size_bytes
+- lat, lng, captured_at, created_at
+
+Database constraints ensure:
+
+- Price must be positive
+- Price justification minimum 10 characters
+- eBay reason required when destination is 'ebay'

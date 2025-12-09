@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { goto, invalidateAll } from '$app/navigation';
 	import type { PageData, ActionData } from './$types';
+	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 
 	export let data: PageData;
 	export let form: ActionData;
@@ -20,10 +21,30 @@
 		tokensUsed: number;
 	}
 
+	// Tool call result types
+	interface ToolCallResult {
+		success: boolean;
+		error?: string;
+		// create_claude_code_prompt results
+		prompt?: string;
+		title?: string;
+		decisionId?: string;
+		// analyze_change_impact results
+		affectedFiles?: { file: string; reason: string; severity: 'high' | 'medium' | 'low' }[];
+		riskAssessment?: { level: 'high' | 'medium' | 'low'; factors: string[] };
+		recommendations?: string[];
+	}
+
+	interface ToolCall {
+		name: string;
+		params?: Record<string, unknown>;
+		result?: ToolCallResult;
+	}
+
 	interface ChatMessageWithMeta {
 		role: 'user' | 'assistant';
 		content: string;
-		toolCalls?: unknown[];
+		toolCalls?: ToolCall[];
 		consultation?: ConsultationMetadata;
 	}
 
@@ -37,6 +58,59 @@
 
 	// Tab state
 	let activeTab: 'chat' | 'history' | 'decisions' | 'config' = 'chat';
+
+	// Prompt modal state
+	let showPromptModal = false;
+	let currentPrompt = '';
+	let currentPromptTitle = '';
+	let copiedToClipboard = false;
+
+	// Show prompt in modal
+	function showPrompt(prompt: string, title: string) {
+		currentPrompt = prompt;
+		currentPromptTitle = title || 'Generated Claude Code Prompt';
+		copiedToClipboard = false;
+		showPromptModal = true;
+	}
+
+	// Copy prompt to clipboard
+	async function copyPromptToClipboard() {
+		await navigator.clipboard.writeText(currentPrompt);
+		copiedToClipboard = true;
+		setTimeout(() => copiedToClipboard = false, 2000);
+	}
+
+	// Check for generated prompts in tool calls
+	function checkForGeneratedPrompts(toolCalls: ToolCall[]) {
+		if (!toolCalls || !Array.isArray(toolCalls)) return;
+		for (const tc of toolCalls) {
+			if (tc.name === 'create_claude_code_prompt' && tc.result?.prompt) {
+				const title = (tc.params?.title as string) || tc.result.title || '';
+				showPrompt(tc.result.prompt, title);
+				break; // Only show first prompt automatically
+			}
+		}
+	}
+
+	// Get severity color class
+	function getSeverityClass(severity: string): string {
+		switch (severity) {
+			case 'high': return 'text-red-600 bg-red-50';
+			case 'medium': return 'text-yellow-600 bg-yellow-50';
+			case 'low': return 'text-green-600 bg-green-50';
+			default: return 'text-gray-600 bg-gray-50';
+		}
+	}
+
+	// Get risk level color class
+	function getRiskLevelClass(level: string): string {
+		switch (level) {
+			case 'high': return 'text-red-700 bg-red-100 border-red-300';
+			case 'medium': return 'text-yellow-700 bg-yellow-100 border-yellow-300';
+			case 'low': return 'text-green-700 bg-green-100 border-green-300';
+			default: return 'text-gray-700 bg-gray-100 border-gray-300';
+		}
+	}
 
 	// Start a new chat
 	async function startNewChat() {
@@ -98,6 +172,10 @@
 						consultation: result.consultation
 					}
 				];
+				// Auto-show generated prompts
+				if (result.toolCalls) {
+					checkForGeneratedPrompts(result.toolCalls);
+				}
 			} else {
 				currentMessages = [
 					...currentMessages,
@@ -143,9 +221,9 @@
 	// Consultation tier badge styling
 	function getTierClass(tier: string): string {
 		switch (tier) {
-			case 'quick': return 'bg-green-100 text-green-800 border-green-200';
-			case 'standard': return 'bg-blue-100 text-blue-800 border-blue-200';
-			case 'deliberate': return 'bg-purple-100 text-purple-800 border-purple-200';
+			case 'quick': return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+			case 'standard': return 'bg-blue-100 text-blue-800 border-blue-300';
+			case 'deliberate': return 'bg-violet-100 text-violet-800 border-violet-300';
 			default: return 'bg-gray-100 text-gray-800 border-gray-200';
 		}
 	}
@@ -153,9 +231,18 @@
 	function getTierIcon(tier: string): string {
 		switch (tier) {
 			case 'quick': return '⚡';
-			case 'standard': return '💭';
-			case 'deliberate': return '🤔';
+			case 'standard': return '🎯';
+			case 'deliberate': return '🧠';
 			default: return '🔄';
+		}
+	}
+
+	function getTierDescription(tier: string): string {
+		switch (tier) {
+			case 'quick': return 'Fast response using efficient model';
+			case 'standard': return 'Balanced response with full capabilities';
+			case 'deliberate': return 'Multi-model deliberation for complex decisions';
+			default: return 'Unknown tier';
 		}
 	}
 
@@ -296,51 +383,210 @@
 									<div class="{message.role === 'user' ? 'bg-primary-100 text-primary-900' : 'bg-gray-100 text-gray-900'} rounded-lg px-4 py-2 max-w-[80%]">
 										<!-- Consultation tier badge for assistant messages -->
 										{#if message.role === 'assistant' && message.consultation}
-											<div class="flex items-center gap-2 mb-2 pb-2 border-b border-gray-200">
+											<div class="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200/70">
 												<button
 													on:click={() => toggleConsultationDetails(i)}
-													class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border {getTierClass(message.consultation.tier)} cursor-pointer hover:opacity-80 transition-opacity"
-													title="Click for details"
+													class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border shadow-sm {getTierClass(message.consultation.tier)} cursor-pointer hover:shadow-md transition-all"
+													title="{getTierDescription(message.consultation.tier)} - Click for details"
 												>
-													<span>{getTierIcon(message.consultation.tier)}</span>
+													<span class="text-sm">{getTierIcon(message.consultation.tier)}</span>
 													<span class="capitalize">{message.consultation.tier}</span>
 												</button>
-												<span class="text-xs text-gray-400">
-													{getModelShortName(message.consultation.models.primary.model)}
+												<div class="flex items-center gap-1.5 text-xs text-gray-500">
+													<span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 rounded">
+														{getModelShortName(message.consultation.models.primary.model)}
+													</span>
 													{#if message.consultation.tier === 'deliberate' && message.consultation.models.review}
-														+ {getModelShortName(message.consultation.models.review.model)}
+														<span class="text-gray-300">+</span>
+														<span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 rounded">
+															{getModelShortName(message.consultation.models.review.model)}
+														</span>
 													{/if}
-												</span>
+												</div>
 												{#if message.consultation.costCents > 0}
-													<span class="text-xs text-gray-400">
+													<span class="text-xs text-gray-400 ml-auto">
 														${(message.consultation.costCents / 100).toFixed(3)}
 													</span>
 												{/if}
 											</div>
 											<!-- Expandable consultation details -->
 											{#if expandedConsultation === i}
-												<div class="mb-2 p-2 bg-white/50 rounded text-xs space-y-1">
-													<div><strong>Reason:</strong> {message.consultation.reason}</div>
-													<div><strong>Triggers:</strong> {message.consultation.triggers.join(', ')}</div>
-													<div><strong>Primary:</strong> {message.consultation.models.primary.provider} / {message.consultation.models.primary.model}</div>
-													{#if message.consultation.models.review}
-														<div><strong>Review:</strong> {message.consultation.models.review.provider} / {message.consultation.models.review.model}</div>
-													{/if}
-													{#if message.consultation.models.synthesizer}
-														<div><strong>Synthesizer:</strong> {message.consultation.models.synthesizer.provider} / {message.consultation.models.synthesizer.model}</div>
-													{/if}
-													<div><strong>Tokens:</strong> {message.consultation.tokensUsed.toLocaleString()}</div>
+												<div class="mb-3 p-3 bg-white/70 rounded-lg border border-gray-200 text-xs space-y-2 shadow-inner">
+													<div class="text-gray-600">
+														<span class="font-semibold text-gray-700">Why this tier:</span> {message.consultation.reason}
+													</div>
+													<div class="flex flex-wrap gap-1">
+														<span class="font-semibold text-gray-700">Triggers:</span>
+														{#each message.consultation.triggers as trigger}
+															<span class="inline-flex px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">{trigger}</span>
+														{/each}
+													</div>
+													<div class="grid grid-cols-2 gap-2 pt-2 border-t border-gray-200">
+														<div>
+															<span class="font-semibold text-gray-700">Primary Model:</span>
+															<div class="text-gray-600">{message.consultation.models.primary.provider} / {message.consultation.models.primary.model}</div>
+														</div>
+														{#if message.consultation.models.review}
+															<div>
+																<span class="font-semibold text-gray-700">Review Model:</span>
+																<div class="text-gray-600">{message.consultation.models.review.provider} / {message.consultation.models.review.model}</div>
+															</div>
+														{/if}
+														{#if message.consultation.models.synthesizer}
+															<div>
+																<span class="font-semibold text-gray-700">Synthesizer:</span>
+																<div class="text-gray-600">{message.consultation.models.synthesizer.provider} / {message.consultation.models.synthesizer.model}</div>
+															</div>
+														{/if}
+													</div>
+													<div class="flex justify-between pt-2 border-t border-gray-200">
+														<span><span class="font-semibold text-gray-700">Tokens:</span> {message.consultation.tokensUsed.toLocaleString()}</span>
+														<span><span class="font-semibold text-gray-700">Cost:</span> ${(message.consultation.costCents / 100).toFixed(4)}</span>
+													</div>
 												</div>
 											{/if}
 										{/if}
-										<div class="whitespace-pre-wrap text-sm">{message.content}</div>
+										<!-- Message content with markdown rendering for assistant -->
+										{#if message.role === 'assistant'}
+											<MarkdownRenderer content={message.content} class_name="text-sm" />
+										{:else}
+											<div class="whitespace-pre-wrap text-sm">{message.content}</div>
+										{/if}
 										{#if message.toolCalls?.length}
-											<div class="mt-2 pt-2 border-t border-gray-200">
-												<div class="text-xs text-gray-500 mb-1">Tools Used:</div>
+											<div class="mt-3 pt-3 border-t border-gray-200 space-y-3">
+												<div class="text-xs font-medium text-gray-600">Tools Used:</div>
 												{#each message.toolCalls as tc}
-													<span class="inline-flex items-center px-2 py-1 rounded text-xs bg-white border mr-1 mb-1">
-														{tc.name}
-													</span>
+													<div class="rounded-lg border bg-white/80 overflow-hidden">
+														<!-- Tool header -->
+														<div class="px-3 py-2 bg-gray-50 border-b flex items-center justify-between">
+															<span class="text-xs font-medium text-gray-700 flex items-center gap-1">
+																{#if tc.name === 'create_claude_code_prompt'}
+																	<span>📄</span> Create Claude Code Prompt
+																{:else if tc.name === 'create_architecture_decision'}
+																	<span>📋</span> Create Architecture Decision
+																{:else if tc.name === 'analyze_change_impact'}
+																	<span>🔍</span> Analyze Change Impact
+																{:else}
+																	<span>🔧</span> {tc.name}
+																{/if}
+															</span>
+															{#if tc.result?.success === false}
+																<span class="text-xs text-red-600">Failed</span>
+															{:else if tc.result?.success === true}
+																<span class="text-xs text-green-600">Success</span>
+															{/if}
+														</div>
+
+														<!-- Tool result content -->
+														<div class="p-3">
+															{#if tc.result?.success === false}
+																<div class="text-sm text-red-600">
+																	Error: {tc.result.error || 'Unknown error'}
+																</div>
+															{:else if tc.name === 'create_claude_code_prompt' && tc.result?.prompt}
+																<div class="flex items-center gap-2">
+																	<button
+																		class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-100 text-primary-700 border border-primary-200 hover:bg-primary-200 transition-colors cursor-pointer"
+																		on:click={() => showPrompt(tc.result?.prompt || '', String(tc.params?.title || tc.result?.title || ''))}
+																	>
+																		<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+																			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+																			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+																		</svg>
+																		View Generated Prompt
+																	</button>
+																	<span class="text-xs text-gray-500">
+																		{tc.result.prompt.length.toLocaleString()} characters
+																	</span>
+																	{#if tc.result.decisionId}
+																		<a
+																			href="/admin/architect/decisions/{tc.result.decisionId}"
+																			class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+																		>
+																			View ADR
+																		</a>
+																	{/if}
+																</div>
+															{:else if tc.name === 'create_architecture_decision' && tc.result?.decisionId}
+																<div class="flex items-center gap-2">
+																	<a
+																		href="/admin/architect/decisions/{tc.result.decisionId}"
+																		class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200 transition-colors"
+																	>
+																		<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+																			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+																		</svg>
+																		View Decision Record
+																	</a>
+																	{#if tc.result.title}
+																		<span class="text-xs text-gray-600">"{tc.result.title}"</span>
+																	{/if}
+																</div>
+															{:else if tc.name === 'analyze_change_impact' && tc.result}
+																<!-- Impact Analysis Results -->
+																<div class="space-y-3">
+																	<!-- Risk Level -->
+																	{#if tc.result.riskAssessment}
+																		<div class="flex items-center gap-2">
+																			<span class="text-xs font-medium text-gray-600">Risk Level:</span>
+																			<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border {getRiskLevelClass(tc.result.riskAssessment.level)}">
+																				{tc.result.riskAssessment.level.toUpperCase()}
+																			</span>
+																		</div>
+																		{#if tc.result.riskAssessment.factors?.length}
+																			<div class="text-xs text-gray-600">
+																				<span class="font-medium">Risk factors:</span>
+																				<ul class="list-disc list-inside mt-1 text-gray-500">
+																					{#each tc.result.riskAssessment.factors as factor}
+																						<li>{factor}</li>
+																					{/each}
+																				</ul>
+																			</div>
+																		{/if}
+																	{/if}
+
+																	<!-- Affected Files -->
+																	{#if tc.result.affectedFiles?.length}
+																		<div>
+																			<span class="text-xs font-medium text-gray-600">Affected Files ({tc.result.affectedFiles.length}):</span>
+																			<div class="mt-1 max-h-32 overflow-y-auto space-y-1">
+																				{#each tc.result.affectedFiles as file}
+																					<div class="flex items-start gap-2 text-xs">
+																						<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium {getSeverityClass(file.severity)}">
+																							{file.severity}
+																						</span>
+																						<code class="text-gray-700 font-mono text-xs">{file.file}</code>
+																						<span class="text-gray-400 truncate">- {file.reason}</span>
+																					</div>
+																				{/each}
+																			</div>
+																		</div>
+																	{/if}
+
+																	<!-- Recommendations -->
+																	{#if tc.result.recommendations?.length}
+																		<div>
+																			<span class="text-xs font-medium text-gray-600">Recommendations:</span>
+																			<ol class="list-decimal list-inside mt-1 text-xs text-gray-600 space-y-0.5">
+																				{#each tc.result.recommendations as rec}
+																					<li>{rec}</li>
+																				{/each}
+																			</ol>
+																		</div>
+																	{/if}
+																</div>
+															{:else}
+																<!-- Generic fallback for other tools -->
+																<div class="text-xs text-gray-500">
+																	{#if tc.result}
+																		<pre class="bg-gray-50 rounded p-2 overflow-auto max-h-24 text-xs">{JSON.stringify(tc.result, null, 2)}</pre>
+																	{:else}
+																		<span class="italic">No result data</span>
+																	{/if}
+																</div>
+															{/if}
+														</div>
+													</div>
 												{/each}
 											</div>
 										{/if}
@@ -544,6 +790,72 @@
 		{/if}
 	</div>
 </div>
+
+<!-- Prompt Modal -->
+{#if showPromptModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+		<!-- Backdrop -->
+		<button
+			class="absolute inset-0 bg-black/50"
+			on:click={() => showPromptModal = false}
+			on:keydown={(e) => e.key === 'Escape' && (showPromptModal = false)}
+			aria-label="Close modal"
+		></button>
+
+		<!-- Modal -->
+		<div class="relative bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col">
+			<!-- Header -->
+			<div class="flex items-center justify-between p-4 border-b">
+				<h3 class="font-bold text-lg flex items-center gap-2">
+					<span>📋</span>
+					<span>{currentPromptTitle}</span>
+				</h3>
+				<button
+					class="p-2 rounded-full hover:bg-gray-100 transition-colors"
+					on:click={() => showPromptModal = false}
+					aria-label="Close"
+				>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+					</svg>
+				</button>
+			</div>
+
+			<!-- Content -->
+			<div class="flex-1 overflow-auto p-4">
+				<div class="bg-gray-50 rounded-lg p-4 border">
+					<MarkdownRenderer content={currentPrompt} class_name="text-sm prompt-content" />
+				</div>
+			</div>
+
+			<!-- Footer -->
+			<div class="flex justify-end gap-2 p-4 border-t bg-gray-50 rounded-b-xl">
+				<button
+					class="px-4 py-2 rounded-lg border hover:bg-gray-100 transition-colors"
+					on:click={() => showPromptModal = false}
+				>
+					Close
+				</button>
+				<button
+					class="px-4 py-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors flex items-center gap-2"
+					on:click={copyPromptToClipboard}
+				>
+					{#if copiedToClipboard}
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+						</svg>
+						Copied!
+					{:else}
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+						</svg>
+						Copy to Clipboard
+					{/if}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.animation-delay-200 {

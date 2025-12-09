@@ -128,6 +128,25 @@
 						</div>
 					</div>
 
+					<!-- Special Permissions -->
+					<div class="border-t pt-6">
+						<h3 class="text-sm font-medium text-gray-700 mb-4">Special Permissions</h3>
+						<div class="space-y-3">
+							<label class="flex items-center gap-3">
+								<input
+									type="checkbox"
+									name="canListOnEbay"
+									checked={user.canListOnEbay}
+									class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+								/>
+								<div>
+									<span class="font-medium text-gray-900">Can List on eBay</span>
+									<p class="text-sm text-gray-500">Allow this user to claim and complete eBay listing tasks</p>
+								</div>
+							</label>
+						</div>
+					</div>
+
 					<div class="flex gap-4 pt-4">
 						<a href="/admin/users" class="btn-ghost flex-1 text-center">Cancel</a>
 						<button type="submit" disabled={loading} class="btn-primary flex-1">

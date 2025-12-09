@@ -58,9 +58,10 @@ TeamTime is designed mobile-first with full feature parity:
 - **Slide-out Panel** — Full navigation menu with user info, main sections, admin tools, settings, and logout
 
 ### PWA Install
-- **Android/Chrome** — Automatic install prompt with "Install App" button
-- **iOS Safari** — Instructions to tap Share → "Add to Home Screen"
-- Prompt can be dismissed and won't show again
+- **Android/Chrome** — Custom install banner intercepts browser's `beforeinstallprompt` event, displays "Install App" button for one-tap installation
+- **iOS Safari** — Visual instructions with share icon guide users to tap Share → "Add to Home Screen"
+- **Smart display** — Prompt only appears on mobile, never on desktop, and hides if app is already installed (standalone mode)
+- **Dismissible** — X button hides prompt permanently (preference stored in localStorage)
 
 ### Admin Features (Mobile)
 
@@ -135,6 +136,8 @@ OPENAI_API_KEY=your-openai-api-key
 ## Documentation
 
 - [Spec.md](./Spec.md) — Complete functional specification
+- [Schema.md](./Schema.md) — Client-side storage schema (localStorage, etc.)
+- [FEATURES.md](./FEATURES.md) — Feature documentation and implementation details
 - [src/lib/ai/architect/README.md](./src/lib/ai/architect/README.md) — Ada Architecture Advisor documentation
 
 ## License

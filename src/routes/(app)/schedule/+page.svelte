@@ -4,8 +4,10 @@
 	export let data: PageData;
 
 	$: shifts = data.shifts;
+	$: myUpcomingShifts = data.myUpcomingShifts;
+	$: currentUserId = data.currentUserId;
 	$: user = data.user;
-	$: isManager = user?.role === 'manager';
+	$: isManager = user?.role === 'manager' || user?.role === 'admin';
 
 	let currentDate = new Date();
 
@@ -45,8 +47,8 @@
 		currentDate = newDate;
 	}
 
-	function getUpcomingShifts() {
-		return shifts.filter(s => new Date(s.startTime) >= new Date()).slice(0, 5);
+	function isMyShift(userId: string) {
+		return userId === currentUserId;
 	}
 </script>
 
@@ -92,14 +94,18 @@
 					<div class="text-xs lg:text-sm">{day.toLocaleDateString('en-US', { weekday: 'short' })}</div>
 					<div class="text-lg lg:text-xl">{day.getDate()}</div>
 				</div>
-				<div class="bg-white border border-gray-200 rounded-b-lg p-1 lg:p-2 space-y-1">
+				<div class="bg-white border border-gray-200 rounded-b-lg p-1 lg:p-2 space-y-1 max-h-[300px] overflow-y-auto">
 					{#each dayShifts as shift}
-						<div class="bg-primary-50 border-l-4 border-primary-500 p-1 lg:p-2 rounded text-xs lg:text-sm">
-							<div class="font-medium truncate">
+						{@const isMine = isMyShift(shift.userId)}
+						<div class="{isMine ? 'bg-primary-100 border-primary-600' : 'bg-gray-50 border-gray-300'} border-l-4 p-1 lg:p-2 rounded text-xs lg:text-sm">
+							<div class="font-medium truncate {isMine ? 'text-primary-800' : 'text-gray-700'}">
+								{shift.userName}
+							</div>
+							<div class="text-gray-600 truncate">
 								{formatTime(shift.startTime)} - {formatTime(shift.endTime)}
 							</div>
-							{#if shift.location}
-								<div class="text-gray-500 truncate">{shift.location.name}</div>
+							{#if shift.locationName}
+								<div class="text-gray-500 truncate text-[10px] lg:text-xs">{shift.locationName}</div>
 							{/if}
 						</div>
 					{:else}
@@ -110,11 +116,11 @@
 		{/each}
 	</div>
 
-	<!-- Upcoming Shifts List (Mobile Friendly) -->
+	<!-- My Upcoming Shifts List (Mobile Friendly) -->
 	<div class="mt-8 lg:hidden">
-		<h3 class="text-lg font-semibold mb-4">Upcoming Shifts</h3>
+		<h3 class="text-lg font-semibold mb-4">My Upcoming Shifts</h3>
 		<div class="space-y-3">
-			{#each getUpcomingShifts() as shift}
+			{#each myUpcomingShifts as shift}
 				<div class="card">
 					<div class="card-body">
 						<div class="flex justify-between items-start">
@@ -126,8 +132,8 @@
 									{formatTime(shift.startTime)} - {formatTime(shift.endTime)}
 								</div>
 							</div>
-							{#if shift.location}
-								<span class="badge-primary">{shift.location.name}</span>
+							{#if shift.locationName}
+								<span class="badge-primary">{shift.locationName}</span>
 							{/if}
 						</div>
 					</div>
@@ -135,6 +141,18 @@
 			{:else}
 				<p class="text-gray-500 text-center py-4">No upcoming shifts</p>
 			{/each}
+		</div>
+	</div>
+
+	<!-- Legend -->
+	<div class="mt-6 flex flex-wrap gap-4 text-sm text-gray-600">
+		<div class="flex items-center gap-2">
+			<div class="w-4 h-4 bg-primary-100 border-l-4 border-primary-600 rounded"></div>
+			<span>My shifts</span>
+		</div>
+		<div class="flex items-center gap-2">
+			<div class="w-4 h-4 bg-gray-50 border-l-4 border-gray-300 rounded"></div>
+			<span>Other staff</span>
 		</div>
 	</div>
 </div>

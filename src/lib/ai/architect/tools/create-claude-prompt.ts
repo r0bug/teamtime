@@ -5,8 +5,8 @@ import type { AITool, ToolExecutionContext } from '../../types';
 interface CreatePromptParams {
 	title: string;
 	context: string;
-	requirements: string[];
-	filesToModify: string[];
+	requirements: string[] | string; // AI sometimes sends as string
+	filesToModify: string[] | string; // AI sometimes sends as string
 	implementationNotes?: string;
 	testingGuidance?: string;
 	saveAsDecision?: boolean;
@@ -78,10 +78,20 @@ export const createClaudePromptTool: AITool<CreatePromptParams, CreatePromptResu
 		if (!params.context || params.context.length < 20) {
 			return { valid: false, error: 'Context must be at least 20 characters' };
 		}
-		if (!params.requirements || params.requirements.length === 0) {
+		// Accept both string and array for requirements
+		const hasRequirements = params.requirements && (
+			(Array.isArray(params.requirements) && params.requirements.length > 0) ||
+			(typeof params.requirements === 'string' && params.requirements.trim().length > 0)
+		);
+		if (!hasRequirements) {
 			return { valid: false, error: 'At least one requirement is needed' };
 		}
-		if (!params.filesToModify || params.filesToModify.length === 0) {
+		// Accept both string and array for filesToModify
+		const hasFiles = params.filesToModify && (
+			(Array.isArray(params.filesToModify) && params.filesToModify.length > 0) ||
+			(typeof params.filesToModify === 'string' && params.filesToModify.trim().length > 0)
+		);
+		if (!hasFiles) {
 			return { valid: false, error: 'At least one file to modify must be specified' };
 		}
 		return { valid: true };
@@ -89,6 +99,19 @@ export const createClaudePromptTool: AITool<CreatePromptParams, CreatePromptResu
 
 	async execute(params: CreatePromptParams, context: ToolExecutionContext): Promise<CreatePromptResult> {
 		try {
+			// Normalize requirements and filesToModify to arrays
+			const requirements = Array.isArray(params.requirements)
+				? params.requirements
+				: (typeof params.requirements === 'string'
+					? params.requirements.split('\n').map(r => r.replace(/^[-*•]\s*/, '').trim()).filter(r => r)
+					: []);
+
+			const filesToModify = Array.isArray(params.filesToModify)
+				? params.filesToModify
+				: (typeof params.filesToModify === 'string'
+					? params.filesToModify.split('\n').map(f => f.replace(/^[-*•]\s*/, '').trim()).filter(f => f)
+					: []);
+
 			// Build the Claude Code prompt
 			const prompt = formatClaudeCodePrompt(params);
 
@@ -103,9 +126,9 @@ export const createClaudePromptTool: AITool<CreatePromptParams, CreatePromptResu
 						status: 'proposed',
 						category: params.category || 'architecture',
 						context: params.context,
-						decision: `Implement: ${params.requirements.join('; ')}`,
+						decision: `Implement: ${requirements.join('; ')}`,
 						claudeCodePrompt: prompt,
-						relatedFiles: params.filesToModify,
+						relatedFiles: filesToModify,
 						createdByAiRunId: context.runId
 					})
 					.returning({ id: architectureDecisions.id });
@@ -142,18 +165,32 @@ export const createClaudePromptTool: AITool<CreatePromptParams, CreatePromptResu
 function formatClaudeCodePrompt(params: CreatePromptParams): string {
 	const sections: string[] = [];
 
+	// Normalize requirements to array (AI sometimes sends string instead of array)
+	const requirements = Array.isArray(params.requirements)
+		? params.requirements
+		: (typeof params.requirements === 'string'
+			? params.requirements.split('\n').map(r => r.replace(/^[-*•]\s*/, '').trim()).filter(r => r)
+			: []);
+
+	// Normalize filesToModify to array
+	const filesToModify = Array.isArray(params.filesToModify)
+		? params.filesToModify
+		: (typeof params.filesToModify === 'string'
+			? params.filesToModify.split('\n').map(f => f.replace(/^[-*•]\s*/, '').trim()).filter(f => f)
+			: []);
+
 	sections.push(`# Task: ${params.title}`);
 	sections.push('');
 	sections.push('## Context');
 	sections.push(params.context);
 	sections.push('');
 	sections.push('## Requirements');
-	params.requirements.forEach((req, i) => {
+	requirements.forEach((req, i) => {
 		sections.push(`${i + 1}. ${req}`);
 	});
 	sections.push('');
 	sections.push('## Files to Modify/Create');
-	params.filesToModify.forEach(f => {
+	filesToModify.forEach(f => {
 		sections.push(`- \`${f}\``);
 	});
 

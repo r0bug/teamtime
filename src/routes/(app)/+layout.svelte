@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { onMount } from 'svelte';
-	import { browser } from '$app/environment';
 	import type { LayoutData } from './$types';
 	import Avatar from '$lib/components/Avatar.svelte';
+	import InstallPrompt from '$lib/components/InstallPrompt.svelte';
 
 	export let data: LayoutData;
 
@@ -11,65 +10,10 @@
 	$: isAdmin = user?.role === 'admin';
 	$: isManager = user?.role === 'manager' || user?.role === 'admin';
 	$: isPurchaser = user?.role === 'purchaser' || isManager;
+	$: canListOnEbay = data.canListOnEbay || isManager;
 
 	// Mobile menu state
 	let mobileMenuOpen = false;
-
-	// PWA install prompt state
-	let deferredPrompt: any = null;
-	let showInstallPrompt = false;
-	let isIOS = false;
-	let isStandalone = false;
-
-	onMount(() => {
-		if (browser) {
-			// Check if already installed (standalone mode)
-			isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-				(window.navigator as any).standalone === true;
-
-			// Check if iOS
-			isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-
-			// Check if mobile
-			const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-			// Listen for PWA install prompt (Android/Chrome)
-			window.addEventListener('beforeinstallprompt', (e: Event) => {
-				e.preventDefault();
-				deferredPrompt = e;
-				if (isMobile && !isStandalone) {
-					showInstallPrompt = true;
-				}
-			});
-
-			// Show iOS prompt if on iOS and not installed
-			if (isIOS && !isStandalone && isMobile) {
-				// Check if user dismissed before (using localStorage)
-				const dismissed = localStorage.getItem('pwa-install-dismissed');
-				if (!dismissed) {
-					showInstallPrompt = true;
-				}
-			}
-		}
-	});
-
-	async function installPWA() {
-		if (deferredPrompt) {
-			deferredPrompt.prompt();
-			const { outcome } = await deferredPrompt.userChoice;
-			if (outcome === 'accepted') {
-				showInstallPrompt = false;
-			}
-			deferredPrompt = null;
-		}
-	}
-
-	function dismissInstallPrompt() {
-		showInstallPrompt = false;
-		if (browser) {
-			localStorage.setItem('pwa-install-dismissed', 'true');
-		}
-	}
 
 	function closeMobileMenu() {
 		mobileMenuOpen = false;
@@ -80,6 +24,9 @@
 		{ href: '/schedule', label: 'Schedule', icon: 'calendar', show: true },
 		{ href: '/tasks', label: 'Tasks', icon: 'clipboard', show: true },
 		{ href: '/messages', label: 'Messages', icon: 'chat', show: true },
+		{ href: '/info', label: 'Info', icon: 'info', show: true },
+		{ href: '/pricing', label: 'Pricing', icon: 'tag', show: true },
+		{ href: '/ebay/tasks', label: 'eBay Tasks', icon: 'globe', show: canListOnEbay },
 		{ href: '/expenses', label: 'Expenses', icon: 'dollar', show: isPurchaser }
 	].filter(item => item.show);
 
@@ -88,6 +35,7 @@
 		{ href: '/admin/users', label: 'Users', icon: 'users', show: true },
 		{ href: '/admin/messages', label: 'Messages', icon: 'chat', show: true },
 		{ href: '/admin/schedule', label: 'Schedule', icon: 'calendar', show: true },
+		{ href: '/admin/pricing', label: 'Pricing', icon: 'tag', show: true },
 		{ href: '/admin/reports', label: 'Reports', icon: 'chart', show: true },
 		{ href: '/admin/pay-periods', label: 'Pay Periods', icon: 'clock', show: true },
 		{ href: '/admin/info', label: 'Info Posts', icon: 'document', show: true },
@@ -128,6 +76,12 @@
 								<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
 							{:else if item.icon === 'chat'}
 								<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+							{:else if item.icon === 'info'}
+								<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+							{:else if item.icon === 'tag'}
+								<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+							{:else if item.icon === 'globe'}
+								<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>
 							{:else if item.icon === 'dollar'}
 								<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 							{/if}
@@ -173,6 +127,8 @@
 									<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 								{:else if item.icon === 'document'}
 									<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+								{:else if item.icon === 'tag'}
+									<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
 									{/if}
 								</span>
 								{item.label}
@@ -287,6 +243,12 @@
 										<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
 									{:else if item.icon === 'chat'}
 										<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+									{:else if item.icon === 'info'}
+										<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+									{:else if item.icon === 'tag'}
+										<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+									{:else if item.icon === 'globe'}
+										<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>
 									{:else if item.icon === 'dollar'}
 										<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 									{/if}
@@ -333,6 +295,8 @@
 												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 											{:else if item.icon === 'document'}
 												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+											{:else if item.icon === 'tag'}
+												<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
 											{/if}
 										</span>
 										{item.label}
@@ -390,6 +354,12 @@
 								<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
 							{:else if item.icon === 'chat'}
 								<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+							{:else if item.icon === 'info'}
+								<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+							{:else if item.icon === 'tag'}
+								<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+							{:else if item.icon === 'globe'}
+								<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>
 							{:else if item.icon === 'dollar'}
 								<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 							{/if}
@@ -402,42 +372,5 @@
 	</div>
 </div>
 
-<!-- PWA Install Prompt -->
-{#if showInstallPrompt}
-	<div class="lg:hidden fixed bottom-20 left-4 right-4 z-50 bg-white rounded-xl shadow-2xl border border-gray-200 p-4 safe-bottom">
-		<div class="flex items-start gap-3">
-			<div class="flex-shrink-0 w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center">
-				<svg class="w-7 h-7 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-				</svg>
-			</div>
-			<div class="flex-1 min-w-0">
-				<h3 class="text-sm font-semibold text-gray-900">Install TeamTime</h3>
-				{#if isIOS}
-					<p class="text-xs text-gray-500 mt-0.5">
-						Tap <span class="inline-flex items-center"><svg class="w-4 h-4 mx-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L12 14M12 2L8 6M12 2L16 6M4 14V20H20V14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span> then "Add to Home Screen"
-					</p>
-				{:else}
-					<p class="text-xs text-gray-500 mt-0.5">Add to your home screen for quick access</p>
-				{/if}
-			</div>
-			<button
-				on:click={dismissInstallPrompt}
-				class="flex-shrink-0 p-1 text-gray-400 hover:text-gray-600"
-				aria-label="Dismiss"
-			>
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-				</svg>
-			</button>
-		</div>
-		{#if !isIOS && deferredPrompt}
-			<button
-				on:click={installPWA}
-				class="mt-3 w-full py-2.5 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
-			>
-				Install App
-			</button>
-		{/if}
-	</div>
-{/if}
+<!-- PWA Install Prompt Component - displays above bottom nav on mobile -->
+<InstallPrompt />

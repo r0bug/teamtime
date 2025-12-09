@@ -3,9 +3,10 @@ import { fail, redirect, error } from '@sveltejs/kit';
 import { db, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { hashPin, validatePinFormat } from '$lib/server/auth/pin';
+import { isManager } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
-	if (!locals.user || locals.user.role !== 'manager') {
+	if (!isManager(locals.user)) {
 		throw redirect(302, '/dashboard');
 	}
 
@@ -18,6 +19,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			phone: users.phone,
 			role: users.role,
 			isActive: users.isActive,
+			canListOnEbay: users.canListOnEbay,
 			avatarUrl: users.avatarUrl,
 			createdAt: users.createdAt
 		})
@@ -34,7 +36,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 export const actions: Actions = {
 	update: async ({ request, params, locals }) => {
-		if (!locals.user || locals.user.role !== 'manager') {
+		if (!isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 
@@ -45,6 +47,7 @@ export const actions: Actions = {
 		const phone = formData.get('phone')?.toString().trim() || null;
 		const role = formData.get('role')?.toString() as 'manager' | 'purchaser' | 'staff';
 		const isActive = formData.get('isActive') === 'on';
+		const canListOnEbay = formData.get('canListOnEbay') === 'on';
 
 		if (!email || !username || !name || !role) {
 			return fail(400, { error: 'All required fields must be filled' });
@@ -85,6 +88,7 @@ export const actions: Actions = {
 				phone,
 				role,
 				isActive,
+				canListOnEbay,
 				updatedAt: new Date()
 			})
 			.where(eq(users.id, params.id));
@@ -93,7 +97,7 @@ export const actions: Actions = {
 	},
 
 	resetPin: async ({ request, params, locals }) => {
-		if (!locals.user || locals.user.role !== 'manager') {
+		if (!isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 
@@ -115,7 +119,7 @@ export const actions: Actions = {
 	},
 
 	delete: async ({ params, locals }) => {
-		if (!locals.user || locals.user.role !== 'manager') {
+		if (!isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 

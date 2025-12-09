@@ -28,7 +28,8 @@ export const architectureCategoryEnum = pgEnum('architecture_category', [
 ]);
 export const taskStatusEnum = pgEnum('task_status', ['not_started', 'in_progress', 'completed', 'cancelled']);
 export const taskPriorityEnum = pgEnum('task_priority', ['low', 'medium', 'high', 'urgent']);
-export const taskSourceEnum = pgEnum('task_source', ['manual', 'recurring', 'event_triggered', 'purchase_approval']);
+export const taskSourceEnum = pgEnum('task_source', ['manual', 'recurring', 'event_triggered', 'purchase_approval', 'ebay_listing']);
+export const pricingDestinationEnum = pgEnum('pricing_destination', ['store', 'ebay']);
 export const triggerEventEnum = pgEnum('trigger_event', ['clock_in', 'clock_out', 'first_clock_in', 'last_clock_out']);
 export const purchaseStatusEnum = pgEnum('purchase_status', ['pending', 'approved', 'denied']);
 export const withdrawalStatusEnum = pgEnum('withdrawal_status', ['unassigned', 'partially_assigned', 'fully_spent']);
@@ -57,6 +58,7 @@ export const users = pgTable('users', {
 	avatarUrl: text('avatar_url'),
 	hourlyRate: decimal('hourly_rate', { precision: 10, scale: 2 }),
 	twoFactorEnabled: boolean('two_factor_enabled').notNull().default(true),
+	canListOnEbay: boolean('can_list_on_ebay').notNull().default(false), // User can claim eBay listing tasks
 	isActive: boolean('is_active').notNull().default(true),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
@@ -273,6 +275,47 @@ export const allocationPhotos = pgTable('allocation_photos', {
 		.references(() => withdrawalAllocations.id, { onDelete: 'cascade' }),
 	filePath: text('file_path').notNull(),
 	originalName: text('original_name').notNull(),
+	lat: decimal('lat', { precision: 10, scale: 7 }),
+	lng: decimal('lng', { precision: 10, scale: 7 }),
+	capturedAt: timestamp('captured_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// ============================================
+// PRICING DECISIONS (Item Pricing & eBay Routing)
+// ============================================
+
+// Pricing decisions table - immutable record of pricing decisions
+export const pricingDecisions = pgTable('pricing_decisions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }), // Who priced it
+	itemDescription: text('item_description').notNull(),
+	price: decimal('price', { precision: 10, scale: 2 }).notNull(),
+	priceJustification: text('price_justification').notNull(), // Why this price
+	destination: pricingDestinationEnum('destination').notNull().default('store'),
+	ebayReason: text('ebay_reason'), // Required when destination='ebay'
+	ebayTaskId: uuid('ebay_task_id').references(() => tasks.id, { onDelete: 'set null' }), // Auto-created task for eBay items
+	locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
+	lat: decimal('lat', { precision: 10, scale: 7 }),
+	lng: decimal('lng', { precision: 10, scale: 7 }),
+	address: text('address'),
+	pricedAt: timestamp('priced_at', { withTimezone: true }).notNull().defaultNow(),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	// Note: No updatedAt - pricing decisions are immutable for audit purposes
+});
+
+// Pricing decision photos table
+export const pricingDecisionPhotos = pgTable('pricing_decision_photos', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	pricingDecisionId: uuid('pricing_decision_id')
+		.notNull()
+		.references(() => pricingDecisions.id, { onDelete: 'cascade' }),
+	filePath: text('file_path').notNull(),
+	originalName: text('original_name').notNull(),
+	mimeType: text('mime_type').notNull(),
+	sizeBytes: integer('size_bytes').notNull(),
 	lat: decimal('lat', { precision: 10, scale: 7 }),
 	lng: decimal('lng', { precision: 10, scale: 7 }),
 	capturedAt: timestamp('captured_at', { withTimezone: true }),
@@ -775,6 +818,30 @@ export const messagesRelations = relations(messages, ({ one, many }) => ({
 	photos: many(messagePhotos)
 }));
 
+// Pricing Decisions Relations
+export const pricingDecisionsRelations = relations(pricingDecisions, ({ one, many }) => ({
+	user: one(users, {
+		fields: [pricingDecisions.userId],
+		references: [users.id]
+	}),
+	location: one(locations, {
+		fields: [pricingDecisions.locationId],
+		references: [locations.id]
+	}),
+	ebayTask: one(tasks, {
+		fields: [pricingDecisions.ebayTaskId],
+		references: [tasks.id]
+	}),
+	photos: many(pricingDecisionPhotos)
+}));
+
+export const pricingDecisionPhotosRelations = relations(pricingDecisionPhotos, ({ one }) => ({
+	pricingDecision: one(pricingDecisions, {
+		fields: [pricingDecisionPhotos.pricingDecisionId],
+		references: [pricingDecisions.id]
+	})
+}));
+
 // AI System Relations
 export const aiActionsRelations = relations(aiActions, ({ one }) => ({
 	targetUser: one(users, {
@@ -861,6 +928,12 @@ export type Message = typeof messages.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type StoreHours = typeof storeHours.$inferSelect;
 export type InfoPost = typeof infoPosts.$inferSelect;
+
+// Pricing System Types
+export type PricingDecision = typeof pricingDecisions.$inferSelect;
+export type NewPricingDecision = typeof pricingDecisions.$inferInsert;
+export type PricingDecisionPhoto = typeof pricingDecisionPhotos.$inferSelect;
+export type NewPricingDecisionPhoto = typeof pricingDecisionPhotos.$inferInsert;
 
 // AI System Types
 export type AIConfig = typeof aiConfig.$inferSelect;

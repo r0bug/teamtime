@@ -6,6 +6,14 @@ import { db, aiConfig } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import type { AIConfig } from '$lib/ai/types';
 
+// GET - Not supported, return helpful error
+export const GET: RequestHandler = async () => {
+	return json({
+		success: false,
+		error: 'GET method not allowed. Use POST to send messages to Ada.'
+	}, { status: 405 });
+};
+
 // POST - Send a message to Ada
 export const POST: RequestHandler = async ({ params, request }) => {
 	try {
