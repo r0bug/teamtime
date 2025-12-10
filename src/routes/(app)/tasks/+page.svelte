@@ -6,7 +6,7 @@
 
 	$: tasks = data.tasks;
 	$: user = data.user;
-	$: isManager = user?.role === 'manager';
+	$: isManager = user?.role === 'manager' || user?.role === 'admin';
 
 	let filter: 'all' | 'not_started' | 'in_progress' | 'completed' = 'all';
 

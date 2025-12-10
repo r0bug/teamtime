@@ -2,6 +2,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect, error } from '@sveltejs/kit';
 import { db, tasks, users, taskCompletions } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
+import { isManager } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!locals.user) {
@@ -42,16 +43,16 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		.leftJoin(users, eq(taskCompletions.completedBy, users.id))
 		.where(eq(taskCompletions.taskId, params.id));
 
-	const allUsers = locals.user.role === 'manager'
+	const allUsers = isManager(locals.user)
 		? await db.select({ id: users.id, name: users.name }).from(users).where(eq(users.isActive, true))
 		: [];
 
-	return { task, completions, users: allUsers, isManager: locals.user.role === 'manager' };
+	return { task, completions, users: allUsers, isManager: isManager(locals.user) };
 };
 
 export const actions: Actions = {
 	update: async ({ request, params, locals }) => {
-		if (!locals.user || locals.user.role !== 'manager') {
+		if (!locals.user || !isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 
@@ -106,7 +107,7 @@ export const actions: Actions = {
 	},
 
 	delete: async ({ params, locals }) => {
-		if (!locals.user || locals.user.role !== 'manager') {
+		if (!locals.user || !isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 

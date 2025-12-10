@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, tasks, notifications, auditLogs } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
+import { isManager } from '$lib/server/auth/roles';
 
 // Get single task
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -28,8 +29,8 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 		return json({ error: 'Task not found' }, { status: 404 });
 	}
 
-	// Check access
-	if (locals.user.role !== 'manager' && task.assignedTo !== locals.user.id) {
+	// Check access - admins and managers can see all tasks
+	if (!isManager(locals.user) && task.assignedTo !== locals.user.id) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 
@@ -52,11 +53,11 @@ export const PUT: RequestHandler = async ({ locals, params, request, getClientAd
 		return json({ error: 'Task not found' }, { status: 404 });
 	}
 
-	// Assignees can update status, managers can update everything
+	// Assignees can update status, admins/managers can update everything
 	const isAssignee = existingTask.assignedTo === locals.user.id;
-	const isManager = locals.user.role === 'manager';
+	const canManage = isManager(locals.user);
 
-	if (!isAssignee && !isManager) {
+	if (!isAssignee && !canManage) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 
@@ -66,8 +67,8 @@ export const PUT: RequestHandler = async ({ locals, params, request, getClientAd
 	// Fields assignees can update
 	if (body.status !== undefined) updateData.status = body.status;
 
-	// Fields only managers can update
-	if (isManager) {
+	// Fields only admins/managers can update
+	if (canManage) {
 		if (body.title !== undefined) updateData.title = body.title;
 		if (body.description !== undefined) updateData.description = body.description;
 		if (body.assignedTo !== undefined) updateData.assignedTo = body.assignedTo;
@@ -117,13 +118,13 @@ export const PUT: RequestHandler = async ({ locals, params, request, getClientAd
 	return json({ task: fullTask });
 };
 
-// Delete task (manager only)
+// Delete task (admin/manager only)
 export const DELETE: RequestHandler = async ({ locals, params, getClientAddress }) => {
 	if (!locals.user) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	if (locals.user.role !== 'manager') {
+	if (!isManager(locals.user)) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 

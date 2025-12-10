@@ -3,19 +3,22 @@ import { specContextProvider } from './spec';
 import { schemaContextProvider } from './schema';
 import { codebaseContextProvider } from './codebase';
 import { mentatsContextProvider } from './mentats';
+import { filesContextProvider } from './files';
 import type { AIContextProvider, AssembledContext } from '../../types';
 
 export { specContextProvider } from './spec';
 export { schemaContextProvider } from './schema';
 export { codebaseContextProvider } from './codebase';
 export { mentatsContextProvider } from './mentats';
+export { filesContextProvider, setRequestedFiles, setSearchPattern, clearRequestedFiles, smartLoadFiles } from './files';
 
 // All architect context providers
 export const architectContextProviders: AIContextProvider[] = [
 	specContextProvider,
 	schemaContextProvider,
 	codebaseContextProvider,
-	mentatsContextProvider
+	mentatsContextProvider,
+	filesContextProvider
 ];
 
 // Module IDs for selective context loading
@@ -23,7 +26,8 @@ export const ARCHITECT_CONTEXT_MODULES = {
 	spec: 'spec',
 	schema: 'schema',
 	codebase: 'codebase',
-	mentats: 'mentats'
+	mentats: 'mentats',
+	files: 'files'
 } as const;
 
 export type ArchitectContextModule = keyof typeof ARCHITECT_CONTEXT_MODULES;

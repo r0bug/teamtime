@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, tasks, users, notifications, auditLogs } from '$lib/server/db';
 import { eq, and, or, desc, isNull } from 'drizzle-orm';
+import { isManager } from '$lib/server/auth/roles';
 
 // Get tasks
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -15,8 +16,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	const conditions = [];
 
-	// Non-managers can only see their own tasks
-	if (locals.user.role !== 'manager') {
+	// Admins and managers can see all tasks, others only see their own
+	if (!isManager(locals.user)) {
 		conditions.push(eq(tasks.assignedTo, locals.user.id));
 	} else if (assignedTo) {
 		conditions.push(eq(tasks.assignedTo, assignedTo));
@@ -44,13 +45,13 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	return json({ tasks: taskList });
 };
 
-// Create task (manager only)
+// Create task (admin/manager only)
 export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
 	if (!locals.user) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	if (locals.user.role !== 'manager') {
+	if (!isManager(locals.user)) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 

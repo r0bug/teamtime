@@ -2,24 +2,30 @@
 import { createClaudePromptTool } from './create-claude-prompt';
 import { createDecisionTool } from './create-decision';
 import { analyzeImpactTool } from './analyze-impact';
+import { readFilesTool, searchFilesTool } from './read-files';
 import type { AITool } from '../../types';
 
 export { createClaudePromptTool } from './create-claude-prompt';
 export { createDecisionTool } from './create-decision';
 export { analyzeImpactTool } from './analyze-impact';
+export { readFilesTool, searchFilesTool } from './read-files';
 
 // All architect tools
 export const architectTools: AITool<unknown, unknown>[] = [
 	createClaudePromptTool as AITool<unknown, unknown>,
 	createDecisionTool as AITool<unknown, unknown>,
-	analyzeImpactTool as AITool<unknown, unknown>
+	analyzeImpactTool as AITool<unknown, unknown>,
+	readFilesTool as AITool<unknown, unknown>,
+	searchFilesTool as AITool<unknown, unknown>
 ];
 
 // Tool names for reference
 export const ARCHITECT_TOOL_NAMES = {
 	createPrompt: 'create_claude_code_prompt',
 	createDecision: 'create_architecture_decision',
-	analyzeImpact: 'analyze_change_impact'
+	analyzeImpact: 'analyze_change_impact',
+	readFiles: 'read_files',
+	searchFiles: 'search_files'
 } as const;
 
 /**

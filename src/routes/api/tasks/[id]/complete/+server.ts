@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, tasks, taskCompletions, taskPhotos, auditLogs } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
+import { isManager } from '$lib/server/auth/roles';
 
 export const POST: RequestHandler = async ({ locals, params, request, getClientAddress }) => {
 	if (!locals.user) {
@@ -18,8 +19,8 @@ export const POST: RequestHandler = async ({ locals, params, request, getClientA
 		return json({ error: 'Task not found' }, { status: 404 });
 	}
 
-	// Check access
-	if (task.assignedTo !== locals.user.id && locals.user.role !== 'manager') {
+	// Check access - admins/managers can complete any task
+	if (task.assignedTo !== locals.user.id && !isManager(locals.user)) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 
