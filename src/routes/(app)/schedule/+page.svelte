@@ -32,13 +32,20 @@
 	function getShiftsForDay(date: Date) {
 		return shifts.filter(shift => {
 			const shiftDate = new Date(shift.startTime);
-			return shiftDate.toDateString() === date.toDateString();
+			// Compare dates in Pacific Time
+			const shiftDay = shiftDate.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
+			const targetDay = date.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
+			return shiftDay === targetDay;
 		});
 	}
 
 	function formatTime(dateStr: string | Date) {
 		const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
-		return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+		return date.toLocaleTimeString('en-US', {
+			hour: 'numeric',
+			minute: '2-digit',
+			timeZone: 'America/Los_Angeles'
+		});
 	}
 
 	function navigateWeek(delta: number) {
@@ -126,7 +133,7 @@
 						<div class="flex justify-between items-start">
 							<div>
 								<div class="font-medium">
-									{new Date(shift.startTime).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+									{new Date(shift.startTime).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' })}
 								</div>
 								<div class="text-gray-600">
 									{formatTime(shift.startTime)} - {formatTime(shift.endTime)}

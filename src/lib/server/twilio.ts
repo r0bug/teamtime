@@ -1,0 +1,124 @@
+import twilio from 'twilio';
+import { env } from '$env/dynamic/private';
+
+// Twilio client - lazily initialized
+let twilioClient: twilio.Twilio | null = null;
+
+function getClient(): twilio.Twilio | null {
+	if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN) {
+		console.warn('Twilio credentials not configured. SMS sending disabled.');
+		return null;
+	}
+
+	if (!twilioClient) {
+		twilioClient = twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
+	}
+
+	return twilioClient;
+}
+
+export interface SMSResult {
+	success: boolean;
+	sid?: string;
+	error?: string;
+}
+
+/**
+ * Send an SMS message via Twilio
+ * @param to - The recipient's phone number (E.164 format, e.g., +15551234567)
+ * @param body - The message body
+ * @returns Result with success status and message SID or error
+ */
+export async function sendSMS(to: string, body: string): Promise<SMSResult> {
+	const client = getClient();
+
+	if (!client) {
+		return {
+			success: false,
+			error: 'Twilio not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER.'
+		};
+	}
+
+	if (!env.TWILIO_PHONE_NUMBER) {
+		return {
+			success: false,
+			error: 'TWILIO_PHONE_NUMBER not configured.'
+		};
+	}
+
+	// Validate phone number format (basic E.164 check)
+	if (!isValidPhoneNumber(to)) {
+		return {
+			success: false,
+			error: `Invalid phone number format: ${to}. Must be E.164 format (e.g., +15551234567)`
+		};
+	}
+
+	try {
+		const message = await client.messages.create({
+			body,
+			from: env.TWILIO_PHONE_NUMBER,
+			to
+		});
+
+		return {
+			success: true,
+			sid: message.sid
+		};
+	} catch (error) {
+		const errorMessage = error instanceof Error ? error.message : 'Unknown error sending SMS';
+		console.error('Failed to send SMS:', errorMessage);
+
+		return {
+			success: false,
+			error: errorMessage
+		};
+	}
+}
+
+/**
+ * Validate phone number format (basic E.164 check)
+ * E.164: + followed by country code and subscriber number (max 15 digits)
+ */
+export function isValidPhoneNumber(phone: string): boolean {
+	// E.164 format: + followed by 10-15 digits
+	const e164Regex = /^\+[1-9]\d{9,14}$/;
+	return e164Regex.test(phone);
+}
+
+/**
+ * Format a US phone number to E.164 format
+ * Accepts: (555) 123-4567, 555-123-4567, 5551234567, +15551234567
+ */
+export function formatPhoneToE164(phone: string, defaultCountryCode = '1'): string | null {
+	// Remove all non-digit characters except leading +
+	const cleaned = phone.replace(/[^\d+]/g, '');
+
+	// If already E.164 format, return as-is
+	if (cleaned.startsWith('+') && cleaned.length >= 11 && cleaned.length <= 16) {
+		return cleaned;
+	}
+
+	// Extract digits only
+	const digitsOnly = cleaned.replace(/\D/g, '');
+
+	// US number: 10 digits
+	if (digitsOnly.length === 10) {
+		return `+${defaultCountryCode}${digitsOnly}`;
+	}
+
+	// US number with country code: 11 digits starting with 1
+	if (digitsOnly.length === 11 && digitsOnly.startsWith('1')) {
+		return `+${digitsOnly}`;
+	}
+
+	// Invalid format
+	return null;
+}
+
+/**
+ * Check if Twilio is properly configured
+ */
+export function isTwilioConfigured(): boolean {
+	return !!(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_PHONE_NUMBER);
+}

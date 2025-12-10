@@ -49,8 +49,10 @@ export const specContextProvider: AIContextProvider<SpecContext> = {
 	},
 
 	estimateTokens(context: SpecContext): number {
-		// Rough estimate: ~4 chars per token
-		return Math.ceil(context.content.length / 4);
+		// Estimate based on truncated length
+		const MAX_SPEC_LENGTH = 4000;
+		const length = Math.min(context.content.length, MAX_SPEC_LENGTH);
+		return Math.ceil(length / 4) + 50;
 	},
 
 	formatForPrompt(context: SpecContext): string {
@@ -58,13 +60,24 @@ export const specContextProvider: AIContextProvider<SpecContext> = {
 			return '## Project Specification\n\n*No Spec.md file found in project root.*';
 		}
 
+		// Truncate spec content to avoid token limits
+		const MAX_SPEC_LENGTH = 4000;
+		let specContent = context.content;
+		let truncated = false;
+		if (specContent.length > MAX_SPEC_LENGTH) {
+			specContent = specContent.substring(0, MAX_SPEC_LENGTH);
+			truncated = true;
+		}
+
 		return `## Project Specification (Spec.md)
 
 **Sections:** ${context.sections.join(', ')}
 **Last Modified:** ${context.lastModified?.toISOString() || 'Unknown'}
 
+*Note: Use read_files tool to see full spec if needed.*
+
 ---
 
-${context.content}`;
+${specContent}${truncated ? '\n\n... [Spec truncated - use read_files for full content]' : ''}`;
 	}
 };

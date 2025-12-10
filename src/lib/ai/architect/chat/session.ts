@@ -135,9 +135,15 @@ export async function sendMessage(
 	const context = await assembleArchitectContext(contextModules);
 	const contextFormatted = formatArchitectContext(context);
 
+	// Build conversation history from previous messages (limit to last 10 messages to manage token usage)
+	const conversationHistory = session.messages.slice(-10).map(msg => ({
+		role: msg.role,
+		content: msg.content
+	}));
+
 	// Build prompts
 	const systemPrompt = buildArchitectSystemPrompt(config.customInstructions);
-	const userPrompt = buildArchitectUserPrompt(userMessage, contextFormatted);
+	const userPrompt = buildArchitectUserPrompt(userMessage, contextFormatted, conversationHistory);
 
 	// Get tools for LLM
 	const tools = getArchitectToolsForLLM();

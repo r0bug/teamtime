@@ -1034,3 +1034,80 @@ Database constraints ensure:
 - Price must be positive
 - Price justification minimum 10 characters
 - eBay reason required when destination is 'ebay'
+
+20.6 Inventory Drops (Batch Item Submission)
+
+A streamlined workflow for submitting multiple items at once for AI-powered identification.
+
+20.6.1 Drop Creation
+
+Purchasers and managers can create inventory drops:
+
+- Upload multiple photos (up to 10) via drag-and-drop or file picker
+- Add a description of the batch (e.g., "Estate sale pickup - kitchen items")
+- Optional pick notes for additional context
+- Photos are uploaded and associated with the drop
+
+20.6.2 AI Processing
+
+When triggered, the system uses a vision-capable LLM (Claude) to analyze photos:
+
+- Identifies individual sellable items within the photos
+- Generates descriptions suitable for pricing
+- Suggests initial prices where possible
+- Assigns confidence scores (0.0 to 1.0) for each identification
+- Links photos to identified items (one item may appear in multiple photos)
+
+20.6.3 Drop Status Flow
+
+Drops progress through statuses:
+
+- **Pending** — Awaiting AI processing
+- **Processing** — AI analysis in progress
+- **Completed** — Items identified and ready for pricing
+- **Failed** — Processing error (with error details for debugging)
+
+Failed drops can be retried by users.
+
+20.6.4 Post-Processing Workflow
+
+After AI identification:
+
+- View all identified items with confidence scores
+- Each item displays linked photos from the batch
+- Create pricing decisions directly from identified items
+- Items flow into the standard pricing/eBay routing workflow (Section 20)
+
+20.6.5 Navigation & Access
+
+Purchaser and manager access:
+
+- `/inventory/drops` — View all drops (own drops, or all if manager)
+- `/inventory/drops/new` — Create new inventory drop with photos
+- `/inventory/drops/[id]` — View drop details, photos, and identified items
+- Dashboard shows drop stats (pending/processing counts, items identified today)
+
+20.6.6 Data Model
+
+inventory_drops table:
+
+- id, user_id, description, pick_notes
+- status (enum: 'pending', 'processing', 'completed', 'failed')
+- item_count — number of items identified
+- processing_error — error message if failed
+- processed_at, created_at
+
+inventory_drop_photos table:
+
+- id, drop_id, file_path, order_index
+- original_name, mime_type, size_bytes
+- created_at
+
+inventory_drop_items table:
+
+- id, drop_id, item_description
+- suggested_price — AI-suggested price (nullable)
+- confidence_score — AI confidence (0.0-1.0)
+- source_photo_ids — array of photo IDs showing this item
+- pricing_decision_id — links to created pricing decision (nullable)
+- created_at

@@ -48,6 +48,7 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 
 		const isDryRun = agentConfig.dryRunMode;
 		console.log(`[Revenue Optimizer] Mode: ${isDryRun ? 'DRY RUN' : 'LIVE'}`);
+		console.log(`[Revenue Optimizer] Provider: ${agentConfig.provider}, Model: ${agentConfig.model}`);
 
 		// Assemble context - Revenue Optimizer needs more context for analysis
 		const context = await assembleContext(AGENT, agentConfig.maxTokensContext || 8000);
@@ -84,6 +85,11 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 
 		console.log(`[Revenue Optimizer] LLM response: ${response.finishReason}, ${response.toolCalls?.length || 0} tool calls`);
 
+		// Calculate cost - prefer provider-reported cost if available
+		const responseCost = response.usage.costCents ??
+			provider.estimateCost(response.usage.inputTokens, response.usage.outputTokens, agentConfig.model);
+		console.log(`[Revenue Optimizer] Cost: ${responseCost} cents (${response.usage.costCents ? 'provider-reported' : 'estimated'})`);
+
 		// Log the analysis action
 		await db.insert(aiActions).values({
 			agent: AGENT,
@@ -95,10 +101,10 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 			toolName: null,
 			executed: false,
 			tokensUsed: response.usage.inputTokens + response.usage.outputTokens,
-			costCents: provider.estimateCost(response.usage.inputTokens, response.usage.outputTokens, agentConfig.model)
+			costCents: responseCost
 		});
 		actionsLogged++;
-		totalCostCents += provider.estimateCost(response.usage.inputTokens, response.usage.outputTokens, agentConfig.model);
+		totalCostCents += responseCost;
 
 		// Execute tool calls - Revenue Optimizer can take more actions
 		if (response.toolCalls && response.toolCalls.length > 0) {

@@ -156,6 +156,8 @@ export const createClaudePromptTool: AITool<CreatePromptParams, CreatePromptResu
 			if (result.decisionId) {
 				msg += ` Saved as Architecture Decision ${result.decisionId}.`;
 			}
+			// Include the actual prompt so Ada can show it to the user
+			msg += `\n\n**Generated Prompt:**\n\`\`\`\n${result.prompt}\n\`\`\``;
 			return msg;
 		}
 		return `Failed to create prompt: ${result.error}`;

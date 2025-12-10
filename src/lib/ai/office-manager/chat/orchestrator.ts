@@ -1,0 +1,526 @@
+// Office Manager Chat Orchestrator
+// Single-model approach with confirmation workflow for dangerous actions
+import { randomUUID } from 'crypto';
+import { anthropicProvider } from '../../providers/anthropic';
+import { officeManagerTools } from '../../tools/office-manager';
+import {
+	getChatSession,
+	addUserMessage,
+	addAssistantMessage,
+	createPendingAction,
+	logAIAction,
+	type PendingAction
+} from './session';
+import { assembleOfficeManagerContext } from '../context';
+import type { AITool, ToolExecutionContext, LLMRequest } from '../../types';
+import type { OfficeManagerMessage } from '$lib/server/db/schema';
+
+// System prompt for Office Manager chat
+const OFFICE_MANAGER_SYSTEM_PROMPT = `You are the Office Manager AI assistant for TeamTime, a staff management system for a thrift store.
+
+Your role is to help managers with:
+- Scheduling and shift management
+- Staff communication (messages and SMS)
+- Task creation and assignment
+- Cash count management
+- Inventory processing
+- Permission management (temporary permission grants/changes)
+
+You have access to tools that can perform actions. Some tools require user confirmation before execution - when you call these tools, the action will be queued for approval.
+
+Guidelines:
+- Be helpful, professional, and concise
+- Explain what actions you're taking and why
+- If a tool requires confirmation, explain what will happen when approved
+- For scheduling changes, always consider who is currently working
+- Be careful with SMS - only use for urgent matters
+- When creating tasks, set appropriate priorities
+
+Permission Management Guidelines:
+- Use permission tools to temporarily adjust user access when needed
+- ALWAYS view current permissions before making changes (use view_user_permissions first)
+- Provide clear, detailed justifications for all permission changes
+- Prefer temporary grants over permanent changes
+- Keep durations as short as possible while meeting the need
+- Never attempt to modify admin users or grant admin-level access
+- Sensitive permissions (admin, security modules) will require human approval
+- Use rollback_permission_change to quickly revert changes if needed
+- Changes to manager-level user types require human approval
+
+Current context about the business will be provided. Use this to inform your responses.`;
+
+export interface ProcessMessageResult {
+	response: string;
+	toolCalls: {
+		name: string;
+		params: Record<string, unknown>;
+		result?: unknown;
+		pendingActionId?: string;
+		requiresConfirmation: boolean;
+	}[];
+	pendingActions: PendingAction[];
+	tokensUsed: number;
+}
+
+/**
+ * Process a user message in the Office Manager chat
+ */
+export async function processUserMessage(
+	chatId: string,
+	userMessage: string,
+	model = 'claude-sonnet-4-20250514'
+): Promise<ProcessMessageResult> {
+	// Get the chat session
+	const session = await getChatSession(chatId);
+	if (!session) {
+		throw new Error(`Chat session ${chatId} not found`);
+	}
+
+	// Add user message to chat
+	await addUserMessage(chatId, userMessage);
+
+	// Assemble context
+	const context = await assembleOfficeManagerContext();
+
+	// Build conversation history for the LLM
+	const conversationHistory = buildConversationHistory(session.messages);
+
+	// Build the user prompt with context
+	const userPrompt = `${conversationHistory}
+
+## Current Context
+${context}
+
+## User Message
+${userMessage}`;
+
+	// Get tools formatted for the LLM
+	const tools = officeManagerTools;
+
+	// Make the LLM request
+	const request: LLMRequest = {
+		model,
+		systemPrompt: OFFICE_MANAGER_SYSTEM_PROMPT,
+		userPrompt,
+		tools,
+		maxTokens: 2048,
+		temperature: 0.3
+	};
+
+	const runId = randomUUID();
+	const llmResponse = await anthropicProvider.complete(request);
+
+	// Process tool calls
+	const processedToolCalls: ProcessMessageResult['toolCalls'] = [];
+	const pendingActions: PendingAction[] = [];
+
+	if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
+		for (const toolCall of llmResponse.toolCalls) {
+			const tool = tools.find(t => t.name === toolCall.name);
+			if (!tool) {
+				console.warn(`[Office Manager Chat] Unknown tool: ${toolCall.name}`);
+				continue;
+			}
+
+			// Check if tool requires confirmation
+			if (tool.requiresConfirmation) {
+				// Create pending action for user approval
+				const confirmationMessage = tool.getConfirmationMessage
+					? tool.getConfirmationMessage(toolCall.params)
+					: `Confirm action: ${toolCall.name}?`;
+
+				const pendingAction = await createPendingAction(
+					chatId,
+					toolCall.name,
+					toolCall.params,
+					confirmationMessage
+				);
+
+				pendingActions.push(pendingAction);
+
+				processedToolCalls.push({
+					name: toolCall.name,
+					params: toolCall.params,
+					pendingActionId: pendingAction.id,
+					requiresConfirmation: true
+				});
+
+				// Log the action (not yet executed)
+				await logAIAction({
+					runId,
+					toolName: toolCall.name,
+					toolParams: toolCall.params,
+					executed: false
+				});
+			} else {
+				// Execute the tool immediately (read-only or low-risk)
+				const executionContext: ToolExecutionContext = {
+					runId,
+					agent: 'office_manager',
+					dryRun: false,
+					config: {
+						provider: 'anthropic',
+						model
+					}
+				};
+
+				const validation = tool.validate(toolCall.params);
+				if (!validation.valid) {
+					processedToolCalls.push({
+						name: toolCall.name,
+						params: toolCall.params,
+						result: { error: validation.error },
+						requiresConfirmation: false
+					});
+					continue;
+				}
+
+				try {
+					const result = await tool.execute(toolCall.params, executionContext);
+
+					processedToolCalls.push({
+						name: toolCall.name,
+						params: toolCall.params,
+						result,
+						requiresConfirmation: false
+					});
+
+					// Log the action
+					await logAIAction({
+						runId,
+						toolName: toolCall.name,
+						toolParams: toolCall.params,
+						executed: true,
+						executionResult: result as Record<string, unknown>
+					});
+				} catch (error) {
+					const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+					processedToolCalls.push({
+						name: toolCall.name,
+						params: toolCall.params,
+						result: { error: errorMessage },
+						requiresConfirmation: false
+					});
+
+					await logAIAction({
+						runId,
+						toolName: toolCall.name,
+						toolParams: toolCall.params,
+						executed: false,
+						error: errorMessage
+					});
+				}
+			}
+		}
+	}
+
+	// Build the assistant response content
+	let responseContent = llmResponse.content;
+
+	// If there are pending actions, append confirmation prompts
+	if (pendingActions.length > 0) {
+		responseContent += '\n\n**Actions pending confirmation:**\n';
+		for (const action of pendingActions) {
+			responseContent += `\n- ${action.confirmationMessage}`;
+		}
+	}
+
+	// Add assistant message to chat
+	const messageToolCalls = processedToolCalls.length > 0
+		? processedToolCalls.map(tc => ({
+			name: tc.name,
+			params: tc.params,
+			result: tc.result,
+			pendingActionId: tc.pendingActionId
+		}))
+		: undefined;
+
+	await addAssistantMessage(chatId, responseContent, messageToolCalls);
+
+	return {
+		response: responseContent,
+		toolCalls: processedToolCalls,
+		pendingActions,
+		tokensUsed: llmResponse.usage.inputTokens + llmResponse.usage.outputTokens
+	};
+}
+
+/**
+ * Execute a confirmed pending action
+ */
+export async function executeConfirmedAction(
+	actionId: string,
+	pendingAction: PendingAction
+): Promise<{ success: boolean; result: unknown }> {
+	const tool = officeManagerTools.find(t => t.name === pendingAction.toolName);
+	if (!tool) {
+		return { success: false, result: { error: `Unknown tool: ${pendingAction.toolName}` } };
+	}
+
+	const runId = randomUUID();
+	const executionContext: ToolExecutionContext = {
+		runId,
+		agent: 'office_manager',
+		dryRun: false,
+		config: {
+			provider: 'anthropic',
+			model: 'claude-sonnet-4-20250514'
+		}
+	};
+
+	try {
+		const validation = tool.validate(pendingAction.toolArgs);
+		if (!validation.valid) {
+			return { success: false, result: { error: validation.error } };
+		}
+
+		const result = await tool.execute(pendingAction.toolArgs, executionContext);
+
+		await logAIAction({
+			runId,
+			toolName: pendingAction.toolName,
+			toolParams: pendingAction.toolArgs,
+			executed: true,
+			executionResult: result as Record<string, unknown>
+		});
+
+		return { success: true, result };
+	} catch (error) {
+		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+		await logAIAction({
+			runId,
+			toolName: pendingAction.toolName,
+			toolParams: pendingAction.toolArgs,
+			executed: false,
+			error: errorMessage
+		});
+
+		return { success: false, result: { error: errorMessage } };
+	}
+}
+
+/**
+ * Stream event types for real-time updates
+ */
+export interface StreamEvent {
+	type: 'text' | 'tool_start' | 'tool_result' | 'pending_action' | 'done' | 'error';
+	content?: string;
+	toolName?: string;
+	toolParams?: Record<string, unknown>;
+	result?: unknown;
+	pendingActionId?: string;
+	confirmationMessage?: string;
+	tokensUsed?: number;
+	error?: string;
+}
+
+/**
+ * Process a user message with streaming response
+ */
+export async function* processUserMessageStream(
+	chatId: string,
+	userMessage: string,
+	model = 'claude-sonnet-4-20250514'
+): AsyncGenerator<StreamEvent> {
+	// Get the chat session
+	const session = await getChatSession(chatId);
+	if (!session) {
+		yield { type: 'error', error: `Chat session ${chatId} not found` };
+		return;
+	}
+
+	// Add user message to chat
+	await addUserMessage(chatId, userMessage);
+
+	// Assemble context
+	const context = await assembleOfficeManagerContext();
+
+	// Build conversation history for the LLM
+	const conversationHistory = buildConversationHistory(session.messages);
+
+	// Build the user prompt with context
+	const userPrompt = `${conversationHistory}
+
+## Current Context
+${context}
+
+## User Message
+${userMessage}`;
+
+	// Get tools formatted for the LLM
+	const tools = officeManagerTools;
+
+	// Make the streaming LLM request
+	const request: LLMRequest = {
+		model,
+		systemPrompt: OFFICE_MANAGER_SYSTEM_PROMPT,
+		userPrompt,
+		tools,
+		maxTokens: 2048,
+		temperature: 0.3
+	};
+
+	const runId = randomUUID();
+	let fullContent = '';
+	const processedToolCalls: ProcessMessageResult['toolCalls'] = [];
+	const pendingActions: PendingAction[] = [];
+	let tokensUsed = 0;
+
+	try {
+		if (!anthropicProvider.stream) {
+			throw new Error('Streaming not supported by this provider');
+		}
+		for await (const chunk of anthropicProvider.stream(request)) {
+			if (chunk.type === 'text' && chunk.content) {
+				fullContent += chunk.content;
+				yield { type: 'text', content: chunk.content };
+			} else if (chunk.type === 'tool_use' && chunk.toolCall) {
+				const { name, params } = chunk.toolCall;
+				yield { type: 'tool_start', toolName: name, toolParams: params };
+
+				const tool = tools.find(t => t.name === name);
+				if (!tool) {
+					yield { type: 'tool_result', toolName: name, result: { error: `Unknown tool: ${name}` } };
+					continue;
+				}
+
+				// Check if tool requires confirmation
+				if (tool.requiresConfirmation) {
+					const confirmationMessage = tool.getConfirmationMessage
+						? tool.getConfirmationMessage(params)
+						: `Confirm action: ${name}?`;
+
+					const pendingAction = await createPendingAction(
+						chatId,
+						name,
+						params,
+						confirmationMessage
+					);
+
+					pendingActions.push(pendingAction);
+
+					processedToolCalls.push({
+						name,
+						params,
+						pendingActionId: pendingAction.id,
+						requiresConfirmation: true
+					});
+
+					yield {
+						type: 'pending_action',
+						toolName: name,
+						pendingActionId: pendingAction.id,
+						confirmationMessage
+					};
+
+					await logAIAction({
+						runId,
+						toolName: name,
+						toolParams: params,
+						executed: false
+					});
+				} else {
+					// Execute the tool immediately
+					const executionContext: ToolExecutionContext = {
+						runId,
+						agent: 'office_manager',
+						dryRun: false,
+						config: { provider: 'anthropic', model }
+					};
+
+					const validation = tool.validate(params);
+					if (!validation.valid) {
+						const result = { error: validation.error };
+						processedToolCalls.push({ name, params, result, requiresConfirmation: false });
+						yield { type: 'tool_result', toolName: name, result };
+						continue;
+					}
+
+					try {
+						const result = await tool.execute(params, executionContext);
+						processedToolCalls.push({ name, params, result, requiresConfirmation: false });
+						yield { type: 'tool_result', toolName: name, result };
+
+						await logAIAction({
+							runId,
+							toolName: name,
+							toolParams: params,
+							executed: true,
+							executionResult: result as Record<string, unknown>
+						});
+					} catch (error) {
+						const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+						const result = { error: errorMessage };
+						processedToolCalls.push({ name, params, result, requiresConfirmation: false });
+						yield { type: 'tool_result', toolName: name, result };
+
+						await logAIAction({
+							runId,
+							toolName: name,
+							toolParams: params,
+							executed: false,
+							error: errorMessage
+						});
+					}
+				}
+			} else if (chunk.type === 'done' && chunk.usage) {
+				tokensUsed = chunk.usage.inputTokens + chunk.usage.outputTokens;
+			}
+		}
+
+		// Build the full response content
+		let responseContent = fullContent;
+		if (pendingActions.length > 0) {
+			responseContent += '\n\n**Actions pending confirmation:**\n';
+			for (const action of pendingActions) {
+				responseContent += `\n- ${action.confirmationMessage}`;
+			}
+		}
+
+		// Save the assistant message
+		const messageToolCalls = processedToolCalls.length > 0
+			? processedToolCalls.map(tc => ({
+				name: tc.name,
+				params: tc.params,
+				result: tc.result,
+				pendingActionId: tc.pendingActionId
+			}))
+			: undefined;
+
+		await addAssistantMessage(chatId, responseContent, messageToolCalls);
+
+		yield { type: 'done', tokensUsed };
+	} catch (error) {
+		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+		yield { type: 'error', error: errorMessage };
+	}
+}
+
+/**
+ * Build conversation history string for the LLM
+ */
+function buildConversationHistory(messages: OfficeManagerMessage[]): string {
+	if (messages.length === 0) {
+		return '';
+	}
+
+	let history = '## Conversation History\n';
+
+	// Only include last 10 messages to save tokens
+	const recentMessages = messages.slice(-10);
+
+	for (const msg of recentMessages) {
+		const role = msg.role === 'user' ? 'User' : 'Assistant';
+		history += `\n**${role}:** ${msg.content}\n`;
+
+		if (msg.toolCalls && msg.toolCalls.length > 0) {
+			history += `\n*Tool calls:*\n`;
+			for (const tc of msg.toolCalls) {
+				history += `- ${tc.name}: ${JSON.stringify(tc.result || 'pending')}\n`;
+			}
+		}
+	}
+
+	return history;
+}

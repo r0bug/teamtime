@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, tasks, taskCompletions, taskPhotos, auditLogs } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
-import { isManager } from '$lib/server/auth/roles';
+import { isManager, isAdmin } from '$lib/server/auth/roles';
 
 export const POST: RequestHandler = async ({ locals, params, request, getClientAddress }) => {
 	if (!locals.user) {
@@ -29,15 +29,23 @@ export const POST: RequestHandler = async ({ locals, params, request, getClientA
 	}
 
 	const body = await request.json();
-	const { notes, lat, lng, address, photos } = body;
+	const { notes, lat, lng, address, photos, cancelledByOfficeManager, cancellationReason, countsAsMissed } = body;
 
-	// Check requirements
-	if (task.notesRequired && !notes) {
-		return json({ error: 'Notes are required to complete this task' }, { status: 400 });
+	// Only admins can set cancellation fields (used by Office Manager AI)
+	const isCancellation = cancelledByOfficeManager === true;
+	if (isCancellation && !isAdmin(locals.user)) {
+		return json({ error: 'Only admins can cancel tasks with Office Manager flags' }, { status: 403 });
 	}
 
-	if (task.photoRequired && (!photos || photos.length === 0)) {
-		return json({ error: 'Photo is required to complete this task' }, { status: 400 });
+	// Check requirements (skip for cancellations)
+	if (!isCancellation) {
+		if (task.notesRequired && !notes) {
+			return json({ error: 'Notes are required to complete this task' }, { status: 400 });
+		}
+
+		if (task.photoRequired && (!photos || photos.length === 0)) {
+			return json({ error: 'Photo is required to complete this task' }, { status: 400 });
+		}
 	}
 
 	// Create completion record
@@ -50,7 +58,11 @@ export const POST: RequestHandler = async ({ locals, params, request, getClientA
 			notes: notes || null,
 			lat: lat || null,
 			lng: lng || null,
-			address: address || null
+			address: address || null,
+			// Office Manager cancellation fields (only set if admin and cancelling)
+			cancelledByOfficeManager: isCancellation ? true : false,
+			cancellationReason: isCancellation ? cancellationReason : null,
+			countsAsMissed: isCancellation ? (countsAsMissed === true) : false
 		})
 		.returning();
 
@@ -78,12 +90,19 @@ export const POST: RequestHandler = async ({ locals, params, request, getClientA
 		.where(eq(tasks.id, params.id));
 
 	// Audit log
+	const auditData: Record<string, unknown> = { completedBy: locals.user.id, notes };
+	if (isCancellation) {
+		auditData.cancelledByOfficeManager = true;
+		auditData.cancellationReason = cancellationReason;
+		auditData.countsAsMissed = countsAsMissed;
+	}
+
 	await db.insert(auditLogs).values({
 		userId: locals.user.id,
-		action: 'complete',
+		action: isCancellation ? 'cancel' : 'complete',
 		entityType: 'task',
 		entityId: params.id,
-		afterData: { completedBy: locals.user.id, notes },
+		afterData: auditData,
 		ipAddress: getClientAddress()
 	});
 

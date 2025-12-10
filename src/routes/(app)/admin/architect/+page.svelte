@@ -112,17 +112,10 @@
 		}
 	}
 
-	// Start a new chat
-	async function startNewChat() {
-		const response = await fetch('/api/architect/chats', {
-			method: 'POST'
-		});
-		const result = await response.json();
-		if (result.success) {
-			currentChatId = result.session.id;
-			currentMessages = [];
-			messageInput = '';
-		}
+	// Start a new chat (reset state for new conversation button)
+	function resetToNewChat() {
+		currentChatId = null;
+		currentMessages = [];
 	}
 
 	// Load an existing chat
@@ -138,20 +131,36 @@
 
 	// Send a message
 	async function sendMessage() {
-		if (!messageInput.trim() || isLoading) return;
+		// Capture message FIRST before any async operations or state changes
+		const userMessage = messageInput.trim();
 
-		// Create chat if needed
-		if (!currentChatId) {
-			await startNewChat();
-		}
+		if (!userMessage || isLoading) return;
 
-		const userMessage = messageInput;
+		// Clear input and set loading state immediately
 		messageInput = '';
-		currentMessages = [...currentMessages, { role: 'user', content: userMessage }];
 		isLoading = true;
 
+		// Create chat if needed
+		let chatId = currentChatId;
+		if (!chatId) {
+			const response = await fetch('/api/architect/chats', {
+				method: 'POST'
+			});
+			const result = await response.json();
+			if (result.success) {
+				chatId = result.session.id;
+				currentChatId = chatId;
+				currentMessages = [];
+			} else {
+				isLoading = false;
+				return;
+			}
+		}
+
+		currentMessages = [...currentMessages, { role: 'user', content: userMessage }];
+
 		try {
-			const response = await fetch(`/api/architect/chats/${currentChatId}/messages`, {
+			const response = await fetch(`/api/architect/chats/${chatId}/messages`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -762,6 +771,7 @@
 							<select name="provider" value={data.config?.provider ?? 'anthropic'} class="input w-full">
 								<option value="anthropic">Anthropic (Claude)</option>
 								<option value="openai">OpenAI (GPT)</option>
+								<option value="segmind">Segmind (Multi-Provider)</option>
 							</select>
 						</div>
 
@@ -769,11 +779,32 @@
 						<div>
 							<label class="block font-medium mb-2">Model</label>
 							<select name="model" value={data.config?.model ?? 'claude-3-5-sonnet-20241022'} class="input w-full">
-								<option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Recommended)</option>
-								<option value="claude-3-opus-20240229">Claude 3 Opus (Most Capable)</option>
-								<option value="claude-3-haiku-20240307">Claude 3 Haiku (Fastest)</option>
-								<option value="gpt-4-turbo-preview">GPT-4 Turbo</option>
-								<option value="gpt-4o">GPT-4o</option>
+								<!-- Anthropic Models -->
+								<optgroup label="Anthropic (Claude)">
+									<option value="claude-opus-4-20250514">Claude Opus 4 (Most Capable)</option>
+									<option value="claude-sonnet-4-20250514">Claude Sonnet 4 (Balanced)</option>
+									<option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Recommended)</option>
+									<option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast)</option>
+									<option value="claude-3-opus-20240229">Claude 3 Opus (Legacy)</option>
+									<option value="claude-3-haiku-20240307">Claude 3 Haiku (Budget)</option>
+								</optgroup>
+								<!-- OpenAI Models -->
+								<optgroup label="OpenAI (GPT)">
+									<option value="gpt-4o">GPT-4o (Flagship)</option>
+									<option value="gpt-4o-mini">GPT-4o Mini (Fast)</option>
+									<option value="o1">o1 (Advanced Reasoning)</option>
+									<option value="o1-mini">o1 Mini (Fast Reasoning)</option>
+									<option value="o3-mini">o3 Mini (Latest Reasoning)</option>
+									<option value="gpt-4-turbo">GPT-4 Turbo</option>
+								</optgroup>
+								<!-- Segmind Models -->
+								<optgroup label="Segmind (Multi-Provider)">
+									<option value="segmind-claude-4.5-sonnet">Claude 4.5 Sonnet</option>
+									<option value="segmind-gpt-5">GPT-5</option>
+									<option value="segmind-gemini-2.5-pro">Gemini 2.5 Pro</option>
+									<option value="segmind-deepseek-r1">DeepSeek R1 (Reasoning)</option>
+									<option value="segmind-llama-3.1-405b">Llama 3.1 405B</option>
+								</optgroup>
 							</select>
 						</div>
 

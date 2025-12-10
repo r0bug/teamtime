@@ -13,11 +13,25 @@
 	let newPolicyContent = '';
 	let newPolicyPriority = 50;
 
-	// Computed model lists
-	$: omProvider = data.officeManager?.provider ?? 'anthropic';
-	$: roProvider = data.revenueOptimizer?.provider ?? 'anthropic';
+	// Provider state (local variables that can be changed by UI)
+	let omProvider: string = data.officeManager?.provider ?? 'anthropic';
+	let roProvider: string = data.revenueOptimizer?.provider ?? 'anthropic';
+
+	// Model state
+	let omModel: string = data.officeManager?.model ?? 'claude-3-haiku-20240307';
+	let roModel: string = data.revenueOptimizer?.model ?? 'claude-3-haiku-20240307';
+
+	// Computed model lists based on selected provider
 	$: currentModels = data.modelOptions[omProvider as keyof typeof data.modelOptions] || [];
 	$: roCurrentModels = data.modelOptions[roProvider as keyof typeof data.modelOptions] || [];
+
+	// Reset model to first option when provider changes
+	$: if (currentModels.length > 0 && !currentModels.find(m => m.value === omModel)) {
+		omModel = currentModels[0].value;
+	}
+	$: if (roCurrentModels.length > 0 && !roCurrentModels.find(m => m.value === roModel)) {
+		roModel = roCurrentModels[0].value;
+	}
 </script>
 
 <svelte:head>
@@ -41,7 +55,7 @@
 					</svg>
 					View System Prompts
 				</a>
-				{#if data.hasAnthropicKey || data.hasOpenAIKey}
+				{#if data.hasAnthropicKey || data.hasOpenAIKey || data.hasSegmindKey}
 					<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
 						API Configured
 					</span>
@@ -251,12 +265,15 @@
 						<!-- Provider Selection -->
 						<div class="border-t pt-4">
 							<label class="block font-medium mb-2">AI Provider</label>
-							<select name="provider" value={data.officeManager?.provider ?? 'anthropic'} class="input w-full">
+							<select name="provider" bind:value={omProvider} class="input w-full">
 								<option value="anthropic" disabled={!data.hasAnthropicKey}>
 									Anthropic (Claude) {!data.hasAnthropicKey ? '- API Key Required' : ''}
 								</option>
 								<option value="openai" disabled={!data.hasOpenAIKey}>
 									OpenAI (GPT) {!data.hasOpenAIKey ? '- API Key Required' : ''}
+								</option>
+								<option value="segmind" disabled={!data.hasSegmindKey}>
+									Segmind (Multi-Provider) {!data.hasSegmindKey ? '- API Key Required' : ''}
 								</option>
 							</select>
 						</div>
@@ -264,7 +281,7 @@
 						<!-- Model Selection -->
 						<div>
 							<label class="block font-medium mb-2">Model</label>
-							<select name="model" value={data.officeManager?.model ?? 'claude-3-haiku-20240307'} class="input w-full">
+							<select name="model" bind:value={omModel} class="input w-full">
 								{#each currentModels as model}
 									<option value={model.value}>{model.label}</option>
 								{/each}
@@ -356,12 +373,15 @@
 						<!-- Provider Selection -->
 						<div class="border-t pt-4">
 							<label class="block font-medium mb-2">AI Provider</label>
-							<select name="provider" value={data.revenueOptimizer?.provider ?? 'anthropic'} class="input w-full">
+							<select name="provider" bind:value={roProvider} class="input w-full">
 								<option value="anthropic" disabled={!data.hasAnthropicKey}>
 									Anthropic (Claude) {!data.hasAnthropicKey ? '- API Key Required' : ''}
 								</option>
 								<option value="openai" disabled={!data.hasOpenAIKey}>
 									OpenAI (GPT) {!data.hasOpenAIKey ? '- API Key Required' : ''}
+								</option>
+								<option value="segmind" disabled={!data.hasSegmindKey}>
+									Segmind (Multi-Provider) {!data.hasSegmindKey ? '- API Key Required' : ''}
 								</option>
 							</select>
 						</div>
@@ -369,7 +389,7 @@
 						<!-- Model Selection -->
 						<div>
 							<label class="block font-medium mb-2">Model</label>
-							<select name="model" value={data.revenueOptimizer?.model ?? 'claude-3-haiku-20240307'} class="input w-full">
+							<select name="model" bind:value={roModel} class="input w-full">
 								{#each roCurrentModels as model}
 									<option value={model.value}>{model.label}</option>
 								{/each}
@@ -493,6 +513,24 @@
 							>
 							<p class="text-sm text-gray-500 mt-1">
 								Get your key at <a href="https://platform.openai.com/api-keys" target="_blank" class="text-primary-600 hover:underline">platform.openai.com</a>
+							</p>
+						</div>
+
+						<div class="border-t pt-4">
+							<label class="block font-medium mb-2">
+								Segmind API Key
+								{#if data.hasSegmindKey}
+									<span class="ml-2 text-xs text-green-600">Configured</span>
+								{/if}
+							</label>
+							<input
+								type="password"
+								name="segmindKey"
+								class="input w-full font-mono"
+								placeholder={data.hasSegmindKey ? '••••••••••••••••' : 'SG_...'}
+							>
+							<p class="text-sm text-gray-500 mt-1">
+								Get your key at <a href="https://www.segmind.com/api-keys" target="_blank" class="text-primary-600 hover:underline">segmind.com</a> - Access Claude, GPT, Gemini, DeepSeek, Llama & more
 							</p>
 						</div>
 

@@ -79,7 +79,7 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const enabled = formData.get('enabled') === 'on';
 		const dryRunMode = formData.get('dryRunMode') === 'on';
-		const provider = (formData.get('provider') as string) || 'anthropic';
+		const provider = (formData.get('provider') as 'anthropic' | 'openai' | 'segmind') || 'anthropic';
 		const model = (formData.get('model') as string) || 'claude-3-5-sonnet-20241022';
 
 		// Check if config exists

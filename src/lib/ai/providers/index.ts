@@ -2,10 +2,12 @@
 import type { LLMProvider, AIProvider } from '../types';
 import { anthropicProvider } from './anthropic';
 import { openaiProvider } from './openai';
+import { segmindProvider } from './segmind';
 
 const providers: Record<AIProvider, LLMProvider> = {
 	anthropic: anthropicProvider,
-	openai: openaiProvider
+	openai: openaiProvider,
+	segmind: segmindProvider
 };
 
 export function getProvider(name: AIProvider): LLMProvider {
@@ -16,4 +18,4 @@ export function getProvider(name: AIProvider): LLMProvider {
 	return provider;
 }
 
-export { anthropicProvider, openaiProvider };
+export { anthropicProvider, openaiProvider, segmindProvider };

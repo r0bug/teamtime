@@ -8,7 +8,9 @@ module.exports = {
       // Environment
       env: {
         NODE_ENV: 'production',
-        PORT: 3000
+        PORT: 3000,
+        BODY_SIZE_LIMIT: 'Infinity',  // Disable body size limit (app does own validation)
+        TZ: 'America/Los_Angeles'     // Pacific timezone for correct time display
       },
 
       // Restart behavior - CRITICAL for preventing crash loops

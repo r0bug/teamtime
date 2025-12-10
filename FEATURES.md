@@ -263,4 +263,233 @@ Managers and Admins can access pricing analytics at `/admin/pricing`:
 
 ---
 
+## Inventory Drops (AI-Powered Batch Identification)
+
+### Overview
+
+Inventory Drops streamline bulk item submission for AI-powered identification. Instead of pricing items one-by-one, users can upload multiple photos and let Claude AI identify individual sellable items, suggest prices, and prepare them for pricing decisions.
+
+### User Experience
+
+#### Creating an Inventory Drop
+
+1. Navigate to **Inventory** → **Drops** from the main navigation
+2. Click **New Drop**
+3. Upload photos (up to 10) via:
+   - Drag-and-drop onto the upload zone
+   - Click to select files
+   - Camera capture on mobile
+4. Add a description of the batch (e.g., "Kitchen items from estate sale")
+5. Optionally add pick notes for context
+6. Submit the drop
+
+#### AI Processing
+
+After submission, trigger AI processing:
+
+1. View the drop detail page
+2. Click **Process with AI**
+3. Claude analyzes the photos and identifies:
+   - Individual sellable items
+   - Suggested prices (where confident)
+   - Confidence scores (0.0 - 1.0)
+   - Which photos contain each item
+
+#### Post-Processing Workflow
+
+Once processing completes:
+
+1. Review identified items with confidence indicators:
+   - **High** (green): 0.8+ confidence
+   - **Medium** (yellow): 0.5-0.8 confidence
+   - **Low** (red): Below 0.5 confidence
+2. Click **Create Pricing** on any item to:
+   - Pre-fill description from AI identification
+   - Pre-fill suggested price (if available)
+   - Attach relevant photos automatically
+3. Complete the pricing form with destination (Store/eBay)
+4. Item flows into standard pricing/eBay workflow
+
+### Drop Statuses
+
+| Status | Description |
+|--------|-------------|
+| **Pending** | Awaiting AI processing |
+| **Processing** | AI analysis in progress |
+| **Completed** | Items identified, ready for pricing |
+| **Failed** | Processing error (can be retried) |
+
+### Permissions
+
+| Role | Create Drops | View Own | View All | Process |
+|------|--------------|----------|----------|---------|
+| Staff | No | - | - | - |
+| Purchaser | Yes | Yes | No | Yes |
+| Manager | Yes | Yes | Yes | Yes |
+| Admin | Yes | Yes | Yes | Yes |
+
+### Routes
+
+| Path | Description | Access |
+|------|-------------|--------|
+| `/inventory/drops` | List inventory drops | Purchaser+ |
+| `/inventory/drops/new` | Create new drop | Purchaser+ |
+| `/inventory/drops/[id]` | View drop, photos, items | Owner or Manager |
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/inventory-drops` | GET | List drops (filtered by role) |
+| `/api/inventory-drops` | POST | Create new drop with photos |
+| `/api/inventory-drops/[id]` | GET | Get drop with photos and items |
+| `/api/inventory-drops/[id]` | DELETE | Delete pending drop |
+| `/api/inventory-drops/[id]/process` | POST | Trigger AI processing |
+| `/api/inventory-drops/[id]/items/[itemId]/create-pricing` | POST | Create pricing from item |
+
+### Database Schema
+
+**Tables**:
+- `inventory_drops` — Drop metadata and status
+- `inventory_drop_photos` — Photos uploaded with drop
+- `inventory_drop_items` — AI-identified items with confidence scores
+
+**Key Fields**:
+- `status` enum: pending, processing, completed, failed
+- `item_count`: Number of items identified
+- `processing_error`: Error message if failed
+- `confidence_score`: 0.00-1.00 per item
+- `source_photo_ids`: Array linking items to photos
+
+### Implementation Files
+
+- **Schema**: `src/lib/server/db/schema.ts` — `inventoryDrops`, `inventoryDropPhotos`, `inventoryDropItems`
+- **API**: `src/routes/api/inventory-drops/`
+- **UI**: `src/routes/(app)/inventory/drops/`
+
+---
+
+## AI Operations Assistants
+
+### Overview
+
+TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent operations support:
+
+1. **Office Manager** — Proactive daily operations
+2. **Revenue Optimizer** — Pattern analysis and optimization
+3. **Ada (Architecture Advisor)** — Interactive system design
+
+### Office Manager
+
+**Purpose**: Monitor attendance, track tasks, support onboarding, coordinate communication.
+
+**Triggers**: Runs on a 15-minute cron schedule during business hours (7 AM - 7 PM).
+
+**Available Tools**:
+- `send_message` — Send direct messages to users (with cooldowns)
+- `create_task` — Create follow-up tasks (with cooldowns)
+- `cancel_task` — Cancel tasks with accountability tracking and user notification
+- `view_schedule` — View work schedule by date and location
+- `get_available_staff` — Query staff availability and clock-in status
+- `send_sms` — Send SMS messages to users
+- `trade_shifts` — Facilitate shift trades between users
+- `create_schedule` — Create new schedule entries
+- `create_recurring_task` — Create recurring task templates
+- `create_cash_count_task` — Create cash count tasks
+- `process_inventory_photos` — Process inventory batch photos
+- Permission management tools (view, grant, change user types)
+
+**Cooldowns** (prevent spam):
+- Messages: 30 min per user, 5 min global, 10/hour max
+- Tasks: 60 min per user, 10 min global, 5/hour max
+
+**Task Cancellation Features**:
+- Cancel tasks that are no longer relevant
+- Track accountability (counts as missed or not)
+- Automatic notification to assigned user
+- Full audit logging
+
+**Configuration** (Admin → AI → Office Manager):
+- Enable/disable agent
+- Set tone (helpful parent, professional, casual, formal)
+- Add custom instructions
+- Configure cron schedule
+- Set dry-run mode for testing
+
+### Revenue Optimizer
+
+**Purpose**: Analyze patterns across scheduling, tasks, and expenses. Write long-term observations for the Office Manager.
+
+**Triggers**: Runs nightly for comprehensive analysis.
+
+**Available Tools**:
+- `write_memory` — Store observations about users, locations, or global patterns
+- `create_policy` — Create guidelines for the Office Manager to follow
+- `send_recommendation` — Send strategic insights to administrators
+
+**Analysis Areas**:
+- Scheduling efficiency
+- Task completion rates
+- Attendance patterns
+- Workflow optimization
+- Training needs
+- Cost optimization
+
+### Ada (Architecture Advisor)
+
+**Purpose**: Interactive AI consultant for system design decisions.
+
+**Access**: Admin → Architect
+
+**Features**:
+- Chat-based interface for architecture discussions
+- Tiered model selection:
+  - **Quick**: Claude Sonnet for simple questions
+  - **Standard**: Claude Opus for normal discussion
+  - **Deliberate**: Multi-model (Opus + GPT-4o review + synthesis) for major decisions
+- Architecture Decision Records (ADRs)
+- Claude Code prompt generation for implementation
+
+**Triggers for Multi-Model**:
+- ADR creation
+- Schema design discussions
+- Prompt generation requests
+- Explicit "deliberate" requests
+
+### Configuration
+
+All AI agents are configured in Admin → AI:
+
+- Provider selection (Anthropic, OpenAI, Segmind)
+- Model selection per tier
+- Custom instructions
+- Tone settings
+- Enable/disable per agent
+- Dry-run mode for testing
+
+### Supported AI Providers
+
+**Anthropic (Claude)**:
+- Claude Opus 4 (Most Capable)
+- Claude Sonnet 4 (Balanced)
+- Claude 3.5 Sonnet/Haiku
+- Claude 3 Opus/Sonnet/Haiku (Legacy)
+
+**OpenAI (GPT)**:
+- GPT-4o / GPT-4o Mini
+- o1 / o1-mini / o1-preview (Reasoning)
+- o3-mini (Latest Reasoning)
+- GPT-4 Turbo / GPT-4 (Legacy)
+- GPT-3.5 Turbo
+
+**Segmind (Multi-Provider Gateway)**:
+- Claude models via Segmind
+- GPT-5 / GPT-5 Mini / GPT-5 Nano
+- Gemini 3 Pro / 2.5 Pro / 2.5 Flash
+- DeepSeek Chat / DeepSeek R1 (Reasoning)
+- Llama 3.1 405B/70B/8B
+- Kimi K2 (262K context)
+
+---
+
 *Last updated: December 2024*

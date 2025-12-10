@@ -9,6 +9,8 @@
 	$: activeTimeEntry = data.activeTimeEntry;
 	$: pendingTasks = data.pendingTasks;
 	$: unreadMessages = data.unreadMessages;
+	$: dropStats = data.dropStats;
+	$: userIsPurchaser = data.userIsPurchaser;
 
 	let clockLoading = false;
 </script>
@@ -103,6 +105,42 @@
 			</div>
 		</a>
 	</div>
+
+	<!-- Inventory Drops Section for Purchasers -->
+	{#if userIsPurchaser && dropStats}
+		<div class="card mb-6">
+			<div class="card-header flex items-center justify-between">
+				<h2 class="font-semibold">Inventory Drops</h2>
+				<a href="/inventory/drops" class="text-primary-600 text-sm hover:underline">View All</a>
+			</div>
+			<div class="card-body">
+				<div class="grid grid-cols-3 gap-4 text-center">
+					<a href="/inventory/drops?status=pending" class="hover:bg-gray-50 rounded-lg p-2 transition-colors">
+						<p class="text-2xl font-bold text-amber-600">{dropStats.pendingDrops}</p>
+						<p class="text-xs text-gray-600">Pending</p>
+					</a>
+					<a href="/inventory/drops?status=processing" class="hover:bg-gray-50 rounded-lg p-2 transition-colors">
+						<p class="text-2xl font-bold text-blue-600">{dropStats.processingDrops}</p>
+						<p class="text-xs text-gray-600">Processing</p>
+					</a>
+					<div class="p-2">
+						<p class="text-2xl font-bold text-green-600">{dropStats.itemsToday}</p>
+						<p class="text-xs text-gray-600">Items Today</p>
+					</div>
+				</div>
+				{#if dropStats.pendingDrops > 0}
+					<div class="mt-4 pt-4 border-t">
+						<a href="/inventory/drops/new" class="btn-primary w-full text-center block">
+							<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+							</svg>
+							New Drop
+						</a>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
 
 	<!-- Quick Actions -->
 	<div class="card">

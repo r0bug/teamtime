@@ -1,103 +1,117 @@
 # TeamTime
 
-Mobile-first workforce operations system for scheduling, timekeeping, task management, expense tracking, and AI-powered operations assistance.
+**The complete mobile workforce platform for field operations, estate sales, and retail teams.**
 
-## Features
+TeamTime eliminates the friction of managing distributed teams. Clock in with GPS verification, submit purchase approvals with photos, and get AI-powered operational insights—all from your phone.
 
-### Core Operations
-- **Scheduling** — Drag-and-drop shift management with bulk creation and repeat options
-- **Time & Attendance** — GPS-enabled clock in/out with audit trail
-- **Task Management** — One-off, recurring, and event-triggered tasks
-- **Messaging** — 1:1 and broadcast communications with photo support
-- **Expense Tracking** — ATM withdrawal reconciliation and purchase approvals
-- **Push Notifications** — PWA-enabled alerts for tasks, messages, and schedules
-- **Progressive Web App** — Install to home screen with offline support
+Built for Yakima Finds, refined for any business where your team works in the field.
 
-### AI Mentats System
+## Why TeamTime?
 
-TeamTime includes three AI-powered assistants ("Shackled Mentats") for intelligent operations support:
+Traditional workforce tools assume everyone sits at a desk. TeamTime was built for **real-world operations**:
 
-#### Office Manager
-- **Automated scheduling assistant** — Analyzes availability, preferences, and constraints
-- **Shift coverage suggestions** — AI-powered recommendations for open shifts
-- **Staffing alerts** — Proactive notifications about understaffing risks
-- **Runs on cron** — Automated daily/weekly analysis
+- **Estate sale crews** pricing items on-site and requesting purchase approvals
+- **Retail teams** clocking in at multiple locations with GPS verification
+- **Field workers** completing photo-documented tasks and procedures
+- **Managers** getting AI-powered insights without being glued to a dashboard
 
-#### Revenue Optimizer
-- **Business analysis** — Automated review of expenses, purchases, and ROI
-- **Cost insights** — Identifies spending patterns and optimization opportunities
-- **Performance tracking** — Monitors purchase approval success rates
-- **Runs nightly** — Scheduled background analysis
+## Core Features
 
-#### Ada - Architecture Advisor
-- **Interactive AI consultant** — Chat-based architectural guidance
-- **Multi-model consultation** — Uses tiered AI approach for complex decisions:
-  - **Quick**: Claude Sonnet for simple questions
-  - **Standard**: Claude Opus for normal discussion
-  - **Deliberate**: Opus + GPT-4o review + Sonnet synthesis for major decisions
-- **Architecture Decision Records (ADRs)** — Automatic documentation of architectural choices
-- **Claude Code prompts** — Generates implementation prompts for developers
-- **Automatic tier detection** — Escalates to multi-model for schema design, ADRs, and complex decisions
+### Time & Attendance
+- GPS-verified clock in/out from any device
+- Real-time "who's working where" visibility
+- Automatic shift matching and overtime tracking
+- Export to CSV for payroll integration
+
+### Task Management
+- Assign one-off or recurring tasks with photo requirements
+- Event-triggered tasks (e.g., "Opening Procedure" on first clock-in)
+- Priority levels and due date tracking
+- Completion history with location and photo evidence
+
+### Item Pricing & eBay Routing
+- Document pricing decisions with photos and justification
+- Route items to store or eBay with one tap
+- Auto-create eBay listing tasks for online items
+- Pricing analytics by user, date range, and destination
+
+### Inventory Drops (AI-Powered)
+- Upload photos of bulk inventory
+- Claude AI identifies individual items and suggests prices
+- Create pricing decisions directly from AI identifications
+- Confidence scoring for each identification
+
+### Expense Tracking
+- Log ATM withdrawals with location and receipt photos
+- Allocate funds to products with photo documentation
+- Full audit trail from withdrawal to purchase
+- Manager approval workflow for large purchases
+
+### Team Communication
+- Direct messaging between any team members
+- Broadcast messages to all staff
+- Photo attachments for "where is this item?" scenarios
+- Conversation history retained for accountability
+
+### AI Operations Assistants ("Shackled Mentats")
+
+Three specialized AI agents run in the background:
+
+**Office Manager** — Monitors attendance, flags missing staff, creates/cancels tasks, sends proactive messages, views schedules, and manages permissions. 15+ tools available. Runs on a 15-minute cron schedule during business hours.
+
+**Revenue Optimizer** — Analyzes patterns across scheduling, task completion, and expenses. Writes long-term observations and creates policies for the Office Manager to follow. Runs nightly.
+
+**Ada (Architecture Advisor)** — Interactive AI consultant for system design decisions. Uses tiered models (quick, standard, deliberate) and creates Architecture Decision Records.
+
+**Supported AI Providers**:
+- Anthropic (Claude 4/3.5/3 series)
+- OpenAI (GPT-4o, o1, o3-mini, GPT-4/3.5)
+- Segmind (Gateway to Claude, GPT-5, Gemini, DeepSeek, Llama, Kimi)
 
 ## User Roles
 
-| Role | Description |
-|------|-------------|
-| **Admin** | Full system access: all communications, audit logs, module control, AI configuration |
-| **Manager** | Scheduling, task management, purchase approvals, user management, AI assistant access |
-| **Purchaser** | Field purchasing with expense tracking and approval requests |
-| **Staff** | Basic access: clock in/out, tasks, messaging |
+| Role | Access |
+|------|--------|
+| **Admin** | Everything: all communications, audit logs, module control, AI configuration |
+| **Manager** | Scheduling, task management, purchase approvals, user management, reports |
+| **Purchaser** | Field purchasing, ATM withdrawals, purchase requests, expense tracking |
+| **Staff** | Clock in/out, assigned tasks, messaging, personal schedule |
 
 ## Mobile Experience
 
-TeamTime is designed mobile-first with full feature parity:
+TeamTime is **mobile-first**. The same URL works on desktop, but the experience is optimized for phones:
 
-### Navigation
-- **Hamburger Menu** — Tap the menu icon (top-left) to access all navigation including admin features
-- **Bottom Nav Bar** — Quick access to Home, Schedule, Tasks, Messages, and Expenses
-- **Slide-out Panel** — Full navigation menu with user info, main sections, admin tools, settings, and logout
+- **Bottom navigation** for quick access to Home, Schedule, Tasks, Messages, Expenses
+- **Hamburger menu** slides out full navigation including admin features
+- **PWA install** prompts on Android/iOS for home screen access
+- **Offline-tolerant** with queued sync for clock events and messages
 
-### PWA Install
-- **Android/Chrome** — Custom install banner intercepts browser's `beforeinstallprompt` event, displays "Install App" button for one-tap installation
-- **iOS Safari** — Visual instructions with share icon guide users to tap Share → "Add to Home Screen"
-- **Smart display** — Prompt only appears on mobile, never on desktop, and hides if app is already installed (standalone mode)
-- **Dismissible** — X button hides prompt permanently (preference stored in localStorage)
+### Install to Home Screen
 
-### Admin Features (Mobile)
+**Android/Chrome**: Custom banner intercepts the browser install prompt—one tap to add.
 
-Managers and admins have full access on mobile via the hamburger menu:
-- Dashboard, Users, Messages, Schedule, Reports
-- Pay Periods, Info Posts, Export Hours, Locations, Settings
-- **AI Mentats** — Configure and interact with AI assistants
-- **Ada Chat** — Architecture advisor with consultation metadata
-- Audit Logs (admin only)
-- Modules (admin only)
-
-## Desktop Experience
-
-- **Fixed Sidebar** — Full navigation always visible on screens 1024px+
-- **Expanded Views** — Schedule grid, reports, and admin dashboards optimized for larger screens
-- **AI Chat Interface** — Full-featured Ada conversation with tier badges and expandable details
-- Same functionality as mobile with enhanced layout
+**iOS Safari**: Visual instructions guide users through Share → Add to Home Screen.
 
 ## Tech Stack
 
-- **Frontend**: SvelteKit, TailwindCSS, TypeScript
-- **Backend**: Node.js, PostgreSQL
-- **Auth**: Lucia v3 with PIN + optional 2FA
-- **ORM**: Drizzle
-- **PWA**: Service Worker with Workbox patterns
-- **AI**: Anthropic Claude API, OpenAI GPT API (multi-model consultation)
+| Layer | Technology |
+|-------|------------|
+| Frontend | SvelteKit 2, TailwindCSS, TypeScript |
+| Backend | Node.js, PostgreSQL 15 |
+| ORM | Drizzle with type-safe queries |
+| Auth | Lucia v3 with PIN/password + optional 2FA |
+| AI | Anthropic Claude, OpenAI GPT, Segmind (multi-provider) |
+| PWA | Service Worker with Workbox patterns |
 
-## Development
+## Quick Start
 
 ```bash
 # Install dependencies
 npm install
 
-# Set up environment
+# Configure environment
 cp .env.example .env
-# Edit .env with your database credentials
+# Edit .env with your database URL and API keys
 
 # Push database schema
 npm run db:push
@@ -106,7 +120,7 @@ npm run db:push
 npm run dev
 ```
 
-## Production
+## Production Deployment
 
 ```bash
 # Build for production
@@ -121,25 +135,84 @@ node build
 
 ## Environment Variables
 
-```
+```bash
+# Required
 DATABASE_URL=postgresql://user:pass@localhost:5432/teamtime
 AUTH_SECRET=your-32-char-secret
+
+# Optional - GPS features
 GOOGLE_MAPS_API_KEY=your-api-key
+
+# Optional - Push notifications
 VAPID_PUBLIC_KEY=your-vapid-public-key
 VAPID_PRIVATE_KEY=your-vapid-private-key
 
-# AI Configuration (optional - can also be configured in admin UI)
-ANTHROPIC_API_KEY=your-anthropic-api-key
-OPENAI_API_KEY=your-openai-api-key
+# Optional - AI features (can also configure in admin UI)
+# API keys are stored in .ai-keys.json and managed via Admin → AI → API Keys
+# Supported providers: Anthropic, OpenAI, Segmind
 ```
+
+## Project Structure
+
+```
+src/
+├── lib/
+│   ├── server/         # Auth, database, email services
+│   ├── components/     # Reusable Svelte components
+│   ├── ai/             # AI orchestrators, tools, context providers
+│   └── utils/          # Date formatting, geolocation helpers
+├── routes/
+│   ├── (app)/          # Authenticated pages
+│   │   ├── admin/      # Manager/admin dashboards
+│   │   ├── tasks/      # Task management
+│   │   ├── pricing/    # Item pricing workflow
+│   │   ├── inventory/  # AI-powered inventory drops
+│   │   ├── expenses/   # ATM withdrawals and allocations
+│   │   ├── messages/   # Team communication
+│   │   └── schedule/   # Shift viewing and management
+│   ├── api/            # REST endpoints
+│   └── login/          # Authentication pages
+└── static/             # PWA manifest, icons
+```
+
+## API Overview
+
+TeamTime exposes **65+ REST endpoints** organized by domain:
+
+- `/api/clock/in`, `/api/clock/out` — Time tracking
+- `/api/tasks`, `/api/tasks/[id]/complete` — Task management
+- `/api/pricing-decisions` — Item pricing with photos
+- `/api/inventory-drops`, `/api/inventory-drops/[id]/process` — AI inventory
+- `/api/atm-withdrawals`, `/api/purchase-requests` — Expense tracking
+- `/api/conversations`, `/api/messages` — Team messaging
+- `/api/ai/cron` — AI agent triggers
+- `/api/architect/chats` — Architecture advisor
+
+All endpoints require authentication except static files. Role-based authorization is enforced at the API layer.
 
 ## Documentation
 
-- [Spec.md](./Spec.md) — Complete functional specification
-- [Schema.md](./Schema.md) — Client-side storage schema (localStorage, etc.)
-- [FEATURES.md](./FEATURES.md) — Feature documentation and implementation details
-- [src/lib/ai/architect/README.md](./src/lib/ai/architect/README.md) — Ada Architecture Advisor documentation
+- **[Spec.md](./Spec.md)** — Complete functional specification
+- **[FEATURES.md](./FEATURES.md)** — Detailed feature documentation
+- **[src/lib/ai/architect/README.md](./src/lib/ai/architect/README.md)** — Architecture Advisor docs
+
+## Database
+
+37 tables organized across domains:
+
+- **Core**: users, sessions, locations, shifts, time_entries
+- **Tasks**: task_templates, tasks, task_completions, task_photos
+- **Pricing**: pricing_decisions, pricing_decision_photos
+- **Inventory**: inventory_drops, inventory_drop_photos, inventory_drop_items
+- **Expenses**: atm_withdrawals, withdrawal_allocations, purchase_requests
+- **Messaging**: conversations, messages, message_photos
+- **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes
+- **Admin**: app_settings, audit_logs, info_posts
 
 ## License
 
 Proprietary - All rights reserved.
+
+---
+
+*Built for [Yakima Finds](https://yakimafinds.com) by the TeamTime team.*

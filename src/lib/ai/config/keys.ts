@@ -55,5 +55,6 @@ export function getAvailableProviders(): AIProvider[] {
 	const available: AIProvider[] = [];
 	if (keys.anthropic) available.push('anthropic');
 	if (keys.openai) available.push('openai');
+	if (keys.segmind) available.push('segmind');
 	return available;
 }

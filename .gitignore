@@ -41,3 +41,6 @@ npm-debug.log*
 # AI System - API Keys (local only)
 .ai-keys.json
 ai-keys.json
+
+# Admin documentation with credentials
+DATABASE_ADMIN_ACCESS.md

@@ -1,6 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { db, shifts, timeEntries, tasks, conversationParticipants, messages } from '$lib/server/db';
+import { db, shifts, timeEntries, tasks, conversationParticipants, messages, inventoryDrops, inventoryDropItems } from '$lib/server/db';
 import { eq, and, isNull, gt, gte, lt, sql } from 'drizzle-orm';
+import { isPurchaser } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -59,10 +60,40 @@ export const load: PageServerLoad = async ({ locals }) => {
 		);
 	const unreadMessages = unreadResult[0]?.count || 0;
 
+	// Inventory drop stats for purchasers and above
+	let dropStats = null;
+	if (isPurchaser(user)) {
+		// Pending drops (awaiting processing)
+		const [{ count: pendingDrops }] = await db
+			.select({ count: sql<number>`count(*)::int` })
+			.from(inventoryDrops)
+			.where(eq(inventoryDrops.status, 'pending'));
+
+		// Items identified today
+		const [{ count: itemsToday }] = await db
+			.select({ count: sql<number>`count(*)::int` })
+			.from(inventoryDropItems)
+			.where(gte(inventoryDropItems.createdAt, startOfDay));
+
+		// Processing drops
+		const [{ count: processingDrops }] = await db
+			.select({ count: sql<number>`count(*)::int` })
+			.from(inventoryDrops)
+			.where(eq(inventoryDrops.status, 'processing'));
+
+		dropStats = {
+			pendingDrops: pendingDrops || 0,
+			processingDrops: processingDrops || 0,
+			itemsToday: itemsToday || 0
+		};
+	}
+
 	return {
 		nextShift,
 		activeTimeEntry,
 		pendingTasks: pendingTasks || 0,
-		unreadMessages
+		unreadMessages,
+		dropStats,
+		userIsPurchaser: isPurchaser(user)
 	};
 };

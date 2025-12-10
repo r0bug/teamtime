@@ -58,12 +58,24 @@ export const schemaContextProvider: AIContextProvider<SchemaContext> = {
 	},
 
 	estimateTokens(context: SchemaContext): number {
-		return Math.ceil(context.content.length / 4);
+		// Estimate based on truncated length
+		const MAX_SCHEMA_LENGTH = 6000;
+		const length = Math.min(context.content.length, MAX_SCHEMA_LENGTH);
+		return Math.ceil(length / 4) + 100; // +100 for headers
 	},
 
 	formatForPrompt(context: SchemaContext): string {
 		if (!context.exists) {
 			return '## Database Schema\n\n*Schema file not found.*';
+		}
+
+		// Truncate schema content to avoid token limits
+		const MAX_SCHEMA_LENGTH = 6000;
+		let schemaContent = context.content;
+		let truncated = false;
+		if (schemaContent.length > MAX_SCHEMA_LENGTH) {
+			schemaContent = schemaContent.substring(0, MAX_SCHEMA_LENGTH);
+			truncated = true;
 		}
 
 		return `## Database Schema (schema.ts)
@@ -74,10 +86,12 @@ export const schemaContextProvider: AIContextProvider<SchemaContext> = {
 
 **Types (${context.types.length}):** ${context.types.join(', ')}
 
+*Note: Use read_files tool to see full schema if needed.*
+
 ---
 
 \`\`\`typescript
-${context.content}
-\`\`\``;
+${schemaContent}
+\`\`\`${truncated ? '\n\n... [Schema truncated - use read_files for full content]' : ''}`;
 	}
 };

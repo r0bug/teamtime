@@ -50,8 +50,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			provider: configRow.provider as 'anthropic' | 'openai',
 			model: configRow.model,
 			tone: configRow.tone as AIConfig['tone'],
-			customInstructions: configRow.customInstructions || undefined,
-			apiKey: configRow.apiKey || undefined
+			customInstructions: configRow.instructions || undefined
 		};
 
 		// If in dry run mode, return a placeholder response

@@ -2,7 +2,6 @@
 import type { AITool, ToolExecutionContext } from '../../types';
 import {
 	readFile,
-	readFiles,
 	searchFiles,
 	formatFileForContext
 } from '$lib/server/services/file-reader';
@@ -65,34 +64,57 @@ export const readFilesTool: AITool<ReadFilesParams, ReadFilesResult> = {
 	},
 
 	async execute(params: ReadFilesParams, _context: ToolExecutionContext): Promise<ReadFilesResult> {
-		const includeLineNumbers = params.includeLineNumbers ?? true;
-		const results = await readFiles(params.paths);
+		try {
+			const includeLineNumbers = params.includeLineNumbers ?? true;
+			const files: ReadFilesResult['files'] = [];
+			const errors: string[] = [];
 
-		const files = results.map(result => {
-			if (result.success && result.content) {
-				return {
-					path: result.path,
-					content: result.content,
-					formattedContent: formatFileForContext(result.path, result.content, { includeLineNumbers }),
-					size: result.size
-				};
+			// Process each file individually to handle errors per-file
+			for (const filePath of params.paths) {
+				try {
+					const result = await readFile(filePath);
+					if (result.success && result.content) {
+						files.push({
+							path: filePath,
+							content: result.content,
+							formattedContent: formatFileForContext(filePath, result.content, { includeLineNumbers }),
+							size: result.size
+						});
+					} else {
+						files.push({
+							path: filePath,
+							error: result.error || 'Unknown error reading file'
+						});
+						errors.push(`${filePath}: ${result.error || 'Unknown error'}`);
+					}
+				} catch (fileError) {
+					const errorMsg = fileError instanceof Error ? fileError.message : 'Unknown error';
+					files.push({
+						path: filePath,
+						error: errorMsg
+					});
+					errors.push(`${filePath}: ${errorMsg}`);
+				}
 			}
+
+			const successfulReads = files.filter(f => !f.error);
+
 			return {
-				path: result.path,
-				error: result.error
+				success: errors.length === 0,
+				files,
+				totalFilesRead: successfulReads.length,
+				totalSize: successfulReads.reduce((sum, f) => sum + (f.size || 0), 0),
+				errors
 			};
-		});
-
-		const successfulReads = files.filter(f => !f.error);
-		const errors = files.filter(f => f.error).map(f => `${f.path}: ${f.error}`);
-
-		return {
-			success: errors.length === 0,
-			files,
-			totalFilesRead: successfulReads.length,
-			totalSize: successfulReads.reduce((sum, f) => sum + (f.size || 0), 0),
-			errors
-		};
+		} catch (error) {
+			return {
+				success: false,
+				files: [],
+				totalFilesRead: 0,
+				totalSize: 0,
+				errors: [error instanceof Error ? error.message : 'Unknown error reading files']
+			};
+		}
 	},
 
 	formatResult(result: ReadFilesResult): string {
@@ -132,6 +154,7 @@ interface SearchFilesResult {
 	files: string[];
 	total: number;
 	truncated: boolean;
+	error?: string;
 }
 
 export const searchFilesTool: AITool<SearchFilesParams, SearchFilesResult> = {
@@ -178,24 +201,41 @@ export const searchFilesTool: AITool<SearchFilesParams, SearchFilesResult> = {
 	},
 
 	async execute(params: SearchFilesParams, _context: ToolExecutionContext): Promise<SearchFilesResult> {
-		const result = await searchFiles(params.pattern, {
-			searchContent: params.searchContent,
-			extensions: params.extensions,
-			maxResults: params.maxResults || 50
-		});
+		try {
+			const result = await searchFiles(params.pattern, {
+				searchContent: params.searchContent,
+				extensions: params.extensions,
+				maxResults: params.maxResults || 50
+			});
 
-		return {
-			success: true,
-			files: result.files,
-			total: result.total,
-			truncated: result.truncated
-		};
+			return {
+				success: true,
+				files: result.files,
+				total: result.total,
+				truncated: result.truncated
+			};
+		} catch (error) {
+			console.error('[search_files] Error:', error);
+			return {
+				success: false,
+				files: [],
+				total: 0,
+				truncated: false,
+				error: error instanceof Error ? error.message : 'Unknown error searching files'
+			};
+		}
 	},
 
 	formatResult(result: SearchFilesResult): string {
 		const sections: string[] = [];
 
 		sections.push(`## File Search Results\n`);
+
+		if (result.error) {
+			sections.push(`**Error:** ${result.error}\n`);
+			return sections.join('\n');
+		}
+
 		sections.push(`**Total Matches:** ${result.total}`);
 		if (result.truncated) {
 			sections.push(`*(Showing first ${result.files.length} results)*\n`);

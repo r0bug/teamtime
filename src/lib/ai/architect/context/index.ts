@@ -39,7 +39,7 @@ export type ArchitectContextModule = keyof typeof ARCHITECT_CONTEXT_MODULES;
  */
 export async function assembleArchitectContext(
 	moduleIds?: string[],
-	maxTokens: number = 16000
+	maxTokens: number = 8000
 ): Promise<AssembledContext> {
 	const providers = moduleIds?.length
 		? architectContextProviders.filter(p => moduleIds.includes(p.moduleId))

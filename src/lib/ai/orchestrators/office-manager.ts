@@ -47,6 +47,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 
 		const isDryRun = agentConfig.dryRunMode;
 		console.log(`[Office Manager] Mode: ${isDryRun ? 'DRY RUN' : 'LIVE'}`);
+		console.log(`[Office Manager] Provider: ${agentConfig.provider}, Model: ${agentConfig.model}`);
 
 		// Assemble context
 		const context = await assembleContext(AGENT, agentConfig.maxTokensContext);
@@ -76,6 +77,11 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 
 		console.log(`[Office Manager] LLM response: ${response.finishReason}, ${response.toolCalls?.length || 0} tool calls`);
 
+		// Calculate cost - prefer provider-reported cost if available
+		const responseCost = response.usage.costCents ??
+			provider.estimateCost(response.usage.inputTokens, response.usage.outputTokens, agentConfig.model);
+		console.log(`[Office Manager] Cost: ${responseCost} cents (${response.usage.costCents ? 'provider-reported' : 'estimated'})`);
+
 		// Log the observation action
 		await db.insert(aiActions).values({
 			agent: AGENT,
@@ -87,10 +93,10 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 			toolName: null,
 			executed: false,
 			tokensUsed: response.usage.inputTokens + response.usage.outputTokens,
-			costCents: provider.estimateCost(response.usage.inputTokens, response.usage.outputTokens, agentConfig.model)
+			costCents: responseCost
 		});
 		actionsLogged++;
-		totalCostCents += provider.estimateCost(response.usage.inputTokens, response.usage.outputTokens, agentConfig.model);
+		totalCostCents += responseCost;
 
 		// Execute tool calls
 		if (response.toolCalls && response.toolCalls.length > 0) {

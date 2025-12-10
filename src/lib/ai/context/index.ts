@@ -3,6 +3,7 @@ import type { AIContextProvider, AIAgent, AssembledContext } from '../types';
 import { attendanceProvider } from './providers/attendance';
 import { tasksProvider } from './providers/tasks';
 import { usersProvider } from './providers/users';
+import { locationsProvider } from './providers/locations';
 import { memoryProvider } from './providers/memory';
 
 // Registry of all context providers
@@ -10,7 +11,8 @@ const providers: AIContextProvider[] = [
 	memoryProvider,
 	attendanceProvider,
 	tasksProvider,
-	usersProvider
+	usersProvider,
+	locationsProvider
 ];
 
 export async function assembleContext(
@@ -78,4 +80,4 @@ export function formatContextForPrompt(context: AssembledContext): string {
 	return header + body;
 }
 
-export { attendanceProvider, tasksProvider, usersProvider, memoryProvider };
+export { attendanceProvider, tasksProvider, usersProvider, locationsProvider, memoryProvider };

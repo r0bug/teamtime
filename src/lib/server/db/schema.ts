@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, pgEnum, decimal, serial } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, pgEnum, decimal, serial, unique } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Enums
@@ -6,7 +6,7 @@ export const userRoleEnum = pgEnum('user_role', ['admin', 'manager', 'purchaser'
 
 // AI System Enums
 export const aiAgentEnum = pgEnum('ai_agent', ['office_manager', 'revenue_optimizer', 'architect']);
-export const aiProviderEnum = pgEnum('ai_provider', ['anthropic', 'openai']);
+export const aiProviderEnum = pgEnum('ai_provider', ['anthropic', 'openai', 'segmind']);
 export const aiMemoryScopeEnum = pgEnum('ai_memory_scope', ['user', 'location', 'global']);
 export const aiPolicyScopeEnum = pgEnum('ai_policy_scope', ['global', 'location', 'role']);
 export const aiToneEnum = pgEnum('ai_tone', ['helpful_parent', 'professional', 'casual', 'formal']);
@@ -28,7 +28,10 @@ export const architectureCategoryEnum = pgEnum('architecture_category', [
 ]);
 export const taskStatusEnum = pgEnum('task_status', ['not_started', 'in_progress', 'completed', 'cancelled']);
 export const taskPriorityEnum = pgEnum('task_priority', ['low', 'medium', 'high', 'urgent']);
-export const taskSourceEnum = pgEnum('task_source', ['manual', 'recurring', 'event_triggered', 'purchase_approval', 'ebay_listing']);
+export const taskSourceEnum = pgEnum('task_source', ['manual', 'recurring', 'event_triggered', 'purchase_approval', 'ebay_listing', 'inventory_drop']);
+export const inventoryDropStatusEnum = pgEnum('inventory_drop_status', ['pending', 'processing', 'completed', 'failed']);
+export const inventoryDropUploadStatusEnum = pgEnum('inventory_drop_upload_status', ['pending', 'uploading', 'completed', 'failed']);
+export const jobStatusEnum = pgEnum('job_status', ['pending', 'running', 'completed', 'failed', 'cancelled']);
 export const pricingDestinationEnum = pgEnum('pricing_destination', ['store', 'ebay']);
 export const triggerEventEnum = pgEnum('trigger_event', ['clock_in', 'clock_out', 'first_clock_in', 'last_clock_out']);
 export const purchaseStatusEnum = pgEnum('purchase_status', ['pending', 'approved', 'denied']);
@@ -45,6 +48,110 @@ export const notificationTypeEnum = pgEnum('notification_type', [
 	'shift_reminder'
 ]);
 
+// Office Manager Chat Enums
+export const pendingActionStatusEnum = pgEnum('pending_action_status', ['pending', 'approved', 'rejected', 'expired']);
+export const cashCountTriggerEnum = pgEnum('cash_count_trigger', ['shift_start', 'shift_end', 'manual']);
+
+// ============================================
+// ACCESS CONTROL TABLES (User Types & Permissions)
+// ============================================
+
+// User Types - custom user types for granular access control
+export const userTypes = pgTable('user_types', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull().unique(),
+	description: text('description'),
+	isSystem: boolean('is_system').notNull().default(false), // true for built-in types (Admin, Manager, etc.)
+	isTemplate: boolean('is_template').notNull().default(false), // templates can be copied but not deleted
+	basedOnRole: userRoleEnum('based_on_role'), // fallback role for unspecified permissions
+	priority: integer('priority').notNull().default(50), // higher = checked first
+	color: text('color').default('#6B7280'), // UI display color
+	isActive: boolean('is_active').notNull().default(true),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// User migration backup - tracks original user state before migration for rollback
+export const userMigrationBackup = pgTable('user_migration_backup', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+	originalRole: text('original_role').notNull(),
+	originalUserTypeId: uuid('original_user_type_id'),
+	migratedUserTypeId: uuid('migrated_user_type_id').references(() => userTypes.id),
+	migratedAt: timestamp('migrated_at', { withTimezone: true }).notNull().defaultNow(),
+	revertedAt: timestamp('reverted_at', { withTimezone: true }),
+	migrationBatch: text('migration_batch').notNull()
+});
+
+// Permissions - route and action level permissions
+export const permissions = pgTable('permissions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	routePattern: text('route_pattern').notNull(), // e.g., '/admin/users', '/tasks/[id]'
+	actionName: text('action_name'), // null = page access, or 'createUser', 'deleteUser', etc.
+	name: text('name').notNull(), // human-readable: "Create User"
+	description: text('description'),
+	module: text('module').notNull(), // 'admin', 'tasks', 'pricing', etc.
+	isAutoDiscovered: boolean('is_auto_discovered').notNull().default(false),
+	defaultGranted: boolean('default_granted').notNull().default(false), // default for new user types
+	requiresRole: userRoleEnum('requires_role'), // minimum role even with permission
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	uniqueRouteAction: unique().on(table.routePattern, table.actionName)
+}));
+
+// User Type Permissions - junction table linking user types to permissions
+export const userTypePermissions = pgTable('user_type_permissions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userTypeId: uuid('user_type_id')
+		.notNull()
+		.references(() => userTypes.id, { onDelete: 'cascade' }),
+	permissionId: uuid('permission_id')
+		.notNull()
+		.references(() => permissions.id, { onDelete: 'cascade' }),
+	granted: boolean('granted').notNull().default(true), // true = allow, false = deny
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	uniqueUserTypePermission: unique().on(table.userTypeId, table.permissionId)
+}));
+
+// Temporary Permissions - time-limited permission changes by Office Manager AI
+export const temporaryPermissions = pgTable('temporary_permissions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+	changeType: text('change_type').notNull(), // 'permission_grant', 'permission_revoke', 'user_type_change'
+	permissionId: uuid('permission_id').references(() => permissions.id, { onDelete: 'cascade' }),
+	originalUserTypeId: uuid('original_user_type_id').references(() => userTypes.id),
+	newUserTypeId: uuid('new_user_type_id').references(() => userTypes.id),
+	grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+	expiresAt: timestamp('expires_at', { withTimezone: true }),
+	revokedAt: timestamp('revoked_at', { withTimezone: true }),
+	grantedByUserId: uuid('granted_by_user_id').references(() => users.id),
+	grantedByAiRunId: uuid('granted_by_ai_run_id'),
+	justification: text('justification').notNull(),
+	approvalStatus: text('approval_status').notNull().default('auto_approved'),
+	approvedByUserId: uuid('approved_by_user_id').references(() => users.id),
+	approvedAt: timestamp('approved_at', { withTimezone: true }),
+	isActive: boolean('is_active').notNull().default(true),
+	rolledBackAt: timestamp('rolled_back_at', { withTimezone: true }),
+	rolledBackByUserId: uuid('rolled_back_by_user_id').references(() => users.id),
+	metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Permission Change Notifications
+export const permissionChangeNotifications = pgTable('permission_change_notifications', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	temporaryPermissionId: uuid('temporary_permission_id').notNull().references(() => temporaryPermissions.id, { onDelete: 'cascade' }),
+	recipientUserId: uuid('recipient_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+	notificationType: text('notification_type').notNull(), // 'user', 'manager', 'admin'
+	sentAt: timestamp('sent_at', { withTimezone: true }),
+	readAt: timestamp('read_at', { withTimezone: true }),
+	deliveryMethod: text('delivery_method').notNull().default('in_app'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
 // Users table
 export const users = pgTable('users', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -53,6 +160,7 @@ export const users = pgTable('users', {
 	pinHash: text('pin_hash').notNull(),
 	passwordHash: text('password_hash'), // Optional password for password-based login
 	role: userRoleEnum('role').notNull().default('staff'),
+	userTypeId: uuid('user_type_id').references(() => userTypes.id, { onDelete: 'set null' }), // Custom user type for granular permissions
 	name: text('name').notNull(),
 	phone: text('phone'),
 	avatarUrl: text('avatar_url'),
@@ -199,6 +307,10 @@ export const taskCompletions = pgTable('task_completions', {
 	lat: decimal('lat', { precision: 10, scale: 7 }),
 	lng: decimal('lng', { precision: 10, scale: 7 }),
 	address: text('address'),
+	// Office Manager cancellation fields
+	cancelledByOfficeManager: boolean('cancelled_by_office_manager').default(false),
+	cancellationReason: text('cancellation_reason'),
+	countsAsMissed: boolean('counts_as_missed').default(false),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
@@ -319,6 +431,64 @@ export const pricingDecisionPhotos = pgTable('pricing_decision_photos', {
 	lat: decimal('lat', { precision: 10, scale: 7 }),
 	lng: decimal('lng', { precision: 10, scale: 7 }),
 	capturedAt: timestamp('captured_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// ============================================
+// INVENTORY DROPS (Batch Item Submission with LLM Identification)
+// ============================================
+
+// Inventory drops table - batch submission of items for LLM identification
+export const inventoryDrops = pgTable('inventory_drops', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }), // Who submitted the drop
+	description: text('description').notNull(), // Description of the batch
+	pickNotes: text('pick_notes'), // Optional notes about where items came from
+	status: inventoryDropStatusEnum('status').notNull().default('pending'),
+	// Upload progress tracking
+	uploadStatus: inventoryDropUploadStatusEnum('upload_status').notNull().default('pending'),
+	photosTotal: integer('photos_total').notNull().default(0), // Total photos to upload
+	photosUploaded: integer('photos_uploaded').notNull().default(0), // Photos successfully uploaded
+	uploadError: text('upload_error'), // Error message if upload failed
+	// Processing tracking
+	itemCount: integer('item_count').default(0), // Number of items identified
+	processingError: text('processing_error'), // Error message if processing failed
+	retryCount: integer('retry_count').notNull().default(0), // Number of retry attempts
+	processedAt: timestamp('processed_at', { withTimezone: true }),
+	reviewedAt: timestamp('reviewed_at', { withTimezone: true }), // When the drop was marked as reviewed
+	// Link to finalize task
+	finalizeTaskId: uuid('finalize_task_id').references(() => tasks.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Inventory drop photos table - photos uploaded with the drop
+export const inventoryDropPhotos = pgTable('inventory_drop_photos', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	dropId: uuid('drop_id')
+		.notNull()
+		.references(() => inventoryDrops.id, { onDelete: 'cascade' }),
+	filePath: text('file_path').notNull(),
+	originalName: text('original_name').notNull(),
+	mimeType: text('mime_type').notNull(),
+	sizeBytes: integer('size_bytes').notNull(),
+	orderIndex: integer('order_index').notNull().default(0), // Order of photos in the drop
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Inventory drop items table - items identified by LLM from the photos
+export const inventoryDropItems = pgTable('inventory_drop_items', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	dropId: uuid('drop_id')
+		.notNull()
+		.references(() => inventoryDrops.id, { onDelete: 'cascade' }),
+	itemDescription: text('item_description').notNull(), // LLM-generated description
+	suggestedPrice: decimal('suggested_price', { precision: 10, scale: 2 }), // LLM-suggested price (optional)
+	confidenceScore: decimal('confidence_score', { precision: 3, scale: 2 }), // 0.00-1.00
+	sourcePhotoIds: jsonb('source_photo_ids').$type<string[]>().notNull().default([]), // Which photos contain this item
+	pricingDecisionId: uuid('pricing_decision_id').references(() => pricingDecisions.id, { onDelete: 'set null' }), // Created after identification
+	deleted: boolean('deleted').notNull().default(false), // Soft delete flag for items user wants to remove
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
@@ -685,8 +855,151 @@ export const architectConfig = pgTable('architect_config', {
 export type ArchitectConfig = typeof architectConfig.$inferSelect;
 export type NewArchitectConfig = typeof architectConfig.$inferInsert;
 
+// ============================================
+// OFFICE MANAGER CHAT TABLES
+// ============================================
+
+// Office Manager Chat Sessions
+export const officeManagerChats = pgTable('office_manager_chats', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	title: text('title').notNull(),
+	messages: jsonb('messages').$type<OfficeManagerMessage[]>().default([]),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Office Manager Message type
+export interface OfficeManagerMessage {
+	id: string;
+	role: 'user' | 'assistant';
+	content: string;
+	timestamp: string;
+	toolCalls?: {
+		name: string;
+		params: Record<string, unknown>;
+		result?: unknown;
+		pendingActionId?: string;
+	}[];
+}
+
+// Pending Actions for confirmation workflow
+export const officeManagerPendingActions = pgTable('office_manager_pending_actions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	chatId: uuid('chat_id')
+		.notNull()
+		.references(() => officeManagerChats.id, { onDelete: 'cascade' }),
+	toolName: text('tool_name').notNull(),
+	toolArgs: jsonb('tool_args').$type<Record<string, unknown>>().notNull(),
+	confirmationMessage: text('confirmation_message').notNull(),
+	status: pendingActionStatusEnum('status').notNull().default('pending'),
+	executionResult: jsonb('execution_result').$type<Record<string, unknown>>(),
+	executedAt: timestamp('executed_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull()
+});
+
+// ============================================
+// CASH COUNT TABLES
+// ============================================
+
+// Cash Count Field type
+export interface CashCountField {
+	name: string;
+	label: string;
+	type: 'currency' | 'integer' | 'decimal';
+	multiplier?: number; // For denominations, e.g., 0.25 for quarters
+	required?: boolean;
+	order: number;
+}
+
+// Cash Count Configuration (per location)
+export const cashCountConfigs = pgTable('cash_count_configs', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	locationId: uuid('location_id')
+		.notNull()
+		.references(() => locations.id, { onDelete: 'cascade' }),
+	name: text('name').notNull(), // e.g., "Opening Count", "Closing Count"
+	fields: jsonb('fields').$type<CashCountField[]>().notNull(),
+	triggerType: cashCountTriggerEnum('trigger_type').notNull(),
+	isActive: boolean('is_active').notNull().default(true),
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Cash Count Submissions
+export const cashCounts = pgTable('cash_counts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	configId: uuid('config_id')
+		.notNull()
+		.references(() => cashCountConfigs.id, { onDelete: 'cascade' }),
+	userId: uuid('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	locationId: uuid('location_id')
+		.notNull()
+		.references(() => locations.id, { onDelete: 'cascade' }),
+	timeEntryId: uuid('time_entry_id').references(() => timeEntries.id, { onDelete: 'set null' }),
+	values: jsonb('values').$type<Record<string, number>>().notNull(),
+	totalAmount: decimal('total_amount', { precision: 10, scale: 2 }).notNull(),
+	notes: text('notes'),
+	submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// ============================================
+// JOB QUEUE TABLE (Database-backed job queue for background processing)
+// ============================================
+
+export const jobs = pgTable('jobs', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	type: text('type').notNull(), // 'inventory_drop_upload', 'inventory_drop_process', etc.
+	status: jobStatusEnum('status').notNull().default('pending'),
+	priority: integer('priority').notNull().default(0), // Higher = more urgent
+	payload: jsonb('payload').$type<Record<string, unknown>>().notNull(), // Job-specific data
+	result: jsonb('result').$type<Record<string, unknown>>(), // Job result on completion
+	error: text('error'), // Error message if failed
+	attempts: integer('attempts').notNull().default(0), // Number of attempts
+	maxAttempts: integer('max_attempts').notNull().default(3),
+	runAt: timestamp('run_at', { withTimezone: true }).notNull().defaultNow(), // When to run the job
+	startedAt: timestamp('started_at', { withTimezone: true }), // When processing started
+	completedAt: timestamp('completed_at', { withTimezone: true }), // When processing finished
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type Job = typeof jobs.$inferSelect;
+export type NewJob = typeof jobs.$inferInsert;
+
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+
+// Access Control Relations
+export const userTypesRelations = relations(userTypes, ({ many }) => ({
+	users: many(users),
+	permissions: many(userTypePermissions)
+}));
+
+export const permissionsRelations = relations(permissions, ({ many }) => ({
+	userTypePermissions: many(userTypePermissions)
+}));
+
+export const userTypePermissionsRelations = relations(userTypePermissions, ({ one }) => ({
+	userType: one(userTypes, {
+		fields: [userTypePermissions.userTypeId],
+		references: [userTypes.id]
+	}),
+	permission: one(permissions, {
+		fields: [userTypePermissions.permissionId],
+		references: [permissions.id]
+	})
+}));
+
+export const usersRelations = relations(users, ({ one, many }) => ({
+	userType: one(userTypes, {
+		fields: [users.userTypeId],
+		references: [userTypes.id]
+	}),
 	sessions: many(sessions),
 	shifts: many(shifts),
 	timeEntries: many(timeEntries),
@@ -842,6 +1155,34 @@ export const pricingDecisionPhotosRelations = relations(pricingDecisionPhotos, (
 	})
 }));
 
+// Inventory Drops Relations
+export const inventoryDropsRelations = relations(inventoryDrops, ({ one, many }) => ({
+	user: one(users, {
+		fields: [inventoryDrops.userId],
+		references: [users.id]
+	}),
+	photos: many(inventoryDropPhotos),
+	items: many(inventoryDropItems)
+}));
+
+export const inventoryDropPhotosRelations = relations(inventoryDropPhotos, ({ one }) => ({
+	drop: one(inventoryDrops, {
+		fields: [inventoryDropPhotos.dropId],
+		references: [inventoryDrops.id]
+	})
+}));
+
+export const inventoryDropItemsRelations = relations(inventoryDropItems, ({ one }) => ({
+	drop: one(inventoryDrops, {
+		fields: [inventoryDropItems.dropId],
+		references: [inventoryDrops.id]
+	}),
+	pricingDecision: one(pricingDecisions, {
+		fields: [inventoryDropItems.pricingDecisionId],
+		references: [pricingDecisions.id]
+	})
+}));
+
 // AI System Relations
 export const aiActionsRelations = relations(aiActions, ({ one }) => ({
 	targetUser: one(users, {
@@ -911,6 +1252,54 @@ export const architectureChatsRelations = relations(architectureChats, ({ one, m
 	decisions: many(architectureDecisions)
 }));
 
+// Office Manager Chat Relations
+export const officeManagerChatsRelations = relations(officeManagerChats, ({ one, many }) => ({
+	user: one(users, {
+		fields: [officeManagerChats.userId],
+		references: [users.id]
+	}),
+	pendingActions: many(officeManagerPendingActions)
+}));
+
+export const officeManagerPendingActionsRelations = relations(officeManagerPendingActions, ({ one }) => ({
+	chat: one(officeManagerChats, {
+		fields: [officeManagerPendingActions.chatId],
+		references: [officeManagerChats.id]
+	})
+}));
+
+// Cash Count Relations
+export const cashCountConfigsRelations = relations(cashCountConfigs, ({ one, many }) => ({
+	location: one(locations, {
+		fields: [cashCountConfigs.locationId],
+		references: [locations.id]
+	}),
+	createdByUser: one(users, {
+		fields: [cashCountConfigs.createdBy],
+		references: [users.id]
+	}),
+	cashCounts: many(cashCounts)
+}));
+
+export const cashCountsRelations = relations(cashCounts, ({ one }) => ({
+	config: one(cashCountConfigs, {
+		fields: [cashCounts.configId],
+		references: [cashCountConfigs.id]
+	}),
+	user: one(users, {
+		fields: [cashCounts.userId],
+		references: [users.id]
+	}),
+	location: one(locations, {
+		fields: [cashCounts.locationId],
+		references: [locations.id]
+	}),
+	timeEntry: one(timeEntries, {
+		fields: [cashCounts.timeEntryId],
+		references: [timeEntries.id]
+	})
+}));
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -952,3 +1341,31 @@ export type ArchitectureDecision = typeof architectureDecisions.$inferSelect;
 export type NewArchitectureDecision = typeof architectureDecisions.$inferInsert;
 export type ArchitectureChat = typeof architectureChats.$inferSelect;
 export type NewArchitectureChat = typeof architectureChats.$inferInsert;
+
+// Inventory Drops Types
+export type InventoryDrop = typeof inventoryDrops.$inferSelect;
+export type NewInventoryDrop = typeof inventoryDrops.$inferInsert;
+export type InventoryDropPhoto = typeof inventoryDropPhotos.$inferSelect;
+export type NewInventoryDropPhoto = typeof inventoryDropPhotos.$inferInsert;
+export type InventoryDropItem = typeof inventoryDropItems.$inferSelect;
+export type NewInventoryDropItem = typeof inventoryDropItems.$inferInsert;
+
+// Office Manager Chat Types
+export type OfficeManagerChat = typeof officeManagerChats.$inferSelect;
+export type NewOfficeManagerChat = typeof officeManagerChats.$inferInsert;
+export type OfficeManagerPendingAction = typeof officeManagerPendingActions.$inferSelect;
+export type NewOfficeManagerPendingAction = typeof officeManagerPendingActions.$inferInsert;
+
+// Cash Count Types
+export type CashCountConfig = typeof cashCountConfigs.$inferSelect;
+export type NewCashCountConfig = typeof cashCountConfigs.$inferInsert;
+export type CashCount = typeof cashCounts.$inferSelect;
+export type NewCashCount = typeof cashCounts.$inferInsert;
+
+// Access Control Types
+export type UserType = typeof userTypes.$inferSelect;
+export type NewUserType = typeof userTypes.$inferInsert;
+export type Permission = typeof permissions.$inferSelect;
+export type NewPermission = typeof permissions.$inferInsert;
+export type UserTypePermission = typeof userTypePermissions.$inferSelect;
+export type NewUserTypePermission = typeof userTypePermissions.$inferInsert;

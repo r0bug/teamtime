@@ -82,6 +82,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		availableProviders,
 		hasAnthropicKey: hasAPIKey('anthropic'),
 		hasOpenAIKey: hasAPIKey('openai'),
+		hasSegmindKey: hasAPIKey('segmind'),
 		modelOptions: MODEL_OPTIONS,
 		toneDescriptions: TONE_DESCRIPTIONS,
 		defaultInstructions: DEFAULT_INSTRUCTIONS
@@ -98,6 +99,7 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const anthropicKey = formData.get('anthropicKey') as string;
 		const openaiKey = formData.get('openaiKey') as string;
+		const segmindKey = formData.get('segmindKey') as string;
 
 		const keys = getAPIKeys();
 
@@ -107,6 +109,9 @@ export const actions: Actions = {
 		}
 		if (openaiKey && openaiKey.trim()) {
 			keys.openai = openaiKey.trim();
+		}
+		if (segmindKey && segmindKey.trim()) {
+			keys.segmind = segmindKey.trim();
 		}
 
 		const success = saveAPIKeys(keys);

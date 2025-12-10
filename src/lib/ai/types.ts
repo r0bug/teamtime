@@ -4,7 +4,7 @@
 export type AIAgent = 'office_manager' | 'revenue_optimizer' | 'architect';
 
 // LLM Providers
-export type AIProvider = 'anthropic' | 'openai';
+export type AIProvider = 'anthropic' | 'openai' | 'segmind';
 
 // Tone options
 export type AITone = 'helpful_parent' | 'professional' | 'casual' | 'formal';
@@ -58,6 +58,11 @@ export interface AITool<TParams = unknown, TResult = unknown> {
 		maxPerHour: number;
 	};
 
+	// Chat-specific: requires user confirmation before execution
+	requiresConfirmation?: boolean;
+	// Generate a human-readable confirmation message for the action
+	getConfirmationMessage?: (params: TParams) => string;
+
 	// Execution
 	validate: (params: TParams) => { valid: boolean; error?: string };
 	execute: (params: TParams, context: ToolExecutionContext) => Promise<TResult>;
@@ -72,6 +77,17 @@ export interface ToolExecutionContext {
 		provider: AIProvider;
 		model: string;
 	};
+	// Optional properties for chat mode
+	chatId?: string;
+	userId?: string;
+}
+
+// Streaming event for chat responses
+export interface LLMStreamEvent {
+	type: 'text' | 'tool_use' | 'done';
+	content?: string;
+	toolCall?: { name: string; params: Record<string, unknown> };
+	usage?: { inputTokens: number; outputTokens: number };
 }
 
 // LLM Provider interface
@@ -79,6 +95,7 @@ export interface LLMProvider {
 	name: AIProvider;
 
 	complete: (request: LLMRequest) => Promise<LLMResponse>;
+	stream?: (request: LLMRequest) => AsyncGenerator<LLMStreamEvent>;
 	estimateCost: (inputTokens: number, outputTokens: number, model: string) => number;
 }
 
@@ -100,6 +117,7 @@ export interface LLMResponse {
 	usage: {
 		inputTokens: number;
 		outputTokens: number;
+		costCents?: number; // Provider-reported cost in cents (if available from API)
 	};
 	finishReason: 'stop' | 'tool_use' | 'max_tokens' | 'error';
 }
@@ -121,4 +139,15 @@ export interface AIRunResult {
 export interface AIKeysConfig {
 	anthropic?: string;
 	openai?: string;
+	segmind?: string;
+}
+
+// Runtime AI configuration (passed to services)
+export interface AIConfig {
+	enabled: boolean;
+	dryRunMode: boolean;
+	provider: AIProvider;
+	model: string;
+	tone: AITone;
+	customInstructions?: string;
 }

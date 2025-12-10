@@ -19,8 +19,8 @@ interface UsersData {
 export const usersProvider: AIContextProvider<UsersData> = {
 	moduleId: 'users',
 	moduleName: 'Staff Roster',
-	description: 'Active users and their roles',
-	priority: 50, // Lower priority - less frequently needed
+	description: 'Active users and their roles with IDs for tool usage',
+	priority: 15, // High priority - needed for most user-related actions
 	agents: ['office_manager', 'revenue_optimizer'],
 
 	async isEnabled() {
@@ -59,7 +59,8 @@ export const usersProvider: AIContextProvider<UsersData> = {
 	},
 
 	estimateTokens(context: UsersData): number {
-		return 50 + context.roster.length * 15;
+		// UUIDs and emails add more tokens per user
+		return 80 + context.roster.length * 40;
 	},
 
 	formatForPrompt(context: UsersData): string {
@@ -70,20 +71,22 @@ export const usersProvider: AIContextProvider<UsersData> = {
 		const lines: string[] = [
 			'## Staff Roster',
 			`Total: ${context.summary.totalActive} active users (${roleList})`,
+			'',
+			'**IMPORTANT: When using tools like send_message, you MUST use the user_id (UUID), not the name.**',
 			''
 		];
 
 		// Group by role
-		const byRole: Record<string, { name: string; userId: string }[]> = {};
+		const byRole: Record<string, { name: string; userId: string; email: string }[]> = {};
 		for (const u of context.roster) {
 			if (!byRole[u.role]) byRole[u.role] = [];
-			byRole[u.role].push({ name: u.name, userId: u.userId });
+			byRole[u.role].push({ name: u.name, userId: u.userId, email: u.email });
 		}
 
 		for (const [role, members] of Object.entries(byRole)) {
 			lines.push(`### ${role.charAt(0).toUpperCase() + role.slice(1)}s:`);
 			for (const m of members) {
-				lines.push(`- ${m.name}`);
+				lines.push(`- **${m.name}** (user_id: \`${m.userId}\`, email: ${m.email})`);
 			}
 			lines.push('');
 		}
