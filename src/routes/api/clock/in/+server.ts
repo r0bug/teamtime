@@ -2,6 +2,10 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, timeEntries, shifts, taskTemplates, tasks } from '$lib/server/db';
 import { eq, and, isNull, lte, gte } from 'drizzle-orm';
+import {
+	processRulesForTrigger,
+	isFirstClockInAtLocation
+} from '$lib/server/services/task-rules';
 
 export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!locals.user) {
@@ -25,7 +29,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	}
 
 	const body = await request.json().catch(() => ({}));
-	const { lat, lng, address } = body;
+	const { lat, lng, address, locationId } = body;
 	const now = new Date();
 
 	// Find matching shift
@@ -41,12 +45,16 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		)
 		.limit(1);
 
+	// Determine location (from body, shift, or null)
+	const entryLocationId = locationId || currentShift?.locationId || null;
+
 	// Create time entry
 	const [entry] = await db
 		.insert(timeEntries)
 		.values({
 			userId: locals.user.id,
 			shiftId: currentShift?.id || null,
+			locationId: entryLocationId,
 			clockIn: now,
 			clockInLat: lat || null,
 			clockInLng: lng || null,
@@ -54,7 +62,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		})
 		.returning();
 
-	// Check for event-triggered tasks (first clock-in)
+	// Process legacy template triggers (for backwards compatibility)
 	const triggeredTemplates = await db
 		.select()
 		.from(taskTemplates)
@@ -65,7 +73,6 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			)
 		);
 
-	// Create tasks from triggered templates
 	for (const template of triggeredTemplates) {
 		await db.insert(tasks).values({
 			templateId: template.id,
@@ -80,6 +87,24 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			linkedEventId: entry.id,
 			createdBy: null
 		});
+	}
+
+	// Process new assignment rules
+	const context = {
+		userId: locals.user.id,
+		locationId: entryLocationId || undefined,
+		timestamp: now
+	};
+
+	// Process clock_in rules
+	await processRulesForTrigger('clock_in', context);
+
+	// Check for first_clock_in rules
+	if (entryLocationId) {
+		const isFirst = await isFirstClockInAtLocation(locals.user.id, entryLocationId);
+		if (isFirst) {
+			await processRulesForTrigger('first_clock_in', context);
+		}
 	}
 
 	return json({ success: true, entry });

@@ -26,6 +26,9 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 ### Task Management
 - Assign one-off or recurring tasks with photo requirements
 - Event-triggered tasks (e.g., "Opening Procedure" on first clock-in)
+- **Advanced assignment rules** with 7 trigger types and 5 assignment methods
+- Chain tasks (trigger new task on completion of another)
+- Scheduled tasks via cron expressions
 - Priority levels and due date tracking
 - Completion history with location and photo evidence
 
@@ -179,8 +182,9 @@ src/
 
 TeamTime exposes **65+ REST endpoints** organized by domain:
 
-- `/api/clock/in`, `/api/clock/out` — Time tracking
+- `/api/clock/in`, `/api/clock/out` — Time tracking (triggers task rules)
 - `/api/tasks`, `/api/tasks/[id]/complete` — Task management
+- `/api/tasks/cron` — Scheduled task processing (call every 15 min)
 - `/api/pricing-decisions` — Item pricing with photos
 - `/api/inventory-drops`, `/api/inventory-drops/[id]/process` — AI inventory
 - `/api/atm-withdrawals`, `/api/purchase-requests` — Expense tracking
@@ -201,7 +205,7 @@ All endpoints require authentication except static files. Role-based authorizati
 37 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries
-- **Tasks**: task_templates, tasks, task_completions, task_photos
+- **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules
 - **Pricing**: pricing_decisions, pricing_decision_photos
 - **Inventory**: inventory_drops, inventory_drop_photos, inventory_drop_items
 - **Expenses**: atm_withdrawals, withdrawal_allocations, purchase_requests

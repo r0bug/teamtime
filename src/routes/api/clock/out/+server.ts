@@ -2,6 +2,10 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, timeEntries, taskTemplates, tasks } from '$lib/server/db';
 import { eq, and, isNull } from 'drizzle-orm';
+import {
+	processRulesForTrigger,
+	isLastClockOutAtLocation
+} from '$lib/server/services/task-rules';
 
 export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!locals.user) {
@@ -28,6 +32,13 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const { lat, lng, address } = body;
 	const now = new Date();
 
+	// Check if this is the last clock-out BEFORE updating (while user is still shown as clocked in)
+	const locationId = activeEntry.locationId;
+	let isLast = false;
+	if (locationId) {
+		isLast = await isLastClockOutAtLocation(locals.user.id, locationId);
+	}
+
 	// Update time entry with clock out
 	const [entry] = await db
 		.update(timeEntries)
@@ -41,7 +52,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		.where(eq(timeEntries.id, activeEntry.id))
 		.returning();
 
-	// Check for event-triggered tasks (clock-out)
+	// Process legacy template triggers (for backwards compatibility)
 	const triggeredTemplates = await db
 		.select()
 		.from(taskTemplates)
@@ -52,7 +63,6 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			)
 		);
 
-	// Create tasks from triggered templates
 	for (const template of triggeredTemplates) {
 		await db.insert(tasks).values({
 			templateId: template.id,
@@ -67,6 +77,21 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			linkedEventId: entry.id,
 			createdBy: null
 		});
+	}
+
+	// Process new assignment rules
+	const context = {
+		userId: locals.user.id,
+		locationId: locationId || undefined,
+		timestamp: now
+	};
+
+	// Process clock_out rules
+	await processRulesForTrigger('clock_out', context);
+
+	// Process last_clock_out rules if this was the last person
+	if (isLast) {
+		await processRulesForTrigger('last_clock_out', context);
 	}
 
 	return json({ success: true, entry });

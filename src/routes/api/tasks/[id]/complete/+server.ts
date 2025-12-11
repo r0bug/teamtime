@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db, tasks, taskCompletions, taskPhotos, auditLogs } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager, isAdmin } from '$lib/server/auth/roles';
+import { processRulesForTrigger } from '$lib/server/services/task-rules';
 
 export const POST: RequestHandler = async ({ locals, params, request, getClientAddress }) => {
 	if (!locals.user) {
@@ -105,6 +106,15 @@ export const POST: RequestHandler = async ({ locals, params, request, getClientA
 		afterData: auditData,
 		ipAddress: getClientAddress()
 	});
+
+	// Process task_completed rules (only for non-cancelled completions with a template)
+	if (!isCancellation && task.templateId) {
+		await processRulesForTrigger('task_completed', {
+			userId: locals.user.id,
+			taskTemplateId: task.templateId,
+			timestamp: new Date()
+		});
+	}
 
 	return json({ success: true, completion });
 };

@@ -627,11 +627,11 @@ Clock-out
 
 First clock-in at Location A between 7–9 am:
 
-Auto-assign “Opening Procedure – Location A” to that employee
+Auto-assign "Opening Procedure – Location A" to that employee
 
 Last clock-out at Location B after 8 pm:
 
-Auto-assign “Closing Procedure – Location B” to that employee
+Auto-assign "Closing Procedure – Location B" to that employee
 
 11.2 Configuration
 
@@ -648,6 +648,56 @@ Assigned to a specific employee
 Available for any on-shift staff to claim (future enhancement)
 
 These tasks are linked back to their triggering event for traceability.
+
+11.3 Advanced Task Assignment Rules
+
+The system supports a powerful rules engine for automatic task creation and assignment.
+
+**Trigger Types:**
+
+- **Clock In** — Fires when any user clocks in
+- **Clock Out** — Fires when any user clocks out
+- **First Clock-In** — Fires for the first person to clock in at a location each day
+- **Last Clock-Out** — Fires for the last person to clock out at a location
+- **Time Into Shift** — Fires X hours after a user clocks in (e.g., 2 hours into shift)
+- **Task Completed** — Fires when a specific task template is completed (chain tasks)
+- **Scheduled** — Fires at specific times using cron expressions (e.g., "0 9 * * 1-5" for 9am Mon-Fri)
+
+**Conditions:**
+
+Rules can include optional conditions that must be met:
+
+- Location — Only trigger at a specific location
+- User Roles — Only trigger for users with specific roles
+- Days of Week — Only trigger on certain days
+- Time Window — Only trigger within a time range (e.g., 6am-10am)
+
+**Assignment Methods:**
+
+When a rule fires, it can assign the created task using:
+
+- **Triggering User** — Assign to the user who caused the trigger (e.g., the person clocking in)
+- **Specific User** — Always assign to a designated user
+- **Role Rotation** — Round-robin assignment among users with specified roles
+- **Location Staff** — Assign to any staff currently clocked in at the location
+- **Least Tasks** — Assign to the user with the fewest active tasks
+
+**Admin Interface:**
+
+Managers access task automation via Admin > Operations > Task Management:
+
+- `/admin/tasks` — Overview dashboard with stats (templates, rules, tasks generated)
+- `/admin/tasks/templates` — Create and manage task templates
+- `/admin/tasks/rules` — Create and manage assignment rules
+
+**Cron Processing:**
+
+Scheduled and time-into-shift rules require periodic processing:
+
+- External cron calls `/api/tasks/cron` every 15 minutes
+- Processes all scheduled rules matching current time
+- Processes time-into-shift rules for active time entries
+- Prevents duplicate task creation with 14-minute deduplication window
 
 12. Tasks Requiring Photos
 

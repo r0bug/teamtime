@@ -34,6 +34,22 @@ export const inventoryDropUploadStatusEnum = pgEnum('inventory_drop_upload_statu
 export const jobStatusEnum = pgEnum('job_status', ['pending', 'running', 'completed', 'failed', 'cancelled']);
 export const pricingDestinationEnum = pgEnum('pricing_destination', ['store', 'ebay']);
 export const triggerEventEnum = pgEnum('trigger_event', ['clock_in', 'clock_out', 'first_clock_in', 'last_clock_out']);
+export const ruleTriggerTypeEnum = pgEnum('rule_trigger_type', [
+	'clock_in',
+	'clock_out',
+	'first_clock_in',
+	'last_clock_out',
+	'time_into_shift',
+	'task_completed',
+	'schedule'
+]);
+export const assignmentTypeEnum = pgEnum('assignment_type', [
+	'specific_user',
+	'clocked_in_user',
+	'role_rotation',
+	'location_staff',
+	'least_tasks'
+]);
 export const purchaseStatusEnum = pgEnum('purchase_status', ['pending', 'approved', 'denied']);
 export const withdrawalStatusEnum = pgEnum('withdrawal_status', ['unassigned', 'partially_assigned', 'fully_spent']);
 export const conversationTypeEnum = pgEnum('conversation_type', ['direct', 'broadcast']);
@@ -327,6 +343,54 @@ export const taskPhotos = pgTable('task_photos', {
 	lng: decimal('lng', { precision: 10, scale: 7 }),
 	capturedAt: timestamp('captured_at', { withTimezone: true }),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Task assignment rules table - configures automatic task creation and assignment
+export const taskAssignmentRules = pgTable('task_assignment_rules', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	templateId: uuid('template_id')
+		.notNull()
+		.references(() => taskTemplates.id, { onDelete: 'cascade' }),
+	name: text('name').notNull(),
+	description: text('description'),
+
+	// Trigger configuration
+	triggerType: ruleTriggerTypeEnum('trigger_type').notNull(),
+	triggerConfig: jsonb('trigger_config').$type<{
+		hoursIntoShift?: number; // For 'time_into_shift'
+		taskTemplateId?: string; // For 'task_completed' - which template triggers this
+		cronExpression?: string; // For 'schedule' - e.g., '0 9 * * 1' (Mon 9am)
+	}>().notNull().default({}),
+
+	// Conditions - when should the rule apply?
+	conditions: jsonb('conditions').$type<{
+		locationId?: string; // Specific location only
+		roles?: string[]; // User roles that trigger this rule
+		daysOfWeek?: number[]; // 0=Sunday, 6=Saturday
+		timeWindowStart?: string; // HH:MM format
+		timeWindowEnd?: string; // HH:MM format
+	}>(),
+
+	// Assignment configuration
+	assignmentType: assignmentTypeEnum('assignment_type').notNull(),
+	assignmentConfig: jsonb('assignment_config').$type<{
+		userId?: string; // For 'specific_user'
+		roles?: string[]; // For 'role_rotation', 'location_staff', 'least_tasks'
+		rotationState?: { lastAssignedUserId?: string; rotationIndex?: number }; // Internal state for rotation
+	}>(),
+
+	// Rule priority (higher = checked first)
+	priority: integer('priority').notNull().default(0),
+
+	// Lifecycle
+	isActive: boolean('is_active').notNull().default(true),
+	lastTriggeredAt: timestamp('last_triggered_at', { withTimezone: true }),
+	triggerCount: integer('trigger_count').notNull().default(0),
+
+	// Audit
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
 
 // Purchase requests table
@@ -1064,6 +1128,30 @@ export const taskCompletionsRelations = relations(taskCompletions, ({ one, many 
 	photos: many(taskPhotos)
 }));
 
+export const taskAssignmentRulesRelations = relations(taskAssignmentRules, ({ one }) => ({
+	template: one(taskTemplates, {
+		fields: [taskAssignmentRules.templateId],
+		references: [taskTemplates.id]
+	}),
+	createdByUser: one(users, {
+		fields: [taskAssignmentRules.createdBy],
+		references: [users.id]
+	})
+}));
+
+export const taskTemplatesRelations = relations(taskTemplates, ({ one, many }) => ({
+	location: one(locations, {
+		fields: [taskTemplates.locationId],
+		references: [locations.id]
+	}),
+	createdByUser: one(users, {
+		fields: [taskTemplates.createdBy],
+		references: [users.id]
+	}),
+	tasks: many(tasks),
+	assignmentRules: many(taskAssignmentRules)
+}));
+
 export const purchaseRequestsRelations = relations(purchaseRequests, ({ one }) => ({
 	requester: one(users, {
 		fields: [purchaseRequests.requesterId],
@@ -1310,6 +1398,9 @@ export type Shift = typeof shifts.$inferSelect;
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type TaskTemplate = typeof taskTemplates.$inferSelect;
+export type NewTaskTemplate = typeof taskTemplates.$inferInsert;
+export type TaskAssignmentRule = typeof taskAssignmentRules.$inferSelect;
+export type NewTaskAssignmentRule = typeof taskAssignmentRules.$inferInsert;
 export type PurchaseRequest = typeof purchaseRequests.$inferSelect;
 export type AtmWithdrawal = typeof atmWithdrawals.$inferSelect;
 export type Conversation = typeof conversations.$inferSelect;
