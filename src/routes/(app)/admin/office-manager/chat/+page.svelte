@@ -10,6 +10,7 @@
 		name: string;
 		params: Record<string, unknown>;
 		result?: unknown;
+		formattedResult?: string; // Human-readable formatted result
 		pendingActionId?: string;
 	}
 
@@ -197,6 +198,7 @@
 								);
 								if (toolIndex !== -1) {
 									currentMessages[msgIndex].toolCalls![toolIndex].result = event.result;
+									currentMessages[msgIndex].toolCalls![toolIndex].formattedResult = event.formattedResult;
 									currentMessages = [...currentMessages];
 								}
 							}
@@ -421,12 +423,19 @@
 							{#if message.toolCalls && message.toolCalls.length > 0}
 								<div class="mt-2 pt-2 border-t border-gray-200">
 									{#each message.toolCalls as toolCall}
-										<div class="text-xs bg-white/10 rounded p-2 mt-1">
-											<span class="font-mono font-semibold">{toolCall.name}</span>
-											{#if toolCall.pendingActionId}
-												<span class="ml-2 text-yellow-600">Pending approval</span>
-											{:else if toolCall.result}
-												<span class="ml-2 text-green-600">Executed</span>
+										<div class="text-xs bg-gray-50 rounded p-2 mt-1">
+											<div class="flex items-center gap-2">
+												<span class="font-mono font-semibold text-gray-700">{toolCall.name}</span>
+												{#if toolCall.pendingActionId}
+													<span class="text-yellow-600">Pending approval</span>
+												{:else if toolCall.result}
+													<span class="text-green-600">Executed</span>
+												{/if}
+											</div>
+											{#if toolCall.formattedResult}
+												<div class="mt-2 text-sm text-gray-800 whitespace-pre-wrap bg-white rounded p-2 border border-gray-200">
+													{toolCall.formattedResult}
+												</div>
 											{/if}
 										</div>
 									{/each}

@@ -1,7 +1,7 @@
 {
 	"name": "teamtime",
 	"private": true,
-	"version": "0.0.1",
+	"version": "1.0.0-alpha",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",

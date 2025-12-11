@@ -352,6 +352,7 @@ export interface StreamEvent {
 	toolName?: string;
 	toolParams?: Record<string, unknown>;
 	result?: unknown;
+	formattedResult?: string; // Human-readable formatted result
 	pendingActionId?: string;
 	confirmationMessage?: string;
 	tokensUsed?: number;
@@ -420,6 +421,7 @@ ${userMessage}`;
 				yield { type: 'text', content: chunk.content };
 			} else if (chunk.type === 'tool_use' && chunk.toolCall) {
 				const { name, params } = chunk.toolCall;
+				log.info({ toolName: name, params }, 'Tool called with params');
 				yield { type: 'tool_start', toolName: name, toolParams: params };
 
 				const tool = tools.find(t => t.name === name);
@@ -485,7 +487,10 @@ ${userMessage}`;
 					try {
 						const result = await tool.execute(params, executionContext);
 						processedToolCalls.push({ name, params, result, requiresConfirmation: false });
-						yield { type: 'tool_result', toolName: name, result };
+
+						// Format result for human-readable display
+						const formattedResult = tool.formatResult ? tool.formatResult(result) : undefined;
+						yield { type: 'tool_result', toolName: name, result, formattedResult };
 
 						await logAIAction({
 							runId,

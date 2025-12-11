@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { browser } from '$app/environment';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
@@ -7,12 +8,42 @@
 	$: tasks = data.tasks;
 	$: user = data.user;
 	$: isManager = user?.role === 'manager' || user?.role === 'admin';
+	$: isAdmin = user?.role === 'admin';
 
 	let filter: 'all' | 'not_started' | 'in_progress' | 'completed' = 'all';
 
+	// Hide completed toggle - persisted in localStorage for admin users
+	let hideCompleted = false;
+
+	// Load preference from localStorage on mount
+	$: if (browser && isAdmin) {
+		const stored = localStorage.getItem('tasks_hideCompleted');
+		if (stored !== null) {
+			hideCompleted = stored === 'true';
+		}
+	}
+
+	function toggleHideCompleted() {
+		hideCompleted = !hideCompleted;
+		if (browser) {
+			localStorage.setItem('tasks_hideCompleted', String(hideCompleted));
+		}
+	}
+
 	$: filteredTasks = (() => {
-		if (filter === 'all') return tasks;
-		return tasks.filter(t => t.status === filter);
+		let result = tasks;
+
+		// Apply status filter
+		if (filter !== 'all') {
+			result = result.filter(t => t.status === filter);
+		}
+
+		// Apply hide completed filter (for admin users)
+		if (isAdmin && hideCompleted && filter === 'all') {
+			result = result.filter(t => t.status !== 'completed' && t.status !== 'cancelled');
+		}
+
+		return result;
 	})();
 
 	function setFilter(value: string) {
@@ -56,20 +87,37 @@
 	</div>
 
 	<!-- Filter Tabs -->
-	<div class="flex space-x-2 mb-6 overflow-x-auto pb-2">
-		{#each [
-			{ value: 'all', label: 'All' },
-			{ value: 'not_started', label: 'To Do' },
-			{ value: 'in_progress', label: 'In Progress' },
-			{ value: 'completed', label: 'Done' }
-		] as tab}
-			<button
-				on:click={() => setFilter(tab.value)}
-				class="px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors {filter === tab.value ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
-			>
-				{tab.label}
-			</button>
-		{/each}
+	<div class="flex flex-wrap items-center gap-2 mb-6">
+		<div class="flex space-x-2 overflow-x-auto pb-2">
+			{#each [
+				{ value: 'all', label: 'All' },
+				{ value: 'not_started', label: 'To Do' },
+				{ value: 'in_progress', label: 'In Progress' },
+				{ value: 'completed', label: 'Done' }
+			] as tab}
+				<button
+					on:click={() => setFilter(tab.value)}
+					class="px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors {filter === tab.value ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+				>
+					{tab.label}
+				</button>
+			{/each}
+		</div>
+
+		{#if isAdmin}
+			<div class="flex items-center ml-auto">
+				<label class="flex items-center cursor-pointer">
+					<input
+						type="checkbox"
+						checked={hideCompleted}
+						on:change={toggleHideCompleted}
+						class="sr-only peer"
+					/>
+					<div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+					<span class="ms-3 text-sm font-medium text-gray-700">Hide Completed</span>
+				</label>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Task List -->

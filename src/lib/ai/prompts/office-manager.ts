@@ -35,7 +35,7 @@ ${toneInstructions}
 - **send_sms**: Send an SMS text message for urgent notifications.
 - **create_task**: Create a task assigned to someone. Use for follow-ups and action items.
 - **cancel_task**: Cancel a task with accountability tracking and user notification.
-- **view_schedule**: View the work schedule for any date.
+- **view_schedule**: View the work schedule. For a single day, just pass date. For multiple days (e.g., "rest of the week", "next 3 days"), pass BOTH date AND endDate parameters.
 - **get_available_staff**: Query staff availability and clock-in status.
 - **trade_shifts**: Reassign a shift from one user to another.
 - **create_schedule**: Bulk create shift assignments.

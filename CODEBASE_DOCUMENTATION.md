@@ -1,8 +1,9 @@
 # TeamTime Codebase Documentation
 
 > **Generated**: December 11, 2025
-> **Version**: 1.0.0
+> **Version**: 1.0.0-alpha
 > **Purpose**: Comprehensive developer reference for the TeamTime workforce operations platform
+> **Release Status**: Alpha - Core features complete, ready for testing
 
 ---
 
@@ -445,7 +446,7 @@ getLocation()             // Get GPS coordinates
 | `create_task` | Create new task | 30min/user |
 | `cancel_task` | Cancel existing task | - |
 | `send_sms` | SMS alert (Twilio) | - |
-| `view_schedule` | View staff schedule | - |
+| `view_schedule` | View staff schedule (supports date ranges) | - |
 | `trade_shifts` | Manage shift trades | - |
 | `create_schedule` | Build schedules | - |
 | `get_available_staff` | Query availability | - |
@@ -454,6 +455,14 @@ getLocation()             // Get GPS coordinates
 | `continue_work` | Signal multi-step task continuation | - |
 | `review_past_chats` | Search conversation history | - |
 | `get_chat_details` | Retrieve full past conversation | - |
+
+### View Schedule Date Range Support
+
+The `view_schedule` tool supports viewing multiple days:
+- Single day: `view_schedule({ date: "2025-12-11" })`
+- Date range: `view_schedule({ date: "2025-12-11", endDate: "2025-12-14" })`
+- Maximum range: 14 days
+- Context provides exact dates for "rest of the week" queries
 
 ### Office Manager Chat Memory
 
@@ -618,58 +627,43 @@ npm run db:studio        # Open Drizzle Studio
 
 ## 10. Known Issues & Technical Debt
 
-### High Priority
+### Recently Fixed (Alpha Release)
 
-#### 1. Insecure Random Number Generation
-- **Location**: `src/lib/server/auth/pin.ts:22, 27`
-- **Issue**: Uses `Math.random()` for PIN/2FA codes
-- **Fix**: Use `crypto.getRandomValues()` or `crypto.randomBytes()`
+| Issue | Status | Notes |
+|-------|--------|-------|
+| Insecure Random (PIN/2FA) | FIXED | Now uses `crypto.randomInt()` |
+| Email Service | FIXED | Nodemailer with SMTP support |
+| Hardcoded DB Credentials | FIXED | Fails fast if DATABASE_URL missing |
+| parseInt Radix Params | FIXED | All parseInt calls include radix |
+| Type Safety (`any` types) | FIXED | Proper typing throughout |
+| Console Logging | FIXED | Structured logging with pino |
 
-```typescript
-// Current (INSECURE)
-const pin = Math.floor(100000 + Math.random() * 900000).toString();
+### Remaining Technical Debt
 
-// Recommended
-import { randomInt } from 'crypto';
-const pin = randomInt(100000, 999999).toString();
-```
+#### Medium Priority
 
-#### 2. Email Service Not Implemented
-- **Location**: `src/lib/server/email/index.ts`
-- **Issue**: Emails only logged, not sent in production
-- **Fix**: Implement nodemailer transport
+#### 1. Large Complex Files
+- `multi-model.ts` - 813 lines (consider splitting)
+- `permission-manager.ts` - 681 lines
+- `schema.ts` - 1,463 lines (expected for schema)
 
-### Medium Priority
-
-#### 3. Excessive Console Logging (150+ instances)
-- **Locations**: Multiple files, especially in AI orchestrators
-- **Fix**: Implement structured logging (pino, winston)
-
-#### 4. Hardcoded Fallback Credentials
-- **Location**: `src/lib/server/db/index.ts:6`
-- **Issue**: Dev password in fallback string
-- **Fix**: Fail fast if DATABASE_URL not set
+#### 2. Test Coverage
+- Unit tests not yet implemented
+- Integration tests needed for AI tools
 
 ### Low Priority
 
-#### 5. Type Safety Issues
-- 10+ instances of `any` type assertions
-- Missing error parameter types in catch blocks
-
-#### 6. Large Complex Files
-- `multi-model.ts` - 813 lines
-- `permission-manager.ts` - 681 lines
-- `schema.ts` - 1,463 lines
+#### 3. Code Organization
+- Some AI tools could be consolidated
+- Context providers could use caching
 
 ### Issue Summary
 
 | Category | Count | Severity |
 |----------|-------|----------|
-| Security (Random) | 2 | HIGH |
-| Incomplete Implementation | 1 | Medium |
-| Console Logs | 150+ | Medium |
-| Type Safety | 10+ | Low |
-| Code Complexity | 5 files | Low |
+| Security Issues | 0 | - |
+| Test Coverage | Low | Medium |
+| Code Complexity | 3 files | Low |
 
 ---
 

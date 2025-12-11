@@ -79,7 +79,30 @@ export async function assembleContext(
 }
 
 export function formatContextForPrompt(context: AssembledContext): string {
-	const header = `# Current State (as of ${context.timestamp.toLocaleString()})\n\n`;
+	const now = context.timestamp;
+	const today = now.toISOString().split('T')[0];
+
+	// Calculate end of week (Sunday)
+	const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
+	const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+	const endOfWeek = new Date(now);
+	endOfWeek.setDate(now.getDate() + daysUntilSunday);
+	const endOfWeekStr = endOfWeek.toISOString().split('T')[0];
+
+	// Calculate end of next week
+	const endOfNextWeek = new Date(endOfWeek);
+	endOfNextWeek.setDate(endOfNextWeek.getDate() + 7);
+	const endOfNextWeekStr = endOfNextWeek.toISOString().split('T')[0];
+
+	const header = `# Current State (as of ${now.toLocaleString()})
+
+## IMPORTANT: Date Reference (use these exact dates for tools)
+- **Today's date**: ${today} (${now.toLocaleDateString('en-US', { weekday: 'long' })})
+- **End of this week (Sunday)**: ${endOfWeekStr}
+- **End of next week**: ${endOfNextWeekStr}
+- For "rest of the week" schedules, use date="${today}" and endDate="${endOfWeekStr}"
+
+`;
 	const body = context.modules.map(m => m.content).join('\n\n');
 	return header + body;
 }
