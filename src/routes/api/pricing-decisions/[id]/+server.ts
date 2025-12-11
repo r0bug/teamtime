@@ -2,6 +2,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, pricingDecisions, pricingDecisionPhotos, users, locations, tasks } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:pricing-decisions:id');
 
 // GET /api/pricing-decisions/[id] - Get a single pricing decision
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -79,7 +82,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 			}
 		});
 	} catch (error) {
-		console.error('Error fetching pricing decision:', error);
+		log.error({ error, userId: locals.user.id, decisionId: id }, 'Error fetching pricing decision');
 		return json({ error: 'Failed to fetch pricing decision' }, { status: 500 });
 	}
 };

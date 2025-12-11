@@ -3,7 +3,11 @@ import postgres from 'postgres';
 import * as schema from './schema';
 import { DATABASE_URL } from '$env/static/private';
 
-const connectionString = DATABASE_URL || 'postgresql://teamtime:teamtime_dev_password@localhost:5432/teamtime';
+if (!DATABASE_URL) {
+	throw new Error('DATABASE_URL environment variable is required');
+}
+
+const connectionString = DATABASE_URL;
 
 const client = postgres(connectionString);
 export const db = drizzle(client, { schema });

@@ -3,6 +3,9 @@ import type { RequestHandler } from './$types';
 import { db, inventoryDrops, inventoryDropPhotos, inventoryDropItems, users } from '$lib/server/db';
 import { eq, desc, and } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:inventory-drops');
 
 // GET /api/inventory-drops - List inventory drops
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -10,8 +13,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
-	const offset = parseInt(url.searchParams.get('offset') || '0');
+	const limit = Math.min(parseInt(url.searchParams.get('limit') || '20', 10), 100);
+	const offset = parseInt(url.searchParams.get('offset') || '0', 10);
 	const status = url.searchParams.get('status');
 
 	// Build conditions
@@ -99,7 +102,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			message: 'Drop created and queued for processing'
 		}, { status: 201 });
 	} catch (error) {
-		console.error('Error creating inventory drop:', error);
+		log.error({ error, userId: locals.user.id, description }, 'Error creating inventory drop');
 		return json({ error: 'Failed to create inventory drop' }, { status: 500 });
 	}
 };

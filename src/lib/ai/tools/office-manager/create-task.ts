@@ -2,6 +2,9 @@
 import { db, tasks, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:create-task');
 
 interface CreateTaskParams {
 	title: string;
@@ -139,7 +142,7 @@ export const createTaskTool: AITool<CreateTaskParams, CreateTaskResult> = {
 				assigneeName
 			};
 		} catch (error) {
-			console.error('[AI Tool] create_task error:', error);
+			log.error('Create task tool error', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

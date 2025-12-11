@@ -5,7 +5,8 @@ module.exports = {
       script: './build/index.js',
       cwd: '/home/robug/teamtime',
 
-      // Environment
+      // Environment - loads from .env file, with overrides below
+      env_file: '.env',
       env: {
         NODE_ENV: 'production',
         PORT: 3000,

@@ -3,6 +3,9 @@ import type { RequestHandler } from './$types';
 import { db, cashCountConfigs } from '$lib/server/db';
 import { isManager } from '$lib/server/auth/roles';
 import { desc } from 'drizzle-orm';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:cash-count-configs');
 
 // GET - List cash count configs
 export const GET: RequestHandler = async ({ locals }) => {
@@ -18,7 +21,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 		return json({ success: true, configs });
 	} catch (error) {
-		console.error('Error fetching cash count configs:', error);
+		log.error({ error, userId: locals.user?.id }, 'Error fetching cash count configs');
 		return json({ error: 'Failed to fetch configs' }, { status: 500 });
 	}
 };
@@ -57,7 +60,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 		return json({ success: true, config }, { status: 201 });
 	} catch (error) {
-		console.error('Error creating cash count config:', error);
+		log.error({ error, userId: locals.user?.id, locationId, name }, 'Error creating cash count config');
 		return json({ error: 'Failed to create config' }, { status: 500 });
 	}
 };

@@ -1,6 +1,9 @@
 // Job processor - executes jobs from the queue
 import { getPendingJobs, acquireJob, completeJob, failJob, type JobType, type JobPayload, type JobResult } from './queue';
 import type { Job } from '$lib/server/db/schema';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('server:job-processor');
 
 // Job handlers registry
 type JobHandler<T extends JobType> = (payload: JobPayload[T]) => Promise<JobResult[T]>;
@@ -17,7 +20,7 @@ async function processJob(job: Job): Promise<boolean> {
 	const handler = handlers[job.type as JobType];
 
 	if (!handler) {
-		console.error(`[JobProcessor] No handler registered for job type: ${job.type}`);
+		log.error('No handler registered for job type', { jobId: job.id, jobType: job.type });
 		await failJob(job.id, `No handler registered for job type: ${job.type}`);
 		return false;
 	}
@@ -29,16 +32,19 @@ async function processJob(job: Job): Promise<boolean> {
 		return false;
 	}
 
-	console.log(`[JobProcessor] Processing job ${job.id} (type: ${job.type}, attempt: ${acquired.attempts})`);
+	log.info('Processing job', { jobId: job.id, jobType: job.type, attempt: acquired.attempts });
 
 	try {
 		const result = await handler(job.payload as JobPayload[JobType]);
 		await completeJob(job.id, result);
-		console.log(`[JobProcessor] Job ${job.id} completed successfully`);
+		log.info('Job completed successfully', { jobId: job.id });
 		return true;
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-		console.error(`[JobProcessor] Job ${job.id} failed:`, errorMessage);
+		log.error('Job failed', {
+			jobId: job.id,
+			error: errorMessage
+		});
 		await failJob(job.id, errorMessage);
 		return false;
 	}
@@ -79,14 +85,14 @@ export async function runProcessor(options: {
 
 	let iterations = 0;
 
-	console.log('[JobProcessor] Starting job processor...');
+	log.info('Starting job processor', { batchSize, pollInterval, maxIterations });
 
 	while (iterations < maxIterations) {
 		try {
 			const { processed, succeeded, failed } = await processPendingJobs(batchSize);
 
 			if (processed > 0) {
-				console.log(`[JobProcessor] Batch complete: ${succeeded}/${processed} succeeded, ${failed} failed`);
+				log.info('Batch complete', { succeeded, processed, failed });
 			}
 
 			// If no jobs were found, wait before polling again
@@ -94,12 +100,14 @@ export async function runProcessor(options: {
 				await new Promise(resolve => setTimeout(resolve, pollInterval));
 			}
 		} catch (error) {
-			console.error('[JobProcessor] Error processing batch:', error);
+			log.error('Error processing batch', {
+				error: error instanceof Error ? error.message : String(error)
+			});
 			await new Promise(resolve => setTimeout(resolve, pollInterval));
 		}
 
 		iterations++;
 	}
 
-	console.log('[JobProcessor] Processor stopped');
+	log.info('Processor stopped');
 }

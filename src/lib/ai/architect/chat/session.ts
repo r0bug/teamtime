@@ -20,6 +20,9 @@ import {
 	getStandardModelConfig,
 	getDeliberationConfig
 } from '../config';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:architect:chat');
 
 export interface ConsultationMetadata {
 	tier: ConsultationTier;
@@ -158,7 +161,7 @@ export async function sendMessage(
 
 		// Detect consultation tier based on message content
 		const tierDetection = detectConsultationTier(userMessage, architectConfigData);
-		console.log(`[Architect] Detected tier: ${tierDetection.tier}, reason: ${tierDetection.reason}`);
+		log.info('Consultation tier detected', { chatId, tier: tierDetection.tier, reason: tierDetection.reason, triggers: tierDetection.triggers });
 
 		// Perform consultation based on detected tier
 		let consultationResult: ConsultationResult;
@@ -240,10 +243,14 @@ export async function sendMessage(
 					runId,
 					runStartedAt,
 					agent: 'architect',
+					provider: consultationResult.primary.provider as 'anthropic' | 'openai' | 'segmind',
+					model: consultationResult.primary.model,
 					toolName: toolCall.name,
-					parameters: toolCall.params as Record<string, unknown>,
-					result: result.result as Record<string, unknown>,
-					executed: result.success
+					toolParams: toolCall.params as Record<string, unknown>,
+					executionResult: result.result as Record<string, unknown>,
+					executed: result.success,
+					tokensUsed: consultationResult.totalTokens,
+					costCents: consultationResult.totalCostCents
 				});
 
 				processedToolCalls.push({

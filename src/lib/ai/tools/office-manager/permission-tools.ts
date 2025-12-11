@@ -11,6 +11,9 @@ import {
 	canModifyUser
 } from '$lib/server/services/permission-manager';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:permission-tools');
 
 // ============================================================================
 // Tool 1: View User Permissions
@@ -89,7 +92,7 @@ export const viewUserPermissionsTool: AITool<ViewPermissionsParams, ViewPermissi
 				}
 			};
 		} catch (error) {
-			console.error('[AI Tool] view_user_permissions error:', error);
+			log.error('View user permissions tool error', { error });
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},
@@ -207,7 +210,7 @@ export const grantTemporaryPermissionTool: AITool<GrantPermissionParams, GrantPe
 
 			return result;
 		} catch (error) {
-			console.error('[AI Tool] grant_temporary_permission error:', error);
+			log.error('Grant temporary permission tool error', { error });
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},
@@ -316,7 +319,7 @@ export const changeUserTypeTool: AITool<ChangeUserTypeParams, ChangeUserTypeResu
 				...result
 			};
 		} catch (error) {
-			console.error('[AI Tool] change_user_type_temporarily error:', error);
+			log.error('Change user type temporarily tool error', { error });
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},
@@ -381,7 +384,7 @@ export const rollbackPermissionChangeTool: AITool<RollbackParams, RollbackResult
 			const result = await rollbackPermissionChange(params.changeId);
 			return result;
 		} catch (error) {
-			console.error('[AI Tool] rollback_permission_change error:', error);
+			log.error('Rollback permission change tool error', { error });
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},
@@ -430,7 +433,7 @@ export const listGrantableUserTypesTool: AITool<ListUserTypesParams, ListUserTyp
 			const types = await getGrantableUserTypes();
 			return { success: true, userTypes: types };
 		} catch (error) {
-			console.error('[AI Tool] list_grantable_user_types error:', error);
+			log.error('List grantable user types tool error', { error });
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},
@@ -494,7 +497,7 @@ export const listGrantablePermissionsTool: AITool<ListPermissionsParams, ListPer
 			}
 			return { success: true, permissions: perms };
 		} catch (error) {
-			console.error('[AI Tool] list_grantable_permissions error:', error);
+			log.error('List grantable permissions tool error', { error });
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},
@@ -575,7 +578,7 @@ export const viewPendingApprovalsTool: AITool<ViewPendingParams, ViewPendingResu
 				}))
 			};
 		} catch (error) {
-			console.error('[AI Tool] view_pending_approvals error:', error);
+			log.error('View pending approvals tool error', { error });
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},

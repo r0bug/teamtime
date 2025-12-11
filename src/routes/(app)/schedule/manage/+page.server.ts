@@ -8,7 +8,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		throw redirect(302, '/schedule');
 	}
 
-	const weekOffset = parseInt(url.searchParams.get('week') || '0');
+	const weekOffset = parseInt(url.searchParams.get('week') || '0', 10);
 	const now = new Date();
 	const weekStart = new Date(now);
 	weekStart.setDate(weekStart.getDate() - weekStart.getDay() + weekOffset * 7);

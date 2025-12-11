@@ -2,6 +2,9 @@
 import { db, shifts, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:trade-shifts');
 
 interface TradeShiftsParams {
 	shiftId: string;
@@ -153,7 +156,7 @@ export const tradeShiftsTool: AITool<TradeShiftsParams, TradeShiftsResult> = {
 				shiftDate: shift[0].startTime.toISOString().split('T')[0]
 			};
 		} catch (error) {
-			console.error('[AI Tool] trade_shifts error:', error);
+			log.error('Trade shifts tool error', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

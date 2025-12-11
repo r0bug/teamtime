@@ -29,6 +29,20 @@
       "when": 1765330095612,
       "tag": "0003_wonderful_pandemic",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1765446847577,
+      "tag": "0004_daily_talon",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1765449839911,
+      "tag": "0005_cloudy_grandmaster",
+      "breakpoints": true
     }
   ]
 }

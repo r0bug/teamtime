@@ -3,6 +3,9 @@ import { redirect, fail } from '@sveltejs/kit';
 import { db, appSettings } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isAdmin, canManageModules } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('admin:modules');
 
 const DEFAULT_MODULES = [
 	{ key: 'module_tasks', name: 'Tasks', description: 'Task management and assignments', enabled: true },
@@ -73,7 +76,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Module setting updated' };
 		} catch (error) {
-			console.error('Error updating module:', error);
+			log.error('Error updating module', { error, moduleKey, enabled });
 			return fail(500, { error: 'Failed to update module setting' });
 		}
 	}

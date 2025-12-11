@@ -3,6 +3,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getChatSessionForUser, processUserMessage } from '$lib/ai/office-manager/chat';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:office-manager:chats:messages');
 
 // POST - Send a message and get AI response
 export const POST: RequestHandler = async ({ locals, params, request }) => {
@@ -48,7 +51,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 			tokensUsed: result.tokensUsed
 		});
 	} catch (error) {
-		console.error('[Office Manager Chat] Message error:', error);
+		log.error({ error, chatId: params.id, userId: locals.user?.id }, 'Message error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

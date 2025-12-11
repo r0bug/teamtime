@@ -3,6 +3,9 @@ import { redirect, fail } from '@sveltejs/kit';
 import { db, users, shifts, locations, storeHours, appSettings } from '$lib/server/db';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('admin:schedule');
 
 interface PayPeriodConfig {
 	type: 'semi-monthly' | 'bi-weekly' | 'weekly' | 'monthly';
@@ -244,7 +247,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Shift created successfully' };
 		} catch (error) {
-			console.error('Error creating shift:', error);
+			log.error('Error creating shift', { error, userId, locationId, startTime, endTime });
 			return fail(500, { error: 'Failed to create shift' });
 		}
 	},
@@ -265,7 +268,7 @@ export const actions: Actions = {
 			await db.delete(shifts).where(eq(shifts.id, shiftId));
 			return { success: true, message: 'Shift deleted successfully' };
 		} catch (error) {
-			console.error('Error deleting shift:', error);
+			log.error('Error deleting shift', { error, shiftId });
 			return fail(500, { error: 'Failed to delete shift' });
 		}
 	},
@@ -302,7 +305,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Shift updated successfully' };
 		} catch (error) {
-			console.error('Error updating shift:', error);
+			log.error('Error updating shift', { error, shiftId, userId, locationId, startTime, endTime });
 			return fail(500, { error: 'Failed to update shift' });
 		}
 	},
@@ -319,7 +322,7 @@ export const actions: Actions = {
 		const endTime = formData.get('endTime') as string; // Time only, e.g., "17:00"
 		const notes = formData.get('notes') as string;
 		const datesJson = formData.get('dates') as string;
-		const repeatCount = parseInt(formData.get('repeatCount') as string) || 1;
+		const repeatCount = parseInt(formData.get('repeatCount') as string, 10) || 1;
 
 		if (!userId || !startTime || !endTime || !datesJson) {
 			return fail(400, { error: 'User, start time, end time, and dates are required' });
@@ -387,7 +390,7 @@ export const actions: Actions = {
 				message: `Created ${shiftsToCreate.length} shift(s) successfully`
 			};
 		} catch (error) {
-			console.error('Error creating bulk shifts:', error);
+			log.error('Error creating bulk shifts', { error, userId, locationId, repeatCount, datesCount: dates.length });
 			return fail(500, { error: 'Failed to create shifts' });
 		}
 	}

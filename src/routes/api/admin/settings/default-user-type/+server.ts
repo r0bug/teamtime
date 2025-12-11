@@ -3,6 +3,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { isAdmin } from '$lib/server/auth/roles';
 import { getDefaultUserTypeId, setDefaultUserTypeId } from '$lib/server/security/migrate-users';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:admin:default-user-type');
 
 // GET - Get default user type
 export const GET: RequestHandler = async ({ locals }) => {
@@ -17,7 +20,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			defaultUserTypeId
 		});
 	} catch (error) {
-		console.error('[API] Get default user type error:', error);
+		log.error({ error, userId: locals.user?.id }, 'Get default user type error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
@@ -37,14 +40,14 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 		await setDefaultUserTypeId(userTypeId || null, locals.user.id);
 
-		console.log(`[API] Default user type set to ${userTypeId || 'null'} by ${locals.user.email}`);
+		log.info({ userTypeId, userId: locals.user.id, email: locals.user.email }, 'Default user type set');
 
 		return json({
 			success: true,
 			defaultUserTypeId: userTypeId || null
 		});
 	} catch (error) {
-		console.error('[API] Set default user type error:', error);
+		log.error({ error, userId: locals.user?.id }, 'Set default user type error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

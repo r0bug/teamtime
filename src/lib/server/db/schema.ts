@@ -695,6 +695,11 @@ export const aiConfig = pgTable('ai_config', {
 	tone: aiToneEnum('tone').notNull().default('helpful_parent'),
 	instructions: text('instructions'), // Custom instructions appended to system prompt
 	cronSchedule: text('cron_schedule').notNull().default('*/15 7-19 * * *'),
+	// Operational hours - easier to configure than cron
+	operationalStartHour: integer('operational_start_hour').notNull().default(9), // 9 AM
+	operationalEndHour: integer('operational_end_hour').notNull().default(17), // 5 PM
+	operationalDays: jsonb('operational_days').$type<number[]>().default([1, 2, 3, 4, 5]), // Mon-Fri (0=Sun, 6=Sat)
+	runIntervalMinutes: integer('run_interval_minutes').notNull().default(15), // How often to run
 	maxTokensContext: integer('max_tokens_context').notNull().default(4000),
 	temperature: decimal('temperature', { precision: 2, scale: 1 }).notNull().default('0.3'),
 	dryRunMode: boolean('dry_run_mode').notNull().default(false),
@@ -726,6 +731,8 @@ export const aiActions = pgTable('ai_actions', {
 	contextTokens: integer('context_tokens'),
 
 	// LLM interaction
+	provider: aiProviderEnum('provider'), // anthropic, openai, segmind
+	model: text('model'), // e.g., claude-sonnet-4-20250514, gpt-4o
 	reasoning: text('reasoning'), // AI's explanation of its decision
 	toolName: text('tool_name'), // null if observation only
 	toolParams: jsonb('tool_params').$type<Record<string, unknown>>(),
@@ -746,6 +753,29 @@ export const aiActions = pgTable('ai_actions', {
 	costCents: integer('cost_cents'),
 
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// AI Pending Work - tracks incomplete multi-step tasks for continuation
+export const aiPendingWork = pgTable('ai_pending_work', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	agent: aiAgentEnum('agent').notNull(),
+	runId: uuid('run_id').notNull(), // Original run that created this
+
+	// Task chain info
+	remainingTasks: jsonb('remaining_tasks').$type<string[]>().notNull(),
+	completedActions: jsonb('completed_actions').$type<{ tool: string; result: string }[]>().default([]),
+	reason: text('reason').notNull(),
+
+	// Status
+	status: text('status').notNull().default('pending'), // 'pending', 'in_progress', 'completed', 'expired'
+	iterationCount: integer('iteration_count').notNull().default(1),
+	maxIterations: integer('max_iterations').notNull().default(5),
+
+	// Expiration (auto-expire after some time to prevent stuck tasks)
+	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
 
 // AI Cooldowns - prevent repeated actions
@@ -931,6 +961,9 @@ export const officeManagerChats = pgTable('office_manager_chats', {
 		.references(() => users.id, { onDelete: 'cascade' }),
 	title: text('title').notNull(),
 	messages: jsonb('messages').$type<OfficeManagerMessage[]>().default([]),
+	summary: text('summary'), // AI-generated summary for long-term memory
+	topics: jsonb('topics').$type<string[]>().default([]), // Key topics for searchability
+	actionsPerformed: jsonb('actions_performed').$type<string[]>().default([]), // Tools used in this chat
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });

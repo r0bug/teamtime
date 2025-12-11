@@ -2,6 +2,9 @@
 import { db, shifts, users, locations } from '$lib/server/db';
 import { eq, inArray } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:create-schedule');
 
 interface ShiftAssignment {
 	userId: string;
@@ -221,7 +224,7 @@ export const createScheduleTool: AITool<CreateScheduleParams, CreateScheduleResu
 				errors: errors.length > 0 ? errors : undefined
 			};
 		} catch (error) {
-			console.error('[AI Tool] create_schedule error:', error);
+			log.error('Create schedule tool error', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

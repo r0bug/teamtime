@@ -12,8 +12,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// Parse query params
 	const agent = url.searchParams.get('agent') || 'all';
 	const status = url.searchParams.get('status') || 'all';
-	const days = parseInt(url.searchParams.get('days') || '7');
-	const page = parseInt(url.searchParams.get('page') || '1');
+	const days = parseInt(url.searchParams.get('days') || '7', 10);
+	const page = parseInt(url.searchParams.get('page') || '1', 10);
 	const limit = 50;
 	const offset = (page - 1) * limit;
 

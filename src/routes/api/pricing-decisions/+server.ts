@@ -2,6 +2,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, pricingDecisions, pricingDecisionPhotos, tasks, users } from '$lib/server/db';
 import { eq, desc, and, gte, lte, sql } from 'drizzle-orm';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:pricing-decisions');
 
 // GET /api/pricing-decisions - List pricing decisions
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -13,8 +16,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const destination = url.searchParams.get('destination') as 'store' | 'ebay' | null;
 	const startDate = url.searchParams.get('startDate');
 	const endDate = url.searchParams.get('endDate');
-	const limit = parseInt(url.searchParams.get('limit') || '50');
-	const offset = parseInt(url.searchParams.get('offset') || '0');
+	const limit = parseInt(url.searchParams.get('limit') || '50', 10);
+	const offset = parseInt(url.searchParams.get('offset') || '0', 10);
 
 	try {
 		// Build conditions array
@@ -91,7 +94,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			offset
 		});
 	} catch (error) {
-		console.error('Error fetching pricing decisions:', error);
+		log.error({ error, userId: locals.user.id }, 'Error fetching pricing decisions');
 		return json({ error: 'Failed to fetch pricing decisions' }, { status: 500 });
 	}
 };
@@ -161,8 +164,18 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 		// Insert photos
 		if (photos.length > 0) {
+			interface PhotoData {
+				filePath: string;
+				originalName: string;
+				mimeType: string;
+				sizeBytes: number;
+				lat?: number;
+				lng?: number;
+				capturedAt?: string;
+			}
+
 			await db.insert(pricingDecisionPhotos).values(
-				photos.map((photo: any) => ({
+				photos.map((photo: PhotoData) => ({
 					pricingDecisionId: newDecision.id,
 					filePath: photo.filePath,
 					originalName: photo.originalName,
@@ -215,7 +228,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			}
 		}, { status: 201 });
 	} catch (error) {
-		console.error('Error creating pricing decision:', error);
+		log.error({ error, userId: locals.user.id, itemDescription }, 'Error creating pricing decision');
 		return json({ error: 'Failed to create pricing decision' }, { status: 500 });
 	}
 };

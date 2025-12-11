@@ -10,7 +10,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	}
 
 	const unreadOnly = url.searchParams.get('unread') === 'true';
-	const limit = parseInt(url.searchParams.get('limit') || '50');
+	const limit = parseInt(url.searchParams.get('limit') || '50', 10);
 
 	const conditions = [eq(notifications.userId, locals.user.id)];
 	if (unreadOnly) {

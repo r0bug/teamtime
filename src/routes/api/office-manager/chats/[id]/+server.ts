@@ -3,6 +3,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getChatSessionForUser, deleteChatSession, getPendingActionsForChat } from '$lib/ai/office-manager/chat';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:office-manager:chats:id');
 
 // GET - Get a specific chat session with messages and pending actions
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -40,7 +43,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 			}))
 		});
 	} catch (error) {
-		console.error('[Office Manager Chat] Get error:', error);
+		log.error({ error, chatId: params.id, userId: locals.user?.id }, 'Get error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
@@ -65,7 +68,7 @@ export const DELETE: RequestHandler = async ({ locals, params }) => {
 		await deleteChatSession(params.id);
 		return json({ success: true });
 	} catch (error) {
-		console.error('[Office Manager Chat] Delete error:', error);
+		log.error({ error, chatId: params.id, userId: locals.user?.id }, 'Delete error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

@@ -288,12 +288,19 @@
 						<tbody class="bg-white divide-y divide-gray-200">
 							{#each filteredPermissions as permission}
 								<tr class="hover:bg-gray-50">
-									<td class="px-4 py-2 text-sm sticky left-0 bg-white z-10">
-										<div class="font-medium text-gray-900">{permission.name}</div>
-										<div class="text-xs text-gray-500">
-											{permission.routePattern}{permission.actionName ? ` : ${permission.actionName}` : ''}
+									<td class="px-4 py-2 text-sm sticky left-0 bg-white z-10 min-w-[300px]">
+										<div class="flex justify-between items-start gap-4">
+											<div>
+												<div class="font-medium text-gray-900">{permission.name}</div>
+												<div class="text-xs text-gray-500">
+													{permission.routePattern}{permission.actionName ? ` : ${permission.actionName}` : ''}
+												</div>
+												<div class="text-xxs text-gray-400">{permission.module}</div>
+											</div>
+											<div class="text-xs text-gray-600 max-w-[200px] text-right">
+												{permission.description || ''}
+											</div>
 										</div>
-										<div class="text-xxs text-gray-400">{permission.module}</div>
 									</td>
 									{#each data.userTypes as userType}
 										{@const state = getPermState(userType.id, permission.id)}

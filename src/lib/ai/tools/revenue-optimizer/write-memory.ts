@@ -2,6 +2,9 @@
 import { db, aiMemory, users, locations } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:write-memory');
 
 interface WriteMemoryParams {
 	scope: 'user' | 'location' | 'global';
@@ -149,7 +152,7 @@ export const writeMemoryTool: AITool<WriteMemoryParams, WriteMemoryResult> = {
 				scopeTarget
 			};
 		} catch (error) {
-			console.error('[AI Tool] write_memory error:', error);
+			log.error('Write memory tool error', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

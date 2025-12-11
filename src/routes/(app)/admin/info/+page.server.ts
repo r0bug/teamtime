@@ -3,6 +3,9 @@ import { redirect, fail } from '@sveltejs/kit';
 import { db, infoPosts, users } from '$lib/server/db';
 import { eq, desc } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('admin:info');
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!isManager(locals.user)) {
@@ -58,7 +61,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Post created successfully' };
 		} catch (error) {
-			console.error('Error creating post:', error);
+			log.error('Error creating post', { error, title, category });
 			return fail(500, { error: 'Failed to create post' });
 		}
 	},
@@ -95,7 +98,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Post updated successfully' };
 		} catch (error) {
-			console.error('Error updating post:', error);
+			log.error('Error updating post', { error, postId, title });
 			return fail(500, { error: 'Failed to update post' });
 		}
 	},
@@ -116,7 +119,7 @@ export const actions: Actions = {
 			await db.delete(infoPosts).where(eq(infoPosts.id, postId));
 			return { success: true, message: 'Post deleted successfully' };
 		} catch (error) {
-			console.error('Error deleting post:', error);
+			log.error('Error deleting post', { error, postId });
 			return fail(500, { error: 'Failed to delete post' });
 		}
 	},
@@ -145,7 +148,7 @@ export const actions: Actions = {
 
 			return { success: true, message: isPinned ? 'Post pinned' : 'Post unpinned' };
 		} catch (error) {
-			console.error('Error toggling pin:', error);
+			log.error('Error toggling pin', { error, postId, isPinned });
 			return fail(500, { error: 'Failed to toggle pin' });
 		}
 	}

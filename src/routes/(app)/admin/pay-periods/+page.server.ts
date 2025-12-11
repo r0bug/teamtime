@@ -69,12 +69,12 @@ export const actions: Actions = {
 
 		const config: PayPeriodConfig = {
 			type: type as PayPeriodConfig['type'],
-			period1Start: parseInt(formData.get('period1Start') as string) || 26,
-			period1End: parseInt(formData.get('period1End') as string) || 10,
-			period1Payday: parseInt(formData.get('period1Payday') as string) || 1,
-			period2Start: parseInt(formData.get('period2Start') as string) || 11,
-			period2End: parseInt(formData.get('period2End') as string) || 25,
-			period2Payday: parseInt(formData.get('period2Payday') as string) || 16
+			period1Start: parseInt(formData.get('period1Start') as string, 10) || 26,
+			period1End: parseInt(formData.get('period1End') as string, 10) || 10,
+			period1Payday: parseInt(formData.get('period1Payday') as string, 10) || 1,
+			period2Start: parseInt(formData.get('period2Start') as string, 10) || 11,
+			period2End: parseInt(formData.get('period2End') as string, 10) || 25,
+			period2Payday: parseInt(formData.get('period2Payday') as string, 10) || 16
 		};
 
 		// Validate

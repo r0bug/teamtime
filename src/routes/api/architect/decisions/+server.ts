@@ -3,13 +3,16 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, architectureDecisions } from '$lib/server/db';
 import { desc, eq } from 'drizzle-orm';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:architect:decisions');
 
 // GET - List all architecture decisions
 export const GET: RequestHandler = async ({ url }) => {
 	try {
 		const status = url.searchParams.get('status');
 		const category = url.searchParams.get('category');
-		const limit = parseInt(url.searchParams.get('limit') || '50');
+		const limit = parseInt(url.searchParams.get('limit') || '50', 10);
 
 		let query = db.select().from(architectureDecisions);
 
@@ -48,7 +51,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			}))
 		});
 	} catch (error) {
-		console.error('[Architect Decisions] List error:', error);
+		log.error({ error }, 'List error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
@@ -102,7 +105,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			}
 		});
 	} catch (error) {
-		console.error('[Architect Decisions] Create error:', error);
+		log.error({ error, userId: locals.user?.id, title }, 'Create error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

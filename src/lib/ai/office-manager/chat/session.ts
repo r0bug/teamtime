@@ -301,23 +301,31 @@ export async function deleteChatSession(chatId: string): Promise<void> {
  */
 export async function logAIAction(params: {
 	runId: string;
+	provider?: 'anthropic' | 'openai' | 'segmind';
+	model?: string;
 	toolName: string;
 	toolParams: Record<string, unknown>;
 	executed: boolean;
 	executionResult?: Record<string, unknown>;
 	targetUserId?: string;
 	error?: string;
+	tokensUsed?: number;
+	costCents?: number;
 }): Promise<void> {
 	await db.insert(aiActions).values({
 		agent: 'office_manager',
 		runId: params.runId,
 		runStartedAt: new Date(),
+		provider: params.provider,
+		model: params.model,
 		toolName: params.toolName,
 		toolParams: params.toolParams,
 		executed: params.executed,
 		executionResult: params.executionResult,
 		targetUserId: params.targetUserId,
-		error: params.error
+		error: params.error,
+		tokensUsed: params.tokensUsed,
+		costCents: params.costCents
 	});
 }
 
@@ -366,4 +374,133 @@ function generateTitle(message: string): string {
 		return truncated.substring(0, lastSpace) + '...';
 	}
 	return truncated + '...';
+}
+
+/**
+ * Update the actions performed in a chat (for searchability)
+ */
+export async function trackActionPerformed(chatId: string, toolName: string): Promise<void> {
+	const [chat] = await db
+		.select({ actionsPerformed: officeManagerChats.actionsPerformed })
+		.from(officeManagerChats)
+		.where(eq(officeManagerChats.id, chatId));
+
+	if (!chat) return;
+
+	const actions = (chat.actionsPerformed as string[]) || [];
+	if (!actions.includes(toolName)) {
+		await db
+			.update(officeManagerChats)
+			.set({
+				actionsPerformed: [...actions, toolName],
+				updatedAt: new Date()
+			})
+			.where(eq(officeManagerChats.id, chatId));
+	}
+}
+
+/**
+ * Generate and store a summary for a chat session
+ * Called when chat reaches certain length or when explicitly requested
+ */
+export async function generateChatSummary(
+	chatId: string,
+	provider: { complete: (req: { model: string; systemPrompt: string; userPrompt: string; maxTokens: number; temperature: number }) => Promise<{ content: string }> },
+	model = 'claude-sonnet-4-20250514'
+): Promise<{ summary: string; topics: string[] }> {
+	const session = await getChatSession(chatId);
+	if (!session) {
+		throw new Error(`Chat session ${chatId} not found`);
+	}
+
+	// Build conversation text for summarization
+	const conversationText = session.messages
+		.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+		.join('\n\n');
+
+	// Get unique actions performed
+	const actionsUsed = new Set<string>();
+	for (const msg of session.messages) {
+		if (msg.toolCalls) {
+			for (const tc of msg.toolCalls) {
+				actionsUsed.add(tc.name);
+			}
+		}
+	}
+
+	const systemPrompt = `You are a helpful assistant that creates concise summaries of conversations.
+Your task is to summarize a conversation between a user and the Office Manager AI.
+
+Respond with JSON in this exact format:
+{
+  "summary": "A 2-3 sentence summary of what was discussed and decided",
+  "topics": ["topic1", "topic2"] // 2-5 key topics covered
+}
+
+Topics should be single words or short phrases like: scheduling, permissions, tasks, attendance, communication, shifts, staff, onboarding, etc.`;
+
+	const userPrompt = `Please summarize this conversation:
+
+${conversationText}
+
+Actions/tools used: ${Array.from(actionsUsed).join(', ') || 'none'}`;
+
+	try {
+		const response = await provider.complete({
+			model,
+			systemPrompt,
+			userPrompt,
+			maxTokens: 256,
+			temperature: 0.3
+		});
+
+		// Parse JSON response
+		const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+		if (!jsonMatch) {
+			throw new Error('Failed to parse summary response');
+		}
+
+		const parsed = JSON.parse(jsonMatch[0]) as { summary: string; topics: string[] };
+
+		// Update the chat record
+		await db
+			.update(officeManagerChats)
+			.set({
+				summary: parsed.summary,
+				topics: parsed.topics,
+				actionsPerformed: Array.from(actionsUsed),
+				updatedAt: new Date()
+			})
+			.where(eq(officeManagerChats.id, chatId));
+
+		return parsed;
+	} catch (error) {
+		// Fallback: generate simple summary without AI
+		const summary = `Chat about: ${session.title}. ${session.messages.length} messages exchanged.`;
+		const topics = Array.from(actionsUsed).length > 0
+			? Array.from(actionsUsed).map(a => a.replace(/_/g, ' '))
+			: ['general'];
+
+		await db
+			.update(officeManagerChats)
+			.set({
+				summary,
+				topics,
+				actionsPerformed: Array.from(actionsUsed),
+				updatedAt: new Date()
+			})
+			.where(eq(officeManagerChats.id, chatId));
+
+		return { summary, topics };
+	}
+}
+
+/**
+ * Check if a chat should be summarized (e.g., reached message threshold)
+ */
+export function shouldSummarize(messageCount: number, currentSummary: string | null): boolean {
+	// Summarize every 20 messages if no summary, or every 40 messages to update
+	if (!currentSummary && messageCount >= 10) return true;
+	if (currentSummary && messageCount >= 20) return true;
+	return false;
 }

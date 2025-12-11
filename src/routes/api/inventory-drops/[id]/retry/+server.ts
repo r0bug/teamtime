@@ -4,6 +4,9 @@ import { db, inventoryDrops } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
 import { retryDrop } from '$lib/server/services/inventory-drops';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:inventory-drops:retry');
 
 // POST /api/inventory-drops/[id]/retry - Retry a failed drop
 export const POST: RequestHandler = async ({ locals, params }) => {
@@ -46,7 +49,7 @@ export const POST: RequestHandler = async ({ locals, params }) => {
 			message: 'Drop queued for retry'
 		});
 	} catch (error) {
-		console.error('Error retrying drop:', error);
+		log.error('Error retrying drop', { dropId, error: error instanceof Error ? error.message : String(error) });
 		return json({ error: 'Failed to retry drop' }, { status: 500 });
 	}
 };

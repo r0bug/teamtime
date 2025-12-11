@@ -6,8 +6,10 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import archiver from 'archiver';
 import { Readable } from 'stream';
+import { createLogger } from '$lib/server/logger';
 
 const execAsync = promisify(exec);
+const log = createLogger('api:backup');
 
 export const GET: RequestHandler = async ({ locals }) => {
 	if (!isManager(locals.user)) {
@@ -26,9 +28,10 @@ export const GET: RequestHandler = async ({ locals }) => {
 		try {
 			const { stdout } = await execAsync(`pg_dump "${dbUrl}" --no-owner --no-acl`);
 			dbDump = stdout;
-		} catch (pgError: any) {
-			console.error('pg_dump error:', pgError.message);
-			dbDump = `-- Database dump failed: ${pgError.message}\n-- Please ensure pg_dump is installed and accessible`;
+		} catch (pgError: unknown) {
+			const message = pgError instanceof Error ? pgError.message : 'Unknown error';
+			log.error({ error: pgError }, 'pg_dump error');
+			dbDump = `-- Database dump failed: ${message}\n-- Please ensure pg_dump is installed and accessible`;
 		}
 
 		// Create zip archive
@@ -67,7 +70,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			}
 		});
 	} catch (error) {
-		console.error('Backup error:', error);
+		log.error({ error, userId: locals.user?.id }, 'Backup error');
 		return json({ error: 'Failed to create backup' }, { status: 500 });
 	}
 };

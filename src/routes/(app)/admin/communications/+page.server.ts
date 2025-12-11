@@ -9,7 +9,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		throw redirect(302, '/dashboard');
 	}
 
-	const page = parseInt(url.searchParams.get('page') || '1');
+	const page = parseInt(url.searchParams.get('page') || '1', 10);
 	const limit = 50;
 	const offset = (page - 1) * limit;
 

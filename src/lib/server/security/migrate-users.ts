@@ -4,6 +4,9 @@
 import { db, users, userTypes, userMigrationBackup, appSettings, auditLogs } from '$lib/server/db';
 import { eq, and, isNull, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('server:user-migration');
 
 export interface MigrationResult {
 	success: boolean;
@@ -143,7 +146,7 @@ export async function migrateAllUsers(performedByUserId?: string): Promise<Migra
 				isNull(users.userTypeId)
 			));
 
-		console.log(`[Migration] Found ${usersToMigrate.length} users to migrate`);
+		log.info('Found users to migrate', { count: usersToMigrate.length });
 
 		for (const user of usersToMigrate) {
 			try {
@@ -196,7 +199,12 @@ export async function migrateAllUsers(performedByUserId?: string): Promise<Migra
 			.set({ value: finalStatus, updatedAt: new Date() })
 			.where(eq(appSettings.key, 'user_migration_status'));
 
-		console.log(`[Migration] Completed: ${migratedCount} migrated, ${skippedCount} skipped, ${errors.length} errors`);
+		log.info('Migration completed', {
+			migratedCount,
+			skippedCount,
+			errorCount: errors.length,
+			status: finalStatus
+		});
 
 		return {
 			success: errors.length === 0,
@@ -208,7 +216,7 @@ export async function migrateAllUsers(performedByUserId?: string): Promise<Migra
 
 	} catch (error) {
 		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-		console.error('[Migration] Fatal error:', errorMsg);
+		log.error('Fatal migration error', { error: errorMsg });
 
 		await db
 			.update(appSettings)
@@ -242,7 +250,7 @@ export async function revertMigrationBatch(batchId: string, performedByUserId?: 
 				isNull(userMigrationBackup.revertedAt)
 			));
 
-		console.log(`[Migration] Reverting ${backupRecords.length} users from batch ${batchId}`);
+		log.info('Reverting users from batch', { batchId, count: backupRecords.length });
 
 		for (const backup of backupRecords) {
 			try {
@@ -285,7 +293,7 @@ export async function revertMigrationBatch(batchId: string, performedByUserId?: 
 				.where(eq(appSettings.key, 'user_migration_status'));
 		}
 
-		console.log(`[Migration] Revert completed: ${revertedCount} reverted, ${errors.length} errors`);
+		log.info('Revert completed', { revertedCount, errorCount: errors.length });
 
 		return {
 			success: errors.length === 0,
@@ -295,7 +303,7 @@ export async function revertMigrationBatch(batchId: string, performedByUserId?: 
 
 	} catch (error) {
 		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-		console.error('[Migration] Revert fatal error:', errorMsg);
+		log.error('Revert fatal error', { error: errorMsg });
 
 		return {
 			success: false,
@@ -367,7 +375,7 @@ export async function revertAllToDefault(performedByUserId?: string): Promise<Re
 			}
 		}
 
-		console.log(`[Migration] Reset to default completed: ${revertedCount} reset, ${errors.length} errors`);
+		log.info('Reset to default completed', { revertedCount, errorCount: errors.length });
 
 		return {
 			success: errors.length === 0,
@@ -377,7 +385,7 @@ export async function revertAllToDefault(performedByUserId?: string): Promise<Re
 
 	} catch (error) {
 		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-		console.error('[Migration] Reset fatal error:', errorMsg);
+		log.error('Reset fatal error', { error: errorMsg });
 
 		return {
 			success: false,

@@ -3,6 +3,9 @@ import { redirect, fail } from '@sveltejs/kit';
 import { db, locations, storeHours } from '$lib/server/db';
 import { eq, and } from 'drizzle-orm';
 import { isManager, canManageLocations } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('admin:locations');
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!canManageLocations(locals.user)) {
@@ -51,7 +54,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Location created successfully' };
 		} catch (error) {
-			console.error('Error creating location:', error);
+			log.error('Error creating location', { error, name, address });
 			return fail(500, { error: 'Failed to create location' });
 		}
 	},
@@ -88,7 +91,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Location updated successfully' };
 		} catch (error) {
-			console.error('Error updating location:', error);
+			log.error('Error updating location', { error, locationId, name });
 			return fail(500, { error: 'Failed to update location' });
 		}
 	},
@@ -109,7 +112,7 @@ export const actions: Actions = {
 			await db.delete(locations).where(eq(locations.id, locationId));
 			return { success: true, message: 'Location deleted successfully' };
 		} catch (error) {
-			console.error('Error deleting location:', error);
+			log.error('Error deleting location', { error, locationId });
 			return fail(500, { error: 'Failed to delete location' });
 		}
 	},
@@ -168,7 +171,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Store hours updated successfully' };
 		} catch (error) {
-			console.error('Error updating store hours:', error);
+			log.error('Error updating store hours', { error, locationId });
 			return fail(500, { error: 'Failed to update store hours' });
 		}
 	}

@@ -3,49 +3,74 @@
 import type { AIProvider } from '../types';
 import { getAPIKey } from '../config/keys';
 import { executeArchitectTool } from './tools';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:architect:multi-model');
 
 /**
- * Fetch with retry for rate limit handling
+ * Fetch with retry for rate limit handling and timeout
  * Retries on HTTP 429 with exponential backoff
  */
 async function fetchWithRetry(
 	url: string,
 	options: RequestInit,
-	maxRetries: number = 2
+	maxRetries: number = 2,
+	timeoutMs: number = 60000 // 60 second timeout per request
 ): Promise<Response> {
 	let lastError: Error | null = null;
 	let baseDelay = 3; // Start with 3 seconds
 
 	for (let attempt = 1; attempt <= maxRetries; attempt++) {
-		const response = await fetch(url, options);
+		// Create an AbortController for timeout
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => {
+			log.warn('Request timeout, aborting', { timeoutMs, attempt });
+			controller.abort();
+		}, timeoutMs);
 
-		if (response.status === 429) {
-			// Rate limited - check retry-after header or use shorter backoff
-			const retryAfter = response.headers.get('retry-after');
-			let waitSeconds = retryAfter ? Math.min(parseInt(retryAfter, 10), 10) : baseDelay * attempt;
+		try {
+			const response = await fetch(url, {
+				...options,
+				signal: controller.signal
+			});
 
-			// Cap wait time at 10 seconds to avoid timeouts
-			if (isNaN(waitSeconds) || waitSeconds <= 0) {
-				waitSeconds = baseDelay * attempt;
+			clearTimeout(timeoutId);
+
+			if (response.status === 429) {
+				// Rate limited - check retry-after header or use shorter backoff
+				const retryAfter = response.headers.get('retry-after');
+				let waitSeconds = retryAfter ? Math.min(parseInt(retryAfter, 10), 10) : baseDelay * attempt;
+
+				// Cap wait time at 10 seconds to avoid timeouts
+				if (isNaN(waitSeconds) || waitSeconds <= 0) {
+					waitSeconds = baseDelay * attempt;
+				}
+				waitSeconds = Math.min(waitSeconds, 10);
+
+				log.warn('Rate limited, waiting before retry', { waitSeconds, attempt, maxRetries });
+
+				// Wait before retrying
+				await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+				lastError = new Error(`Rate limited after ${attempt} attempts`);
+				continue;
 			}
-			waitSeconds = Math.min(waitSeconds, 10);
 
-			console.warn(`[Ada] Rate limited (429). Waiting ${waitSeconds}s before retry ${attempt}/${maxRetries}`);
+			if (!response.ok) {
+				// Non-429 error - throw immediately
+				const errorText = await response.text();
+				throw new Error(`API error (${response.status}): ${errorText}`);
+			}
 
-			// Wait before retrying
-			await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
-			lastError = new Error(`Rate limited after ${attempt} attempts`);
-			continue;
+			// Success
+			return response;
+		} catch (error) {
+			clearTimeout(timeoutId);
+
+			if (error instanceof Error && error.name === 'AbortError') {
+				throw new Error(`Request timed out after ${timeoutMs / 1000} seconds. The AI is taking too long to respond. Try a simpler query.`);
+			}
+			throw error;
 		}
-
-		if (!response.ok) {
-			// Non-429 error - throw immediately
-			const errorText = await response.text();
-			throw new Error(`API error (${response.status}): ${errorText}`);
-		}
-
-		// Success
-		return response;
 	}
 
 	// All retries exhausted
@@ -192,10 +217,19 @@ async function callAnthropic(
 
 	// Tool use loop - keep calling until model stops using tools
 	const MAX_TOOL_ITERATIONS = 5;
+	const MAX_TOTAL_TIME_MS = 90000; // 90 second total budget for all iterations
+	const startTime = Date.now();
 	let iterations = 0;
 
 	while (iterations < MAX_TOOL_ITERATIONS) {
 		iterations++;
+
+		// Check total time budget
+		const elapsedMs = Date.now() - startTime;
+		if (elapsedMs > MAX_TOTAL_TIME_MS) {
+			log.warn('Total time budget exceeded, forcing final response', { elapsedMs, maxTimeMs: MAX_TOTAL_TIME_MS });
+			break;
+		}
 
 		const body: Record<string, unknown> = {
 			model,
@@ -212,11 +246,11 @@ async function callAnthropic(
 		// Log estimated token usage
 		const bodyStr = JSON.stringify(body);
 		const estimatedTokens = Math.ceil(bodyStr.length / 4);
-		console.log(`[Ada] Iteration ${iterations}: ~${estimatedTokens} tokens (${bodyStr.length} chars)`);
+		log.info('Tool iteration starting', { iteration: iterations, estimatedTokens, bodyChars: bodyStr.length });
 
 		// If we're way over the limit, bail early
 		if (estimatedTokens > 25000) {
-			console.error(`[Ada] Request too large (~${estimatedTokens} tokens), aborting`);
+			log.error('Request too large, aborting', { estimatedTokens, maxTokens: 25000 });
 			throw new Error('Request too large - context exceeds token limits. Try a simpler query.');
 		}
 
@@ -232,8 +266,12 @@ async function callAnthropic(
 
 		const data = await response.json();
 
-		console.log(`[Ada] Response stop_reason: ${data.stop_reason}`);
-		console.log(`[Ada] Response content blocks: ${data.content?.length || 0}`);
+		log.info('Received LLM response', {
+			stopReason: data.stop_reason,
+			contentBlocks: data.content?.length || 0,
+			inputTokens: data.usage?.input_tokens || 0,
+			outputTokens: data.usage?.output_tokens || 0
+		});
 
 		totalInputTokens += data.usage?.input_tokens || 0;
 		totalOutputTokens += data.usage?.output_tokens || 0;
@@ -243,29 +281,30 @@ async function callAnthropic(
 		const toolUseBlocks: Array<{ id: string; name: string; input: unknown }> = [];
 
 		for (const block of data.content) {
-			console.log(`[Ada] Block type: ${block.type}`);
 			if (block.type === 'text') {
 				responseText += block.text;
-				console.log(`[Ada] Text block length: ${block.text?.length || 0}`);
+				log.debug('Text block received', { textLength: block.text?.length || 0 });
 			} else if (block.type === 'tool_use') {
 				toolUseBlocks.push({
 					id: block.id,
 					name: block.name,
 					input: block.input
 				});
-				console.log(`[Ada] Tool use: ${block.name}`);
+				log.info('Tool use requested', { toolName: block.name, toolId: block.id });
 			}
 		}
 
 		// Accumulate text content
 		finalContent += responseText;
-		console.log(`[Ada] Accumulated finalContent length: ${finalContent.length}`);
-		console.log(`[Ada] Tool calls this iteration: ${toolUseBlocks.length}`);
+		log.info('Response processed', {
+			totalContentLength: finalContent.length,
+			toolCallsThisIteration: toolUseBlocks.length
+		});
 
 		// Only exit if there are NO tool calls - ignore stop_reason when tools were used
 		// The model needs to continue after tool results are returned
 		if (toolUseBlocks.length === 0) {
-			console.log(`[Ada] No tool calls, exiting loop with finalContent length: ${finalContent.length}`);
+			log.info('No tool calls, exiting loop', { finalContentLength: finalContent.length });
 			break;
 		}
 
@@ -312,20 +351,34 @@ async function callAnthropic(
 			content: toolResults
 		});
 
-		console.log(`[Ada] Messages count after tool results: ${messages.length}`);
-		console.log(`[Ada] Tool results added: ${toolResults.length}`);
+		log.info('Tool results added to conversation', {
+			messagesCount: messages.length,
+			toolResultsCount: toolResults.length
+		});
 
 		// Throttle between iterations to avoid rate limits
-		console.log('[Ada] Pausing 1s between tool iterations, then continuing loop...');
+		log.debug('Pausing between tool iterations');
 		await new Promise(resolve => setTimeout(resolve, 1000));
 	}
 
-	console.log(`[Ada] Loop ended. Final content length: ${finalContent.length}, iterations: ${iterations}`);
+	const totalElapsedMs = Date.now() - startTime;
+	log.info('Tool loop completed', {
+		finalContentLength: finalContent.length,
+		iterations,
+		elapsedMs: totalElapsedMs
+	});
 
-	// If we hit the iteration limit and the model was still calling tools,
+	// If we hit limits (iterations or time) and have little content,
 	// make one final call WITHOUT tools to force a text response
-	if (iterations >= MAX_TOOL_ITERATIONS && finalContent.length < 1500) {
-		console.log('[Ada] Hit iteration limit, making final call without tools to get response...');
+	const hitLimits = iterations >= MAX_TOOL_ITERATIONS || totalElapsedMs > MAX_TOTAL_TIME_MS;
+	const needsFinalResponse = finalContent.length < 2000; // Increased threshold
+
+	if (hitLimits && needsFinalResponse) {
+		log.info('Hit limits with insufficient content, making final call without tools', {
+			iterations,
+			elapsedMs: totalElapsedMs,
+			contentLength: finalContent.length
+		});
 
 		// Add a message asking for the final response
 		messages.push({
@@ -362,9 +415,10 @@ async function callAnthropic(
 					finalContent += block.text;
 				}
 			}
-			console.log(`[Ada] Final response added. Total content length: ${finalContent.length}`);
+			log.info('Final response added', { totalContentLength: finalContent.length });
 		} catch (error) {
-			console.error('[Ada] Error getting final response:', error);
+			const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+			log.error('Error getting final response', { error: errorMsg });
 		}
 	}
 
@@ -452,6 +506,103 @@ async function callOpenAI(
 	};
 }
 
+// Call Segmind API (OpenAI-compatible format)
+async function callSegmind(
+	model: string,
+	systemPrompt: string,
+	userPrompt: string,
+	tools?: { name: string; description: string; parameters: object }[],
+	temperature: number = 0.4,
+	maxTokens: number = 4096
+): Promise<LLMCallResult> {
+	const apiKey = getAPIKey('segmind');
+	if (!apiKey) {
+		throw new Error('Segmind API key not configured');
+	}
+
+	// Map model names to Segmind endpoint slugs
+	const MODEL_SLUG_MAP: Record<string, string> = {
+		'segmind-claude-4.5-sonnet': 'claude-4.5-sonnet',
+		'segmind-claude-4-sonnet': 'claude-4-sonnet',
+		'segmind-claude-3.5-sonnet': 'claude-3.5-sonnet',
+		'segmind-gpt-5': 'gpt-5',
+		'segmind-gpt-5-mini': 'gpt-5-mini',
+		'segmind-gpt-5-nano': 'gpt-5-nano',
+		'segmind-gpt-4o': 'gpt-4o',
+		'segmind-gpt-4-turbo': 'gpt-4-turbo',
+		'segmind-gemini-3-pro': 'gemini-3-pro',
+		'segmind-gemini-2.5-pro': 'gemini-2.5-pro',
+		'segmind-gemini-2.5-flash': 'gemini-2.5-flash',
+		'segmind-deepseek-chat': 'deepseek-chat',
+		'segmind-deepseek-r1': 'deepseek-reasoner',
+		'segmind-llama-3.1-405b': 'llama-v3p1-405b-instruct',
+		'segmind-llama-3.1-70b': 'llama-v3p1-70b-instruct',
+		'segmind-llama-3.1-8b': 'llama-v3p1-8b-instruct',
+		'segmind-kimi-k2': 'kimi-k2-instruct-0905'
+	};
+
+	const slug = MODEL_SLUG_MAP[model] || model.replace('segmind-', '');
+	const url = `https://api.segmind.com/v1/${slug}`;
+
+	const body: Record<string, unknown> = {
+		messages: [
+			{ role: 'system', content: systemPrompt },
+			{ role: 'user', content: userPrompt }
+		],
+		max_tokens: maxTokens,
+		temperature
+	};
+
+	if (tools && tools.length > 0) {
+		body.tools = tools.map(t => ({
+			type: 'function',
+			function: {
+				name: t.name,
+				description: t.description,
+				parameters: t.parameters
+			}
+		}));
+		body.tool_choice = 'auto';
+	}
+
+	const response = await fetchWithRetry(url, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'x-api-key': apiKey
+		},
+		body: JSON.stringify(body)
+	});
+
+	const data = await response.json();
+	const choice = data.choices?.[0];
+
+	if (!choice) {
+		throw new Error('No response from Segmind API');
+	}
+
+	const toolCalls: { name: string; params: unknown }[] = [];
+	if (choice.message.tool_calls) {
+		for (const tc of choice.message.tool_calls) {
+			toolCalls.push({
+				name: tc.function.name,
+				params: JSON.parse(tc.function.arguments)
+			});
+		}
+	}
+
+	const inputTokens = data.usage?.prompt_tokens || 0;
+	const outputTokens = data.usage?.completion_tokens || 0;
+
+	return {
+		content: choice.message.content || '',
+		toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+		inputTokens,
+		outputTokens,
+		costCents: estimateCost(inputTokens, outputTokens, model)
+	};
+}
+
 // Call LLM based on provider
 async function callLLM(
 	provider: AIProvider,
@@ -466,6 +617,8 @@ async function callLLM(
 		return callAnthropic(model, systemPrompt, userPrompt, tools, temperature, maxTokens);
 	} else if (provider === 'openai') {
 		return callOpenAI(model, systemPrompt, userPrompt, tools, temperature, maxTokens);
+	} else if (provider === 'segmind') {
+		return callSegmind(model, systemPrompt, userPrompt, tools, temperature, maxTokens);
 	}
 	throw new Error(`Unknown provider: ${provider}`);
 }
@@ -555,7 +708,7 @@ export async function deliberateConsultation(
 	let totalTokens = 0;
 
 	// Step 1: Primary recommendation
-	console.log('[Deliberation] Step 1: Getting primary recommendation from', config.primary.model);
+	log.info('Deliberation step 1: Getting primary recommendation', { model: config.primary.model, provider: config.primary.provider });
 	const primaryResponse = await callLLM(
 		config.primary.provider,
 		config.primary.model,
@@ -571,7 +724,7 @@ export async function deliberateConsultation(
 	// Step 2: Peer review (try, but don't fail if unavailable)
 	let reviewResponse: LLMCallResult | undefined;
 	try {
-		console.log('[Deliberation] Step 2: Getting peer review from', config.review.model);
+		log.info('Deliberation step 2: Getting peer review', { model: config.review.model, provider: config.review.provider });
 		const reviewSystemPrompt = `You are a senior software architect providing peer review on another architect's recommendation. Be constructive, specific, and thorough. Focus on:
 - Potential issues or risks not addressed
 - Alternative approaches that might be better
@@ -600,7 +753,8 @@ Please review this architectural recommendation.`;
 		totalCostCents += reviewResponse.costCents;
 		totalTokens += reviewResponse.inputTokens + reviewResponse.outputTokens;
 	} catch (error) {
-		console.error('[Deliberation] Review step failed, continuing with primary only:', error);
+		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+		log.warn('Deliberation review step failed, continuing with primary only', { error: errorMsg });
 		// Fall back to standard consultation if review fails
 		return {
 			tier: 'deliberate',
@@ -618,7 +772,7 @@ Please review this architectural recommendation.`;
 	}
 
 	// Step 3: Synthesis
-	console.log('[Deliberation] Step 3: Synthesizing responses with', config.synthesizer.model);
+	log.info('Deliberation step 3: Synthesizing responses', { model: config.synthesizer.model, provider: config.synthesizer.provider });
 	const synthUserPrompt = `You are Ada, synthesizing two expert architectural opinions into a final recommendation.
 
 ## Original Question

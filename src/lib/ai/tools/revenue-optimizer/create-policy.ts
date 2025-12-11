@@ -2,6 +2,9 @@
 import { db, aiPolicyNotes, users, locations } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:create-policy');
 
 interface CreatePolicyParams {
 	scope: 'global' | 'location' | 'role';
@@ -142,7 +145,7 @@ export const createPolicyTool: AITool<CreatePolicyParams, CreatePolicyResult> = 
 				scopeTarget
 			};
 		} catch (error) {
-			console.error('[AI Tool] create_policy error:', error);
+			log.error('Create policy tool error', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

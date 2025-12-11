@@ -3,6 +3,24 @@ import { redirect, fail, error } from '@sveltejs/kit';
 import { db, taskAssignmentRules, taskTemplates, locations, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('admin:tasks:rules:edit');
+
+type RuleTriggerType =
+	| 'clock_in'
+	| 'clock_out'
+	| 'first_clock_in'
+	| 'last_clock_out'
+	| 'time_into_shift'
+	| 'task_completed'
+	| 'schedule';
+type AssignmentType =
+	| 'specific_user'
+	| 'clocked_in_user'
+	| 'role_rotation'
+	| 'location_staff'
+	| 'least_tasks';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	if (!isManager(locals.user)) {
@@ -71,7 +89,7 @@ export const actions: Actions = {
 		const templateId = formData.get('templateId') as string;
 		const triggerType = formData.get('triggerType') as string;
 		const assignmentType = formData.get('assignmentType') as string;
-		const priority = parseInt(formData.get('priority') as string) || 0;
+		const priority = parseInt(formData.get('priority') as string, 10) || 0;
 		const isActive = formData.get('isActive') === 'on';
 
 		if (!name?.trim()) {
@@ -147,10 +165,10 @@ export const actions: Actions = {
 					name: name.trim(),
 					description: description?.trim() || null,
 					templateId,
-					triggerType: triggerType as any,
+					triggerType: triggerType as RuleTriggerType,
 					triggerConfig,
 					conditions: Object.keys(conditions).length > 0 ? conditions : null,
-					assignmentType: assignmentType as any,
+					assignmentType: assignmentType as AssignmentType,
 					assignmentConfig: Object.keys(assignmentConfig).length > 0 ? assignmentConfig : null,
 					priority,
 					isActive,
@@ -160,7 +178,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Rule updated successfully' };
 		} catch (error) {
-			console.error('Error updating rule:', error);
+			log.error('Error updating rule', { error, ruleId: params.id, name });
 			return fail(500, { error: 'Failed to update rule' });
 		}
 	},
@@ -175,7 +193,7 @@ export const actions: Actions = {
 			throw redirect(302, '/admin/tasks/rules');
 		} catch (error) {
 			if (error instanceof Response) throw error;
-			console.error('Error deleting rule:', error);
+			log.error('Error deleting rule', { error, ruleId: params.id });
 			return fail(500, { error: 'Failed to delete rule' });
 		}
 	}

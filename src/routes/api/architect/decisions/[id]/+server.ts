@@ -3,6 +3,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, architectureDecisions } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:architect:decisions:id');
 
 // GET - Get a specific decision
 export const GET: RequestHandler = async ({ params }) => {
@@ -38,7 +41,7 @@ export const GET: RequestHandler = async ({ params }) => {
 			}
 		});
 	} catch (error) {
-		console.error('[Architect Decision] Get error:', error);
+		log.error({ error, decisionId: params.id }, 'Get error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
@@ -101,7 +104,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 			}
 		});
 	} catch (error) {
-		console.error('[Architect Decision] Update error:', error);
+		log.error({ error, decisionId: params.id }, 'Update error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
@@ -123,7 +126,7 @@ export const DELETE: RequestHandler = async ({ params }) => {
 
 		return json({ success: true });
 	} catch (error) {
-		console.error('[Architect Decision] Delete error:', error);
+		log.error({ error, decisionId: params.id }, 'Delete error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

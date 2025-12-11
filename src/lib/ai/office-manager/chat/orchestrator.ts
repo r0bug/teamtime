@@ -9,11 +9,17 @@ import {
 	addAssistantMessage,
 	createPendingAction,
 	logAIAction,
+	trackActionPerformed,
+	generateChatSummary,
+	shouldSummarize,
 	type PendingAction
 } from './session';
 import { assembleOfficeManagerContext } from '../context';
 import type { AITool, ToolExecutionContext, LLMRequest } from '../../types';
 import type { OfficeManagerMessage } from '$lib/server/db/schema';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:office-manager:chat');
 
 // System prompt for Office Manager chat
 const OFFICE_MANAGER_SYSTEM_PROMPT = `You are the Office Manager AI assistant for TeamTime, a staff management system for a thrift store.
@@ -27,6 +33,17 @@ Your role is to help managers with:
 - Permission management (temporary permission grants/changes)
 
 You have access to tools that can perform actions. Some tools require user confirmation before execution - when you call these tools, the action will be queued for approval.
+
+## Memory & Past Conversations
+You have access to your conversation history through these tools:
+- **review_past_chats**: Search past conversations by topic, action type, or keywords
+- **get_chat_details**: Get the full transcript of a specific past conversation
+
+Use these when:
+- A user references something discussed before ("remember when we talked about...")
+- You need context about previous decisions or arrangements
+- Checking if you've handled a similar situation before
+- Understanding the history with a particular user
 
 Guidelines:
 - Be helpful, professional, and concise
@@ -118,7 +135,7 @@ ${userMessage}`;
 		for (const toolCall of llmResponse.toolCalls) {
 			const tool = tools.find(t => t.name === toolCall.name);
 			if (!tool) {
-				console.warn(`[Office Manager Chat] Unknown tool: ${toolCall.name}`);
+				log.warn('Unknown tool requested in chat', { chatId, toolName: toolCall.name });
 				continue;
 			}
 
@@ -148,6 +165,8 @@ ${userMessage}`;
 				// Log the action (not yet executed)
 				await logAIAction({
 					runId,
+					provider: 'anthropic',
+					model,
 					toolName: toolCall.name,
 					toolParams: toolCall.params,
 					executed: false
@@ -188,6 +207,8 @@ ${userMessage}`;
 					// Log the action
 					await logAIAction({
 						runId,
+						provider: 'anthropic',
+						model,
 						toolName: toolCall.name,
 						toolParams: toolCall.params,
 						executed: true,
@@ -204,6 +225,8 @@ ${userMessage}`;
 
 					await logAIAction({
 						runId,
+						provider: 'anthropic',
+						model,
 						toolName: toolCall.name,
 						toolParams: toolCall.params,
 						executed: false,
@@ -236,6 +259,22 @@ ${userMessage}`;
 		: undefined;
 
 	await addAssistantMessage(chatId, responseContent, messageToolCalls);
+
+	// Track actions performed for searchability
+	for (const tc of processedToolCalls) {
+		if (tc.requiresConfirmation || tc.result) {
+			await trackActionPerformed(chatId, tc.name);
+		}
+	}
+
+	// Generate summary if chat has grown long enough
+	const updatedSession = await getChatSession(chatId);
+	if (updatedSession && shouldSummarize(updatedSession.messages.length, null)) {
+		// Run summary generation in background (don't await)
+		generateChatSummary(chatId, anthropicProvider, model).catch(err => {
+			log.warn({ chatId, error: err }, 'Failed to generate chat summary');
+		});
+	}
 
 	return {
 		response: responseContent,
@@ -278,6 +317,8 @@ export async function executeConfirmedAction(
 
 		await logAIAction({
 			runId,
+			provider: 'anthropic',
+			model: 'claude-sonnet-4-20250514',
 			toolName: pendingAction.toolName,
 			toolParams: pendingAction.toolArgs,
 			executed: true,
@@ -290,6 +331,8 @@ export async function executeConfirmedAction(
 
 		await logAIAction({
 			runId,
+			provider: 'anthropic',
+			model: 'claude-sonnet-4-20250514',
 			toolName: pendingAction.toolName,
 			toolParams: pendingAction.toolArgs,
 			executed: false,
@@ -416,6 +459,8 @@ ${userMessage}`;
 
 					await logAIAction({
 						runId,
+						provider: 'anthropic',
+						model,
 						toolName: name,
 						toolParams: params,
 						executed: false
@@ -444,6 +489,8 @@ ${userMessage}`;
 
 						await logAIAction({
 							runId,
+							provider: 'anthropic',
+							model,
 							toolName: name,
 							toolParams: params,
 							executed: true,
@@ -457,6 +504,8 @@ ${userMessage}`;
 
 						await logAIAction({
 							runId,
+							provider: 'anthropic',
+							model,
 							toolName: name,
 							toolParams: params,
 							executed: false,

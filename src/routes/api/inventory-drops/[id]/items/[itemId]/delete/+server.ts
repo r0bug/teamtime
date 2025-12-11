@@ -3,6 +3,9 @@ import type { RequestHandler } from './$types';
 import { db, inventoryDrops, inventoryDropItems } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:inventory-drops:delete-item');
 
 // POST /api/inventory-drops/[id]/items/[itemId]/delete - Soft delete an inventory item
 export const POST: RequestHandler = async ({ locals, params }) => {
@@ -63,7 +66,7 @@ export const POST: RequestHandler = async ({ locals, params }) => {
 
 		return json({ success: true });
 	} catch (error) {
-		console.error('Error deleting inventory item:', error);
+		log.error('Error deleting inventory item', { dropId, itemId, error: error instanceof Error ? error.message : String(error) });
 		return json({ error: 'Failed to delete item' }, { status: 500 });
 	}
 };

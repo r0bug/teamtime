@@ -6,6 +6,9 @@ import { isAdmin } from '$lib/server/auth/roles';
 import { getAPIKeys, saveAPIKeys, hasAPIKey, getAvailableProviders } from '$lib/ai/config/keys';
 import { MODEL_OPTIONS, TONE_DESCRIPTIONS, DEFAULT_INSTRUCTIONS } from '$lib/ai/config';
 import type { AIAgent, AIProvider, AITone } from '$lib/ai/types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('admin:ai');
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!isAdmin(locals.user)) {
@@ -138,6 +141,13 @@ export const actions: Actions = {
 		const sendToAllAdmins = formData.get('sendToAllAdmins') === 'on';
 		const temperature = parseFloat(formData.get('temperature') as string) || 0.3;
 
+		// Operational hours
+		const operationalStartHour = parseInt(formData.get('operationalStartHour') as string, 10) || 9;
+		const operationalEndHour = parseInt(formData.get('operationalEndHour') as string, 10) || 17;
+		const operationalDaysRaw = formData.getAll('operationalDays') as string[];
+		const operationalDays = operationalDaysRaw.map(d => parseInt(d, 10));
+		const runIntervalMinutes = parseInt(formData.get('runIntervalMinutes') as string, 10) || 15;
+
 		try {
 			// Check if config exists
 			const existing = await db
@@ -158,6 +168,10 @@ export const actions: Actions = {
 						dryRunMode,
 						sendToAllAdmins,
 						temperature: temperature.toString(),
+						operationalStartHour,
+						operationalEndHour,
+						operationalDays,
+						runIntervalMinutes,
 						updatedAt: new Date()
 					})
 					.where(eq(aiConfig.agent, 'office_manager'));
@@ -171,13 +185,17 @@ export const actions: Actions = {
 					instructions: instructions || null,
 					dryRunMode,
 					sendToAllAdmins,
-					temperature: temperature.toString()
+					temperature: temperature.toString(),
+					operationalStartHour,
+					operationalEndHour,
+					operationalDays,
+					runIntervalMinutes
 				});
 			}
 
 			return { success: true, message: 'Office Manager settings saved' };
 		} catch (error) {
-			console.error('Error saving Office Manager config:', error);
+			log.error('Error saving Office Manager config', { error, enabled, provider, model });
 			return fail(500, { error: 'Failed to save settings' });
 		}
 	},
@@ -232,7 +250,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Revenue Optimizer settings saved' };
 		} catch (error) {
-			console.error('Error saving Revenue Optimizer config:', error);
+			log.error('Error saving Revenue Optimizer config', { error, enabled, provider, model });
 			return fail(500, { error: 'Failed to save settings' });
 		}
 	},
@@ -245,7 +263,7 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const content = formData.get('content') as string;
-		const priority = parseInt(formData.get('priority') as string) || 50;
+		const priority = parseInt(formData.get('priority') as string, 10) || 50;
 
 		if (!content || content.trim().length < 5) {
 			return fail(400, { error: 'Policy content is required (min 5 characters)' });
@@ -262,7 +280,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Policy added' };
 		} catch (error) {
-			console.error('Error adding policy:', error);
+			log.error('Error adding policy', { error, contentLength: content.trim().length, priority });
 			return fail(500, { error: 'Failed to add policy' });
 		}
 	}

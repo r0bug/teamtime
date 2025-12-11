@@ -160,15 +160,21 @@
 		currentMessages = [...currentMessages, { role: 'user', content: userMessage }];
 
 		try {
+			// Create an AbortController for timeout (2 minutes for complex queries)
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 120000);
+
 			const response = await fetch(`/api/architect/chats/${chatId}/messages`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					message: userMessage,
 					contextModules: selectedContextModules
-				})
+				}),
+				signal: controller.signal
 			});
 
+			clearTimeout(timeoutId);
 			const result = await response.json();
 
 			if (result.success) {
@@ -195,11 +201,19 @@
 				];
 			}
 		} catch (error) {
+			let errorMessage = 'Unknown error';
+			if (error instanceof Error) {
+				if (error.name === 'AbortError') {
+					errorMessage = 'Request timed out after 2 minutes. Ada may be processing a complex query. Try asking a more specific question or reducing the context modules.';
+				} else {
+					errorMessage = error.message;
+				}
+			}
 			currentMessages = [
 				...currentMessages,
 				{
 					role: 'assistant',
-					content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+					content: `Error: ${errorMessage}`
 				}
 			];
 		} finally {
@@ -735,10 +749,11 @@
 
 		<!-- Config Tab -->
 		{#if activeTab === 'config'}
-			<form method="POST" action="?/saveConfig" use:enhance class="space-y-6">
-				<div class="card">
+			<div class="space-y-6">
+				<!-- Basic Settings -->
+				<form method="POST" action="?/saveConfig" use:enhance class="card">
 					<div class="card-header">
-						<h3 class="font-semibold">Ada Configuration</h3>
+						<h3 class="font-semibold">Basic Settings</h3>
 					</div>
 					<div class="card-body space-y-4">
 						<!-- Enable Toggle -->
@@ -764,60 +779,122 @@
 								<div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"></div>
 							</label>
 						</div>
+						<button type="submit" class="btn-primary w-full mt-4">Save Basic Settings</button>
+					</div>
+				</form>
 
-						<!-- Provider Selection -->
-						<div class="border-t pt-4">
-							<label class="block font-medium mb-2">AI Provider</label>
-							<select name="provider" value={data.config?.provider ?? 'anthropic'} class="input w-full">
-								<option value="anthropic">Anthropic (Claude)</option>
-								<option value="openai">OpenAI (GPT)</option>
-								<option value="segmind">Segmind (Multi-Provider)</option>
-							</select>
+				<!-- Model Configuration by Tier -->
+				<form method="POST" action="?/saveTierConfig" use:enhance class="card">
+					<div class="card-header">
+						<h3 class="font-semibold">Model Configuration by Tier</h3>
+						<p class="text-sm text-gray-500 mt-1">Ada uses different models based on query complexity</p>
+					</div>
+					<div class="card-body space-y-6">
+						<!-- Quick Tier -->
+						<div class="border rounded-lg p-4 bg-emerald-50">
+							<div class="flex items-center gap-2 mb-3">
+								<span class="text-lg">⚡</span>
+								<span class="font-medium text-emerald-800">Quick Tier</span>
+								<span class="text-xs text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded">Simple questions</span>
+							</div>
+							<div class="grid grid-cols-2 gap-3">
+								<div>
+									<label class="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+									<select name="quickProvider" class="input w-full text-sm">
+										<option value="anthropic" selected={data.tierConfig?.quickProvider === 'anthropic'}>Anthropic</option>
+										<option value="openai" selected={data.tierConfig?.quickProvider === 'openai'}>OpenAI</option>
+									</select>
+								</div>
+								<div>
+									<label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+									<select name="quickModel" class="input w-full text-sm">
+										<optgroup label="Anthropic">
+											<option value="claude-3-5-sonnet-20241022" selected={data.tierConfig?.quickModel === 'claude-3-5-sonnet-20241022'}>Claude 3.5 Sonnet</option>
+											<option value="claude-3-5-haiku-20241022" selected={data.tierConfig?.quickModel === 'claude-3-5-haiku-20241022'}>Claude 3.5 Haiku</option>
+											<option value="claude-sonnet-4-20250514" selected={data.tierConfig?.quickModel === 'claude-sonnet-4-20250514'}>Claude Sonnet 4</option>
+										</optgroup>
+										<optgroup label="OpenAI">
+											<option value="gpt-4o-mini" selected={data.tierConfig?.quickModel === 'gpt-4o-mini'}>GPT-4o Mini</option>
+											<option value="gpt-4o" selected={data.tierConfig?.quickModel === 'gpt-4o'}>GPT-4o</option>
+										</optgroup>
+									</select>
+								</div>
+							</div>
 						</div>
 
-						<!-- Model Selection -->
-						<div>
-							<label class="block font-medium mb-2">Model</label>
-							<select name="model" value={data.config?.model ?? 'claude-3-5-sonnet-20241022'} class="input w-full">
-								<!-- Anthropic Models -->
-								<optgroup label="Anthropic (Claude)">
-									<option value="claude-opus-4-20250514">Claude Opus 4 (Most Capable)</option>
-									<option value="claude-sonnet-4-20250514">Claude Sonnet 4 (Balanced)</option>
-									<option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Recommended)</option>
-									<option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast)</option>
-									<option value="claude-3-opus-20240229">Claude 3 Opus (Legacy)</option>
-									<option value="claude-3-haiku-20240307">Claude 3 Haiku (Budget)</option>
-								</optgroup>
-								<!-- OpenAI Models -->
-								<optgroup label="OpenAI (GPT)">
-									<option value="gpt-4o">GPT-4o (Flagship)</option>
-									<option value="gpt-4o-mini">GPT-4o Mini (Fast)</option>
-									<option value="o1">o1 (Advanced Reasoning)</option>
-									<option value="o1-mini">o1 Mini (Fast Reasoning)</option>
-									<option value="o3-mini">o3 Mini (Latest Reasoning)</option>
-									<option value="gpt-4-turbo">GPT-4 Turbo</option>
-								</optgroup>
-								<!-- Segmind Models -->
-								<optgroup label="Segmind (Multi-Provider)">
-									<option value="segmind-claude-4.5-sonnet">Claude 4.5 Sonnet</option>
-									<option value="segmind-gpt-5">GPT-5</option>
-									<option value="segmind-gemini-2.5-pro">Gemini 2.5 Pro</option>
-									<option value="segmind-deepseek-r1">DeepSeek R1 (Reasoning)</option>
-									<option value="segmind-llama-3.1-405b">Llama 3.1 405B</option>
-								</optgroup>
-							</select>
+						<!-- Standard Tier -->
+						<div class="border rounded-lg p-4 bg-blue-50">
+							<div class="flex items-center gap-2 mb-3">
+								<span class="text-lg">🎯</span>
+								<span class="font-medium text-blue-800">Standard Tier</span>
+								<span class="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded">Normal discussions</span>
+							</div>
+							<div class="grid grid-cols-2 gap-3">
+								<div>
+									<label class="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+									<select name="standardProvider" class="input w-full text-sm">
+										<option value="anthropic" selected={data.tierConfig?.standardProvider === 'anthropic'}>Anthropic</option>
+										<option value="openai" selected={data.tierConfig?.standardProvider === 'openai'}>OpenAI</option>
+									</select>
+								</div>
+								<div>
+									<label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+									<select name="standardModel" class="input w-full text-sm">
+										<optgroup label="Anthropic">
+											<option value="claude-sonnet-4-20250514" selected={data.tierConfig?.standardModel === 'claude-sonnet-4-20250514'}>Claude Sonnet 4</option>
+											<option value="claude-3-5-sonnet-20241022" selected={data.tierConfig?.standardModel === 'claude-3-5-sonnet-20241022'}>Claude 3.5 Sonnet</option>
+											<option value="claude-opus-4-20250514" selected={data.tierConfig?.standardModel === 'claude-opus-4-20250514'}>Claude Opus 4</option>
+										</optgroup>
+										<optgroup label="OpenAI">
+											<option value="gpt-4o" selected={data.tierConfig?.standardModel === 'gpt-4o'}>GPT-4o</option>
+											<option value="o1-mini" selected={data.tierConfig?.standardModel === 'o1-mini'}>o1 Mini</option>
+										</optgroup>
+									</select>
+								</div>
+							</div>
 						</div>
 
-						<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+						<!-- Deliberate Tier -->
+						<div class="border rounded-lg p-4 bg-violet-50">
+							<div class="flex items-center gap-2 mb-3">
+								<span class="text-lg">🧠</span>
+								<span class="font-medium text-violet-800">Deliberate Tier</span>
+								<span class="text-xs text-violet-600 bg-violet-100 px-2 py-0.5 rounded">Major decisions</span>
+							</div>
+							<div class="grid grid-cols-2 gap-3">
+								<div>
+									<label class="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+									<select name="deliberatePrimaryProvider" class="input w-full text-sm">
+										<option value="anthropic" selected={data.tierConfig?.deliberatePrimaryProvider === 'anthropic'}>Anthropic</option>
+										<option value="openai" selected={data.tierConfig?.deliberatePrimaryProvider === 'openai'}>OpenAI</option>
+									</select>
+								</div>
+								<div>
+									<label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+									<select name="deliberatePrimaryModel" class="input w-full text-sm">
+										<optgroup label="Anthropic">
+											<option value="claude-opus-4-20250514" selected={data.tierConfig?.deliberatePrimaryModel === 'claude-opus-4-20250514'}>Claude Opus 4</option>
+											<option value="claude-sonnet-4-20250514" selected={data.tierConfig?.deliberatePrimaryModel === 'claude-sonnet-4-20250514'}>Claude Sonnet 4</option>
+										</optgroup>
+										<optgroup label="OpenAI">
+											<option value="o1" selected={data.tierConfig?.deliberatePrimaryModel === 'o1'}>o1 (Reasoning)</option>
+											<option value="gpt-4o" selected={data.tierConfig?.deliberatePrimaryModel === 'gpt-4o'}>GPT-4o</option>
+										</optgroup>
+									</select>
+								</div>
+							</div>
+						</div>
+
+						<div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
 							<p class="text-sm text-blue-800">
-								<strong>Note:</strong> Ada is an interactive advisor. Unlike the Office Manager and Revenue Optimizer, she doesn't run on a schedule. She responds to your questions and produces Claude Code prompts and ADRs.
+								<strong>How tiers work:</strong> Ada automatically selects a tier based on your message complexity. Quick tier handles simple questions, Standard for normal discussions, and Deliberate for major architectural decisions requiring deeper analysis.
 							</p>
 						</div>
-					</div>
-				</div>
 
-				<button type="submit" class="btn-primary w-full">Save Configuration</button>
-			</form>
+						<button type="submit" class="btn-primary w-full">Save Model Configuration</button>
+					</div>
+				</form>
+			</div>
 		{/if}
 	</div>
 </div>

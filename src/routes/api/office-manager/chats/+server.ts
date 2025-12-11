@@ -3,6 +3,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createChatSession, listChatSessions } from '$lib/ai/office-manager/chat';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:office-manager:chats');
 
 // GET - List user's chat sessions
 export const GET: RequestHandler = async ({ locals }) => {
@@ -25,7 +28,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			}))
 		});
 	} catch (error) {
-		console.error('[Office Manager Chats] List error:', error);
+		log.error({ error, userId: locals.user?.id }, 'List error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
@@ -56,7 +59,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			}
 		});
 	} catch (error) {
-		console.error('[Office Manager Chats] Create error:', error);
+		log.error({ error, userId: locals.user?.id }, 'Create error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

@@ -13,6 +13,9 @@ import { syncPermissions, getDiscoverySummary } from '$lib/server/auth/route-dis
 import { getMigrationStatus, getMigrationBatches, getDefaultUserTypeId } from '$lib/server/security/migrate-users';
 import { db, userTypes, permissions, users } from '$lib/server/db';
 import { eq, count, isNull } from 'drizzle-orm';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('admin:access-control');
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!isAdmin(locals.user)) {
@@ -53,7 +56,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		defaultUserTypeId = await getDefaultUserTypeId();
 	} catch (e) {
 		// Migration tables may not exist yet - that's ok
-		console.log('[Access Control] Migration data not available yet (tables may need to be created)');
+		log.info('Migration data not available yet (tables may need to be created)');
 	}
 
 	return {
@@ -88,7 +91,7 @@ export const actions: Actions = {
 				message: `Synced ${result.added} new permissions (${result.existing} already existed)`
 			};
 		} catch (error) {
-			console.error('Error syncing routes:', error);
+			log.error('Error syncing routes', { error });
 			return fail(500, { error: 'Failed to sync routes' });
 		}
 	},
@@ -103,7 +106,7 @@ export const actions: Actions = {
 			await seedSystemUserTypes();
 			return { success: true, message: 'System user types seeded' };
 		} catch (error) {
-			console.error('Error seeding user types:', error);
+			log.error('Error seeding user types', { error });
 			return fail(500, { error: 'Failed to seed user types' });
 		}
 	},
@@ -119,7 +122,7 @@ export const actions: Actions = {
 		const name = formData.get('name') as string;
 		const description = formData.get('description') as string;
 		const basedOnRole = formData.get('basedOnRole') as 'admin' | 'manager' | 'purchaser' | 'staff' | null;
-		const priority = parseInt(formData.get('priority') as string) || 50;
+		const priority = parseInt(formData.get('priority') as string, 10) || 50;
 		const color = formData.get('color') as string || '#6B7280';
 		const isActive = formData.get('isActive') === 'true';
 
@@ -139,7 +142,7 @@ export const actions: Actions = {
 			});
 			return { success: true, message: id ? 'User type updated' : 'User type created' };
 		} catch (error) {
-			console.error('Error saving user type:', error);
+			log.error('Error saving user type', { error, id, name });
 			return fail(500, { error: 'Failed to save user type' });
 		}
 	},
@@ -172,7 +175,7 @@ export const actions: Actions = {
 			await db.delete(userTypes).where(eq(userTypes.id, id));
 			return { success: true, message: 'User type deleted' };
 		} catch (error) {
-			console.error('Error deleting user type:', error);
+			log.error('Error deleting user type', { error, id });
 			return fail(500, { error: 'Failed to delete user type' });
 		}
 	},
@@ -200,7 +203,7 @@ export const actions: Actions = {
 			}
 			return { success: true };
 		} catch (error) {
-			console.error('Error toggling permission:', error);
+			log.error('Error toggling permission', { error, userTypeId, permissionId, action });
 			return fail(500, { error: 'Failed to update permission' });
 		}
 	}

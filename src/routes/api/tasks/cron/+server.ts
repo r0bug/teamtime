@@ -13,6 +13,9 @@ import { db, taskAssignmentRules, taskTemplates, tasks } from '$lib/server/db';
 import { eq, and, sql, gte } from 'drizzle-orm';
 import { processTimeIntoShiftRules } from '$lib/server/services/task-rules';
 import { CRON_SECRET } from '$env/static/private';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:tasks:cron');
 
 // Simple secret-based auth for cron jobs
 function validateCronRequest(request: Request): boolean {
@@ -74,12 +77,12 @@ function matchesCronPart(expr: string, value: number): boolean {
 
 	// Handle step values like */15
 	if (expr.startsWith('*/')) {
-		const step = parseInt(expr.slice(2));
+		const step = parseInt(expr.slice(2), 10);
 		return value % step === 0;
 	}
 
 	// Simple number match
-	return parseInt(expr) === value;
+	return parseInt(expr, 10) === value;
 }
 
 export const GET: RequestHandler = async ({ request, url }) => {
@@ -95,7 +98,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		timestamp: now.toISOString()
 	};
 
-	console.log(`[Task Cron] Running at ${now.toISOString()}`);
+	log.info({ timestamp: now.toISOString() }, 'Task cron job running');
 
 	try {
 		// Process scheduled rules
@@ -197,7 +200,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 					.where(eq(taskAssignmentRules.id, rule.id));
 
 				results.scheduledTasks.created++;
-				console.log(`[Task Cron] Created scheduled task from rule: ${rule.name}`);
+				log.info({ ruleId: rule.id, ruleName: rule.name, assigneeId }, 'Created scheduled task');
 			} catch (error) {
 				const errMsg = error instanceof Error ? error.message : 'Unknown error';
 				results.scheduledTasks.errors.push(`Error processing rule ${rule.name}: ${errMsg}`);
@@ -209,16 +212,17 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		results.timeIntoShift.created = timeIntoShiftResult.tasksCreated;
 		results.timeIntoShift.errors = timeIntoShiftResult.errors;
 
-		console.log(
-			`[Task Cron] Completed. Scheduled: ${results.scheduledTasks.created}, Time-into-shift: ${results.timeIntoShift.created}`
-		);
+		log.info({
+			scheduledCreated: results.scheduledTasks.created,
+			timeIntoShiftCreated: results.timeIntoShift.created
+		}, 'Task cron job completed');
 
 		return json({
 			success: true,
 			...results
 		});
 	} catch (error) {
-		console.error('[Task Cron] Error:', error);
+		log.error({ error, timestamp: now.toISOString() }, 'Task cron job error');
 		return json(
 			{
 				success: false,

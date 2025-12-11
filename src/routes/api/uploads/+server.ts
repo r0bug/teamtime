@@ -4,6 +4,9 @@ import { writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:uploads');
 
 const UPLOAD_DIR = './uploads';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -60,7 +63,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			}
 		});
 	} catch (error) {
-		console.error('Upload error:', error);
+		log.error('Upload error', { error: error instanceof Error ? error.message : String(error) });
 		return json({ error: 'Upload failed' }, { status: 500 });
 	}
 };

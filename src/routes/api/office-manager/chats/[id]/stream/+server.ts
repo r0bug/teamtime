@@ -3,6 +3,9 @@ import type { RequestHandler } from './$types';
 import { getChatSessionForUser } from '$lib/ai/office-manager/chat';
 import { isManager } from '$lib/server/auth/roles';
 import { processUserMessageStream } from '$lib/ai/office-manager/chat/orchestrator';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:office-manager:chats:stream');
 
 // POST - Send a message and stream AI response
 export const POST: RequestHandler = async ({ locals, params, request }) => {
@@ -61,7 +64,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 			}
 		});
 	} catch (error) {
-		console.error('[Office Manager Chat] Stream error:', error);
+		log.error({ error, chatId: params.id, userId: locals.user?.id }, 'Stream error');
 		return new Response(JSON.stringify({
 			error: error instanceof Error ? error.message : 'Unknown error'
 		}), {

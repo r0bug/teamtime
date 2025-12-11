@@ -2,7 +2,9 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import type { AIKeysConfig, AIProvider } from '../types';
+import { createLogger } from '$lib/server/logger';
 
+const log = createLogger('ai:config:keys');
 const KEYS_FILE = join(process.cwd(), '.ai-keys.json');
 
 // Read API keys from local config file
@@ -14,7 +16,8 @@ export function getAPIKeys(): AIKeysConfig {
 		const content = readFileSync(KEYS_FILE, 'utf-8');
 		return JSON.parse(content) as AIKeysConfig;
 	} catch (error) {
-		console.error('[AI Keys] Error reading keys file:', error);
+		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+		log.error('Error reading API keys file', { error: errorMsg, keysFile: KEYS_FILE });
 		return {};
 	}
 }
@@ -31,7 +34,8 @@ export function saveAPIKeys(keys: AIKeysConfig): boolean {
 		writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), 'utf-8');
 		return true;
 	} catch (error) {
-		console.error('[AI Keys] Error saving keys file:', error);
+		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+		log.error('Error saving API keys file', { error: errorMsg, keysFile: KEYS_FILE });
 		return false;
 	}
 }

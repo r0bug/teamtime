@@ -3,6 +3,9 @@ import { redirect, fail } from '@sveltejs/kit';
 import { db, taskAssignmentRules, taskTemplates, locations } from '$lib/server/db';
 import { eq, desc, sql } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('admin:tasks:rules');
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!isManager(locals.user)) {
@@ -88,7 +91,7 @@ export const actions: Actions = {
 
 			return { success: true, message: `Rule ${isActive ? 'activated' : 'deactivated'}` };
 		} catch (error) {
-			console.error('Error toggling rule:', error);
+			log.error('Error toggling rule', { error, ruleId, isActive });
 			return fail(500, { error: 'Failed to update rule' });
 		}
 	},
@@ -109,7 +112,7 @@ export const actions: Actions = {
 			await db.delete(taskAssignmentRules).where(eq(taskAssignmentRules.id, ruleId));
 			return { success: true, message: 'Rule deleted' };
 		} catch (error) {
-			console.error('Error deleting rule:', error);
+			log.error('Error deleting rule', { error, ruleId });
 			return fail(500, { error: 'Failed to delete rule' });
 		}
 	}

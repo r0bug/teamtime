@@ -2,6 +2,9 @@
 import { db, users, shifts, locations, timeEntries } from '$lib/server/db';
 import { eq, and, gte, lte, isNull } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:view-schedule');
 
 interface ViewScheduleParams {
 	date?: string; // ISO date string (YYYY-MM-DD), defaults to today
@@ -282,7 +285,7 @@ export const viewScheduleTool: AITool<ViewScheduleParams, ViewScheduleResult> = 
 				tomorrowPreview
 			};
 		} catch (error) {
-			console.error('[AI Tool] view_schedule error:', error);
+			log.error('View schedule tool error', { error });
 			return {
 				success: false,
 				date: params.date || new Date().toISOString().split('T')[0],

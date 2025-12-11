@@ -5,6 +5,9 @@ import { sendMessage } from '$lib/ai/architect';
 import { db, aiConfig } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import type { AIConfig } from '$lib/ai/types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:architect:chats:messages');
 
 // GET - Not supported, return helpful error
 export const GET: RequestHandler = async () => {
@@ -47,7 +50,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		const config: AIConfig = {
 			enabled: configRow.enabled,
 			dryRunMode: configRow.dryRunMode,
-			provider: configRow.provider as 'anthropic' | 'openai',
+			provider: configRow.provider as 'anthropic' | 'openai' | 'segmind',
 			model: configRow.model,
 			tone: configRow.tone as AIConfig['tone'],
 			customInstructions: configRow.instructions || undefined
@@ -94,7 +97,7 @@ Context modules that would be loaded: ${contextModules?.join(', ') || 'all avail
 			consultation: result.consultation
 		});
 	} catch (error) {
-		console.error('[Architect Messages] Error:', error);
+		log.error({ error, chatId: params.id }, 'Error processing architect message');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

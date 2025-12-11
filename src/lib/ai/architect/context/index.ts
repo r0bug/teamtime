@@ -5,6 +5,9 @@ import { codebaseContextProvider } from './codebase';
 import { mentatsContextProvider } from './mentats';
 import { filesContextProvider } from './files';
 import type { AIContextProvider, AssembledContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:architect:context');
 
 export { specContextProvider } from './spec';
 export { schemaContextProvider } from './schema';
@@ -59,7 +62,7 @@ export async function assembleArchitectContext(
 
 		// Check if we have room
 		if (totalTokens + tokenEstimate > maxTokens) {
-			console.log(`[Architect Context] Skipping ${provider.moduleId} - would exceed token limit`);
+			log.info('Skipping context module - would exceed token limit', { moduleId: provider.moduleId, tokenEstimate, currentTotal: totalTokens, maxTokens });
 			continue;
 		}
 

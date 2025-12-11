@@ -305,6 +305,61 @@
 							<p class="text-sm text-gray-500">Lower = more consistent, Higher = more creative</p>
 						</div>
 
+						<!-- Operational Hours -->
+						<div class="border-t pt-4">
+							<h4 class="font-medium mb-3">Operational Hours</h4>
+							<p class="text-sm text-gray-500 mb-4">Set when the Office Manager is allowed to run autonomously</p>
+
+							<div class="grid grid-cols-2 gap-4 mb-4">
+								<div>
+									<label class="block text-sm font-medium mb-1">Start Hour</label>
+									<select name="operationalStartHour" class="input w-full" value={data.officeManager?.operationalStartHour ?? 9}>
+										{#each Array(24) as _, i}
+											<option value={i}>{i === 0 ? '12:00 AM' : i < 12 ? `${i}:00 AM` : i === 12 ? '12:00 PM' : `${i-12}:00 PM`}</option>
+										{/each}
+									</select>
+								</div>
+								<div>
+									<label class="block text-sm font-medium mb-1">End Hour</label>
+									<select name="operationalEndHour" class="input w-full" value={data.officeManager?.operationalEndHour ?? 17}>
+										{#each Array(24) as _, i}
+											<option value={i}>{i === 0 ? '12:00 AM' : i < 12 ? `${i}:00 AM` : i === 12 ? '12:00 PM' : `${i-12}:00 PM`}</option>
+										{/each}
+									</select>
+								</div>
+							</div>
+
+							<div class="mb-4">
+								<label class="block text-sm font-medium mb-2">Operational Days</label>
+								<div class="flex flex-wrap gap-2">
+									{#each [{ day: 0, name: 'Sun' }, { day: 1, name: 'Mon' }, { day: 2, name: 'Tue' }, { day: 3, name: 'Wed' }, { day: 4, name: 'Thu' }, { day: 5, name: 'Fri' }, { day: 6, name: 'Sat' }] as { day, name }}
+										<label class="inline-flex items-center">
+											<input
+												type="checkbox"
+												name="operationalDays"
+												value={day}
+												checked={(data.officeManager?.operationalDays ?? [1,2,3,4,5]).includes(day)}
+												class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+											/>
+											<span class="ml-1 text-sm">{name}</span>
+										</label>
+									{/each}
+								</div>
+							</div>
+
+							<div>
+								<label class="block text-sm font-medium mb-1">Run Interval (minutes)</label>
+								<select name="runIntervalMinutes" class="input w-full" value={data.officeManager?.runIntervalMinutes ?? 15}>
+									<option value="5">Every 5 minutes</option>
+									<option value="10">Every 10 minutes</option>
+									<option value="15">Every 15 minutes</option>
+									<option value="30">Every 30 minutes</option>
+									<option value="60">Every hour</option>
+								</select>
+								<p class="text-sm text-gray-500 mt-1">How often the cron job should trigger the Office Manager</p>
+							</div>
+						</div>
+
 						<!-- Recipients -->
 						<div class="border-t pt-4">
 							<div class="flex items-center justify-between">

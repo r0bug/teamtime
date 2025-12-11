@@ -7,6 +7,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getAPIKey } from '$lib/ai/config/keys';
 import { readFile } from 'fs/promises';
 import path from 'path';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:inventory-drops:process');
 
 interface IdentifiedItem {
 	description: string;
@@ -87,7 +90,7 @@ export const POST: RequestHandler = async ({ locals, params }) => {
 					}
 				});
 			} catch (error) {
-				console.error(`Failed to read image ${photo.filePath}:`, error);
+				log.error('Failed to read image', { filePath: photo.filePath, error: error instanceof Error ? error.message : String(error) });
 			}
 		}
 
@@ -200,7 +203,7 @@ Respond with valid JSON only in this exact format:
 			notes: result.notes
 		});
 	} catch (error) {
-		console.error('Error processing inventory drop:', error);
+		log.error('Error processing inventory drop', { dropId, error: error instanceof Error ? error.message : String(error) });
 
 		// Update status to failed
 		await db

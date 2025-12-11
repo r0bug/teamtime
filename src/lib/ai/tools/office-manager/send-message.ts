@@ -2,6 +2,9 @@
 import { db, conversations, conversationParticipants, messages, users } from '$lib/server/db';
 import { eq, and, sql } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:send-message');
 
 interface SendMessageParams {
 	toUserId: string;
@@ -212,7 +215,7 @@ export const sendMessageTool: AITool<SendMessageParams, SendMessageResult> = {
 				recipientName
 			};
 		} catch (error) {
-			console.error('[AI Tool] send_message error:', error);
+			log.error('Send message tool error', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

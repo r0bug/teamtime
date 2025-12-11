@@ -2,6 +2,9 @@
 import { db, tasks, taskCompletions, users, conversations, conversationParticipants, messages, auditLogs } from '$lib/server/db';
 import { eq, and } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:cancel-task');
 
 interface CancelTaskParams {
 	taskId: string;
@@ -244,7 +247,7 @@ export const cancelTaskTool: AITool<CancelTaskParams, CancelTaskResult> = {
 
 					messageSent = true;
 				} catch (msgError) {
-					console.error('[AI Tool] cancel_task - Failed to send message:', msgError);
+					log.error('Cancel task - Failed to send message', { error: msgError });
 					// Continue even if messaging fails - the cancellation is still valid
 				}
 			}
@@ -257,7 +260,7 @@ export const cancelTaskTool: AITool<CancelTaskParams, CancelTaskResult> = {
 				messageSent
 			};
 		} catch (error) {
-			console.error('[AI Tool] cancel_task error:', error);
+			log.error('Cancel task tool error', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

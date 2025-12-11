@@ -2,6 +2,9 @@
 import { db, users, shifts, timeEntries } from '$lib/server/db';
 import { eq, and, gte, lte, isNull, or } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:get-available-staff');
 
 interface GetAvailableStaffParams {
 	date: string; // ISO date string (YYYY-MM-DD)
@@ -168,7 +171,7 @@ export const getAvailableStaffTool: AITool<GetAvailableStaffParams, GetAvailable
 				staff
 			};
 		} catch (error) {
-			console.error('[AI Tool] get_available_staff error:', error);
+			log.error('Get available staff tool error', { error });
 			return {
 				success: false,
 				date: params.date,

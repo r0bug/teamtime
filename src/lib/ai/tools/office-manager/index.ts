@@ -10,6 +10,9 @@ export { createRecurringTaskTool } from './create-recurring-task';
 export { createScheduleTool } from './create-schedule';
 export { createCashCountTaskTool } from './create-cash-count-task';
 export { processInventoryPhotosTool } from './process-inventory-photos';
+export { continueWorkTool } from './continue-work';
+export { reviewPastChatsTool } from './review-past-chats';
+export { getChatDetailsTool } from './get-chat-details';
 export {
 	viewUserPermissionsTool,
 	grantTemporaryPermissionTool,
@@ -32,6 +35,9 @@ import { createRecurringTaskTool } from './create-recurring-task';
 import { createScheduleTool } from './create-schedule';
 import { createCashCountTaskTool } from './create-cash-count-task';
 import { processInventoryPhotosTool } from './process-inventory-photos';
+import { continueWorkTool } from './continue-work';
+import { reviewPastChatsTool } from './review-past-chats';
+import { getChatDetailsTool } from './get-chat-details';
 import { permissionTools } from './permission-tools';
 import type { AITool } from '../../types';
 
@@ -49,6 +55,9 @@ export const officeManagerTools: AITool<any, any>[] = [
 	createScheduleTool,
 	createCashCountTaskTool,
 	processInventoryPhotosTool,
+	continueWorkTool,
+	reviewPastChatsTool,
+	getChatDetailsTool,
 	...permissionTools
 ];
 

@@ -8,6 +8,9 @@ import { getAPIKey } from '$lib/ai/config/keys';
 import Anthropic from '@anthropic-ai/sdk';
 import { readFile } from 'fs/promises';
 import path from 'path';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('server:inventory-drop-processor');
 
 interface IdentifiedItem {
 	description: string;
@@ -22,7 +25,7 @@ async function processInventoryDrop(
 ): Promise<JobResult['inventory_drop_process']> {
 	const { dropId, userId } = payload;
 
-	console.log(`[InventoryDropProcessor] Starting processing for drop ${dropId}`);
+	log.info('Starting processing for drop', { dropId, userId });
 
 	// Update status to processing
 	await updateProcessingStatus(dropId, 'processing');
@@ -74,7 +77,10 @@ async function processInventoryDrop(
 				}
 			});
 		} catch (error) {
-			console.error(`[InventoryDropProcessor] Failed to read image ${photo.filePath}:`, error);
+			log.error('Failed to read image', {
+				filePath: photo.filePath,
+				error: error instanceof Error ? error.message : String(error)
+			});
 		}
 	}
 
@@ -119,7 +125,7 @@ Respond with valid JSON only in this exact format:
   "notes": "Any general observations about the batch"
 }`;
 
-	console.log(`[InventoryDropProcessor] Calling Claude API for drop ${dropId} with ${imageContents.length} images`);
+	log.info('Calling Claude API for drop', { dropId, imageCount: imageContents.length });
 
 	const response = await anthropic.messages.create({
 		model: 'claude-sonnet-4-20250514',
@@ -183,11 +189,14 @@ Respond with valid JSON only in this exact format:
 	try {
 		await createFinalizeTask(dropId, userId);
 	} catch (error) {
-		console.error(`[InventoryDropProcessor] Failed to create finalize task for drop ${dropId}:`, error);
+		log.error('Failed to create finalize task for drop', {
+			dropId,
+			error: error instanceof Error ? error.message : String(error)
+		});
 		// Don't fail the job for this - the processing was successful
 	}
 
-	console.log(`[InventoryDropProcessor] Completed processing drop ${dropId}: ${items.length} items identified`);
+	log.info('Completed processing drop', { dropId, itemCount: items.length });
 
 	return {
 		itemCount: items.length,

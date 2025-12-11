@@ -3,6 +3,9 @@ import { redirect, fail, error } from '@sveltejs/kit';
 import { db, taskTemplates, taskAssignmentRules, locations } from '$lib/server/db';
 import { eq, desc } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('admin:tasks:templates:edit');
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	if (!isManager(locals.user)) {
@@ -106,7 +109,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Template updated successfully' };
 		} catch (error) {
-			console.error('Error updating template:', error);
+			log.error('Error updating template', { error, templateId: params.id, name });
 			return fail(500, { error: 'Failed to update template' });
 		}
 	},
@@ -121,7 +124,7 @@ export const actions: Actions = {
 			throw redirect(302, '/admin/tasks/templates');
 		} catch (error) {
 			if (error instanceof Response) throw error;
-			console.error('Error deleting template:', error);
+			log.error('Error deleting template', { error, templateId: params.id });
 			return fail(500, { error: 'Failed to delete template' });
 		}
 	}

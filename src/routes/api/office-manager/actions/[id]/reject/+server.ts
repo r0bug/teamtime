@@ -8,6 +8,9 @@ import {
 	addAssistantMessage
 } from '$lib/ai/office-manager/chat';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:office-manager:actions:reject');
 
 // POST - Reject a pending action
 export const POST: RequestHandler = async ({ locals, params }) => {
@@ -49,7 +52,7 @@ export const POST: RequestHandler = async ({ locals, params }) => {
 			message
 		});
 	} catch (error) {
-		console.error('[Office Manager Action] Reject error:', error);
+		log.error({ error, actionId: params.id, userId: locals.user?.id }, 'Reject error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

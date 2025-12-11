@@ -3,6 +3,9 @@ import type { RequestHandler } from './$types';
 import { db, cashCountConfigs } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:cash-count-configs:id');
 
 // GET - Get a single cash count config
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -23,7 +26,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 
 		return json({ success: true, config });
 	} catch (error) {
-		console.error('Error fetching cash count config:', error);
+		log.error({ error, configId: params.id, userId: locals.user?.id }, 'Error fetching cash count config');
 		return json({ error: 'Failed to fetch config' }, { status: 500 });
 	}
 };
@@ -57,7 +60,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 
 		return json({ success: true, config });
 	} catch (error) {
-		console.error('Error updating cash count config:', error);
+		log.error({ error, configId: params.id, userId: locals.user?.id }, 'Error updating cash count config');
 		return json({ error: 'Failed to update config' }, { status: 500 });
 	}
 };
@@ -80,7 +83,7 @@ export const DELETE: RequestHandler = async ({ locals, params }) => {
 
 		return json({ success: true });
 	} catch (error) {
-		console.error('Error deleting cash count config:', error);
+		log.error({ error, configId: params.id, userId: locals.user?.id }, 'Error deleting cash count config');
 		return json({ error: 'Failed to delete config' }, { status: 500 });
 	}
 };

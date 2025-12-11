@@ -12,6 +12,9 @@ import {
 	getGrantablePermissions,
 	expireTemporaryPermissions
 } from '$lib/server/services/permission-manager';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:office-manager:permissions');
 
 // GET /api/office-manager/permissions
 // Query params: ?action=pending|user_types|permissions|summary&userId=xxx
@@ -66,7 +69,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 				throw error(400, `Unknown action: ${action}`);
 		}
 	} catch (err) {
-		console.error('[API] GET /office-manager/permissions error:', err);
+		log.error({ error: err, userId: locals.user?.id, action }, 'GET permissions error');
 		if (err instanceof Error && 'status' in err) {
 			throw err;
 		}
@@ -183,7 +186,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				throw error(400, `Unknown action: ${action}`);
 		}
 	} catch (err) {
-		console.error('[API] POST /office-manager/permissions error:', err);
+		log.error({ error: err, userId: locals.user?.id, action }, 'POST permissions error');
 		if (err instanceof Error && 'status' in err) {
 			throw err;
 		}

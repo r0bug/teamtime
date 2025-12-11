@@ -3,6 +3,9 @@ import type { RequestHandler } from './$types';
 import { db, inventoryDrops, inventoryDropItems, inventoryDropPhotos, pricingDecisions, pricingDecisionPhotos } from '$lib/server/db';
 import { eq, inArray } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:inventory-drops:create-pricing');
 
 // POST /api/inventory-drops/[id]/items/[itemId]/create-pricing - Create pricing decision from item
 export const POST: RequestHandler = async ({ locals, params, request }) => {
@@ -121,7 +124,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 
 		return json({ pricingDecision }, { status: 201 });
 	} catch (error) {
-		console.error('Error creating pricing decision:', error);
+		log.error('Error creating pricing decision', { dropId, itemId, error: error instanceof Error ? error.message : String(error) });
 		return json({ error: 'Failed to create pricing decision' }, { status: 500 });
 	}
 };

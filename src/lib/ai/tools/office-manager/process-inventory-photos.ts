@@ -2,6 +2,9 @@
 import { db, inventoryDrops } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:process-inventory-photos');
 
 interface ProcessInventoryPhotosParams {
 	dropId: string;
@@ -104,7 +107,7 @@ export const processInventoryPhotosTool: AITool<ProcessInventoryPhotosParams, Pr
 				itemCount: drop[0].itemCount || 0
 			};
 		} catch (error) {
-			console.error('[AI Tool] process_inventory_photos error:', error);
+			log.error('Process inventory photos tool error', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

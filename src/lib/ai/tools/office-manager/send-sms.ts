@@ -3,6 +3,9 @@ import { db, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { sendSMS, formatPhoneToE164, isValidPhoneNumber } from '$lib/server/twilio';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:send-sms');
 
 interface SendSMSParams {
 	toUserId?: string;
@@ -146,7 +149,7 @@ export const sendSMSTool: AITool<SendSMSParams, SendSMSResult> = {
 				messageSid: result.sid
 			};
 		} catch (error) {
-			console.error('[AI Tool] send_sms error:', error);
+			log.error('Send SMS tool error', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

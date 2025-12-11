@@ -1,14 +1,21 @@
 // Architect (Ada) Admin Page Server
 import type { PageServerLoad, Actions } from './$types';
-import { db, aiConfig, architectureChats, architectureDecisions } from '$lib/server/db';
+import { db, aiConfig, architectureChats, architectureDecisions, architectConfig } from '$lib/server/db';
 import { eq, desc, gte } from 'drizzle-orm';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	// Get architect config
+	// Get basic architect config (enabled/dry run)
 	const [config] = await db
 		.select()
 		.from(aiConfig)
 		.where(eq(aiConfig.agent, 'architect'));
+
+	// Get tier model config
+	let [tierConfig] = await db.select().from(architectConfig).limit(1);
+	if (!tierConfig) {
+		// Create default config
+		[tierConfig] = await db.insert(architectConfig).values({}).returning();
+	}
 
 	// Get recent chat sessions
 	const chatSessions = await db
@@ -40,6 +47,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 			provider: config.provider,
 			model: config.model
 		} : null,
+		tierConfig: {
+			quickProvider: tierConfig.quickProvider,
+			quickModel: tierConfig.quickModel,
+			standardProvider: tierConfig.standardProvider,
+			standardModel: tierConfig.standardModel,
+			deliberatePrimaryProvider: tierConfig.deliberatePrimaryProvider,
+			deliberatePrimaryModel: tierConfig.deliberatePrimaryModel
+		},
 		chatSessions: chatSessions.map(c => ({
 			id: c.id,
 			title: c.title,
@@ -105,5 +120,33 @@ export const actions: Actions = {
 		}
 
 		return { success: true, message: 'Ada configuration saved' };
+	},
+
+	// Configure tier models
+	saveTierConfig: async ({ request }) => {
+		const formData = await request.formData();
+
+		// Get current config
+		let [existing] = await db.select().from(architectConfig).limit(1);
+		if (!existing) {
+			[existing] = await db.insert(architectConfig).values({}).returning();
+		}
+
+		const updates = {
+			quickProvider: (formData.get('quickProvider') as string) || 'anthropic',
+			quickModel: (formData.get('quickModel') as string) || 'claude-3-5-sonnet-20241022',
+			standardProvider: (formData.get('standardProvider') as string) || 'anthropic',
+			standardModel: (formData.get('standardModel') as string) || 'claude-sonnet-4-20250514',
+			deliberatePrimaryProvider: (formData.get('deliberatePrimaryProvider') as string) || 'anthropic',
+			deliberatePrimaryModel: (formData.get('deliberatePrimaryModel') as string) || 'claude-opus-4-20250514',
+			updatedAt: new Date()
+		};
+
+		await db
+			.update(architectConfig)
+			.set(updates)
+			.where(eq(architectConfig.id, existing.id));
+
+		return { success: true, message: 'Model configuration saved' };
 	}
 };

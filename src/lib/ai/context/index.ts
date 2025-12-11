@@ -5,6 +5,9 @@ import { tasksProvider } from './providers/tasks';
 import { usersProvider } from './providers/users';
 import { locationsProvider } from './providers/locations';
 import { memoryProvider } from './providers/memory';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:context');
 
 // Registry of all context providers
 const providers: AIContextProvider[] = [
@@ -39,7 +42,7 @@ export async function assembleContext(
 
 			// Check if we have room
 			if (totalTokens + tokenEstimate > maxTokens) {
-				console.log(`[AI Context] Skipping ${provider.moduleId} - would exceed token limit`);
+				log.info('Skipping context module - would exceed token limit', { moduleId: provider.moduleId, tokenEstimate, currentTotal: totalTokens, maxTokens });
 				continue;
 			}
 
@@ -61,7 +64,8 @@ export async function assembleContext(
 				}
 			}
 		} catch (error) {
-			console.error(`[AI Context] Error in ${provider.moduleId}:`, error);
+			const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+			log.error('Error loading context module', { moduleId: provider.moduleId, error: errorMsg });
 		}
 	}
 

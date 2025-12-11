@@ -4,6 +4,9 @@ import { db, users, appSettings } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager, isAdmin } from '$lib/server/auth/roles';
 import { hashPin, validatePinFormat, generatePin } from '$lib/server/auth/pin';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('admin:users');
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!isManager(locals.user)) {
@@ -77,7 +80,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'User updated successfully' };
 		} catch (error) {
-			console.error('Error updating user:', error);
+			log.error('Error updating user', { error, userId });
 			return fail(500, { error: 'Failed to update user' });
 		}
 	},
@@ -106,7 +109,7 @@ export const actions: Actions = {
 
 			return { success: true, message: '2FA setting updated successfully' };
 		} catch (error) {
-			console.error('Error toggling 2FA:', error);
+			log.error('Error toggling 2FA', { error, userId, enabled });
 			return fail(500, { error: 'Failed to update 2FA setting' });
 		}
 	},
@@ -148,11 +151,13 @@ export const actions: Actions = {
 			});
 
 			return { success: true, message: 'User created successfully' };
-		} catch (error: any) {
-			console.error('Error creating user:', error);
-			if (error.code === '23505') {
+		} catch (error: unknown) {
+			// Check for PostgreSQL unique constraint violation
+			if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
+				log.warn('Duplicate user creation attempted', { email, username });
 				return fail(400, { error: 'Email or username already exists' });
 			}
+			log.error('Error creating user', { error, email, username });
 			return fail(500, { error: 'Failed to create user' });
 		}
 	},
@@ -201,7 +206,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'PIN updated successfully' };
 		} catch (error) {
-			console.error('Error resetting PIN:', error);
+			log.error('Error resetting PIN', { error, userId });
 			return fail(500, { error: 'Failed to reset PIN' });
 		}
 	},
@@ -236,7 +241,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Password set successfully' };
 		} catch (error) {
-			console.error('Error setting password:', error);
+			log.error('Error setting password', { error, userId });
 			return fail(500, { error: 'Failed to set password' });
 		}
 	}

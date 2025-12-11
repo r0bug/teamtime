@@ -2,6 +2,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, cashCounts, cashCountConfigs } from '$lib/server/db';
 import { eq, desc } from 'drizzle-orm';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:cash-counts');
 
 // GET - List cash counts (recent)
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -10,7 +13,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	}
 
 	const locationId = url.searchParams.get('locationId');
-	const limit = parseInt(url.searchParams.get('limit') || '20');
+	const limit = parseInt(url.searchParams.get('limit') || '20', 10);
 
 	try {
 		let query = db
@@ -27,7 +30,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 		return json({ success: true, cashCounts: counts });
 	} catch (error) {
-		console.error('Error fetching cash counts:', error);
+		log.error({ error, userId: locals.user.id }, 'Error fetching cash counts');
 		return json({ error: 'Failed to fetch cash counts' }, { status: 500 });
 	}
 };
@@ -74,7 +77,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 		return json({ success: true, cashCount }, { status: 201 });
 	} catch (error) {
-		console.error('Error creating cash count:', error);
+		log.error({ error, userId: locals.user.id, configId }, 'Error creating cash count');
 		return json({ error: 'Failed to create cash count' }, { status: 500 });
 	}
 };

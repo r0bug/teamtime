@@ -5,6 +5,9 @@ import { db, permissions } from '$lib/server/db';
 import { eq, and, isNull } from 'drizzle-orm';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('server:route-discovery');
 
 interface DiscoveredRoute {
 	routePattern: string;
@@ -22,7 +25,7 @@ export async function discoverRoutes(): Promise<DiscoveredRoute[]> {
 	const routes: DiscoveredRoute[] = [];
 
 	if (!fs.existsSync(routesDir)) {
-		console.log('[Route Discovery] Routes directory not found:', routesDir);
+		log.warn('Routes directory not found', { routesDir });
 		return routes;
 	}
 
@@ -134,7 +137,10 @@ async function extractActions(filePath: string): Promise<string[]> {
 			}
 		}
 	} catch (error) {
-		console.log(`[Route Discovery] Error parsing ${filePath}:`, error);
+		log.warn('Error parsing file for actions', {
+			filePath,
+			error: error instanceof Error ? error.message : String(error)
+		});
 	}
 
 	return actions;

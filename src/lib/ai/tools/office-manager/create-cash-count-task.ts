@@ -2,6 +2,9 @@
 import { db, tasks, users, locations, cashCountConfigs } from '$lib/server/db';
 import { eq, and } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:create-cash-count-task');
 
 interface CreateCashCountTaskParams {
 	userId: string;
@@ -193,7 +196,7 @@ export const createCashCountTaskTool: AITool<CreateCashCountTaskParams, CreateCa
 				dueAt: dueAt.toISOString()
 			};
 		} catch (error) {
-			console.error('[AI Tool] create_cash_count_task error:', error);
+			log.error('Create cash count task tool error', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

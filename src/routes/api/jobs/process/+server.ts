@@ -2,6 +2,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { processPendingJobs, getJobStats } from '$lib/server/jobs';
 import { CRON_SECRET } from '$env/static/private';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:jobs:process');
 
 // POST /api/jobs/process - Process pending jobs (called by cron)
 export const POST: RequestHandler = async ({ request }) => {
@@ -21,7 +24,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			...result
 		});
 	} catch (error) {
-		console.error('Error processing jobs:', error);
+		log.error({ error }, 'Error processing jobs');
 		return json({
 			error: 'Failed to process jobs',
 			message: error instanceof Error ? error.message : 'Unknown error'
@@ -40,7 +43,7 @@ export const GET: RequestHandler = async ({ request, locals }) => {
 		const stats = await getJobStats();
 		return json({ stats });
 	} catch (error) {
-		console.error('Error getting job stats:', error);
+		log.error({ error, userId: locals.user?.id }, 'Error getting job stats');
 		return json({ error: 'Failed to get job stats' }, { status: 500 });
 	}
 };

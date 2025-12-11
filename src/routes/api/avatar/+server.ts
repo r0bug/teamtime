@@ -6,6 +6,9 @@ import { writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:avatar');
 
 const UPLOAD_DIR = 'static/uploads/avatars';
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
@@ -76,7 +79,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		return json({ success: true, avatarUrl });
 	} catch (err) {
-		console.error('Avatar upload error:', err);
+		log.error({ error: err, userId: locals.user?.id }, 'Avatar upload error');
 		if (err instanceof Error && 'status' in err) {
 			throw err;
 		}

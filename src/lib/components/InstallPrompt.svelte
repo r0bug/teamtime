@@ -18,7 +18,12 @@
 	import { browser } from '$app/environment';
 
 	// PWA install prompt state
-	let deferredPrompt: any = null;
+	interface BeforeInstallPromptEvent extends Event {
+		prompt: () => Promise<void>;
+		userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+	}
+
+	let deferredPrompt: BeforeInstallPromptEvent | null = null;
 	let showInstallPrompt = false;
 	let isIOS = false;
 	let isStandalone = false;
@@ -31,8 +36,9 @@
 		if (browser) {
 			// Check if already installed (standalone mode)
 			// This detects both Android PWA mode and iOS "Add to Home Screen"
-			isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-				(window.navigator as any).standalone === true;
+			const nav = window.navigator as Navigator & { standalone?: boolean };
+			isStandalone =
+				window.matchMedia('(display-mode: standalone)').matches || nav.standalone === true;
 
 			// Check if iOS (for showing manual instructions)
 			isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
@@ -52,7 +58,7 @@
 				// Prevent the mini-infobar from appearing on mobile
 				e.preventDefault();
 				// Stash the event so it can be triggered later
-				deferredPrompt = e;
+				deferredPrompt = e as BeforeInstallPromptEvent;
 				// Show our custom install prompt
 				showInstallPrompt = true;
 			});

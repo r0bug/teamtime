@@ -3,6 +3,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { isAdmin } from '$lib/server/auth/roles';
 import { migrateAllUsers, getMigrationStatus, getMigrationBatches } from '$lib/server/security/migrate-users';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:admin:access-control:migrate');
 
 // GET - Get migration status
 export const GET: RequestHandler = async ({ locals }) => {
@@ -22,7 +25,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			recentBatches: batches
 		});
 	} catch (error) {
-		console.error('[API] Migration status error:', error);
+		log.error({ error, userId: locals.user?.id }, 'Migration status error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
@@ -37,7 +40,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 	}
 
 	try {
-		console.log(`[API] Migration initiated by ${locals.user.email}`);
+		log.info({ userId: locals.user.id, email: locals.user.email }, 'Migration initiated');
 
 		const result = await migrateAllUsers(locals.user.id);
 
@@ -49,7 +52,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 			batchId: result.batchId
 		});
 	} catch (error) {
-		console.error('[API] Migration execution error:', error);
+		log.error({ error, userId: locals.user?.id }, 'Migration execution error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

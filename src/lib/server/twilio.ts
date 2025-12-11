@@ -1,12 +1,15 @@
 import twilio from 'twilio';
 import { env } from '$env/dynamic/private';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('server:twilio');
 
 // Twilio client - lazily initialized
 let twilioClient: twilio.Twilio | null = null;
 
 function getClient(): twilio.Twilio | null {
 	if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN) {
-		console.warn('Twilio credentials not configured. SMS sending disabled.');
+		log.warn('Twilio credentials not configured. SMS sending disabled.');
 		return null;
 	}
 
@@ -23,6 +26,10 @@ export interface SMSResult {
 	error?: string;
 }
 
+// Header prepended to all outgoing SMS messages
+// TODO: Make this configurable from the UI
+const SMS_HEADER = 'Yakima Finds Communiqué:';
+
 /**
  * Send an SMS message via Twilio
  * @param to - The recipient's phone number (E.164 format, e.g., +15551234567)
@@ -30,6 +37,8 @@ export interface SMSResult {
  * @returns Result with success status and message SID or error
  */
 export async function sendSMS(to: string, body: string): Promise<SMSResult> {
+	// Prepend header to all messages
+	const fullMessage = `${SMS_HEADER} ${body}`;
 	const client = getClient();
 
 	if (!client) {
@@ -56,7 +65,7 @@ export async function sendSMS(to: string, body: string): Promise<SMSResult> {
 
 	try {
 		const message = await client.messages.create({
-			body,
+			body: fullMessage,
 			from: env.TWILIO_PHONE_NUMBER,
 			to
 		});
@@ -67,7 +76,7 @@ export async function sendSMS(to: string, body: string): Promise<SMSResult> {
 		};
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error sending SMS';
-		console.error('Failed to send SMS:', errorMessage);
+		log.error('Failed to send SMS', { error: errorMessage, to });
 
 		return {
 			success: false,

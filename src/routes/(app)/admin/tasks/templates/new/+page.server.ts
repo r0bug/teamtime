@@ -3,6 +3,9 @@ import { redirect, fail } from '@sveltejs/kit';
 import { db, taskTemplates, locations } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('admin:tasks:templates:new');
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!isManager(locals.user)) {
@@ -82,7 +85,7 @@ export const actions: Actions = {
 			throw redirect(302, `/admin/tasks/templates/${result[0].id}`);
 		} catch (error) {
 			if (error instanceof Response) throw error;
-			console.error('Error creating template:', error);
+			log.error('Error creating template', { error, name, locationId, triggerEvent });
 			return fail(500, { error: 'Failed to create template' });
 		}
 	}

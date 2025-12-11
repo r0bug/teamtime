@@ -61,13 +61,13 @@ export const codebaseContextProvider: AIContextProvider<CodebaseContext> = {
 			const componentsResult = await execAsync('find src -name "*.svelte" 2>/dev/null | wc -l', {
 				cwd: process.cwd()
 			});
-			const componentCount = parseInt(componentsResult.stdout.trim()) || 0;
+			const componentCount = parseInt(componentsResult.stdout.trim(), 10) || 0;
 
 			// Get total file count
 			const totalResult = await execAsync('find src -name "*.ts" -o -name "*.svelte" 2>/dev/null | wc -l', {
 				cwd: process.cwd()
 			});
-			const totalFiles = parseInt(totalResult.stdout.trim()) || 0;
+			const totalFiles = parseInt(totalResult.stdout.trim(), 10) || 0;
 
 			return {
 				apiRoutes,

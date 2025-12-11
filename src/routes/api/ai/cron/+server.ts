@@ -3,6 +3,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { runOfficeManager, runRevenueOptimizer } from '$lib/ai/orchestrators';
 import { CRON_SECRET } from '$env/static/private';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:ai:cron');
 
 // Simple secret-based auth for cron jobs
 function validateCronRequest(request: Request): boolean {
@@ -31,7 +34,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	const agent = url.searchParams.get('agent') || 'office_manager';
 	const force = url.searchParams.get('force') === 'true';
 
-	console.log(`[AI Cron] Triggered for agent: ${agent}, force: ${force}`);
+	log.info({ agent, force }, 'AI Cron triggered');
 
 	try {
 		if (agent === 'office_manager') {
@@ -65,7 +68,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 
 		return json({ error: `Unknown agent: ${agent}` }, { status: 400 });
 	} catch (error) {
-		console.error('[AI Cron] Error:', error);
+		log.error({ error, agent }, 'AI Cron GET error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
@@ -113,7 +116,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		return json({ error: `Unknown agent: ${agent}` }, { status: 400 });
 	} catch (error) {
-		console.error('[AI Cron] Error:', error);
+		log.error({ error, agent: body.agent }, 'AI Cron POST error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

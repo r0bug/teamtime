@@ -32,7 +32,36 @@ ${toneInstructions}
 
 ## What You Can Do (Tools Available)
 - **send_message**: Send a direct message to any user. Use for reminders, tips, check-ins.
+- **send_sms**: Send an SMS text message for urgent notifications.
 - **create_task**: Create a task assigned to someone. Use for follow-ups and action items.
+- **cancel_task**: Cancel a task with accountability tracking and user notification.
+- **view_schedule**: View the work schedule for any date.
+- **get_available_staff**: Query staff availability and clock-in status.
+- **trade_shifts**: Reassign a shift from one user to another.
+- **create_schedule**: Bulk create shift assignments.
+- **create_recurring_task**: Set up recurring task templates.
+- **create_cash_count_task**: Assign cash count tasks.
+- **process_inventory_photos**: Trigger AI processing on inventory drops.
+- **continue_work**: Signal that you have more related tasks to complete.
+- **Permission tools**: View and manage user permissions temporarily.
+
+## Multi-Step Tasks
+Some situations require multiple coordinated actions. For example:
+- Trading a shift → notify BOTH the original and new assignee
+- Creating urgent task → send SMS notification to the assignee
+- Cancelling a task → may need to reassign or notify others
+
+When you identify a multi-step situation:
+1. Perform your first action
+2. Use **continue_work** to signal you have more tasks, listing what remains
+3. You will be called again to complete the remaining tasks
+
+Example: "Trade John's shift to Mary" should result in:
+1. trade_shifts (John → Mary)
+2. continue_work (reason: "Need to notify both users", remainingTasks: ["notify John", "notify Mary"])
+3. send_message to John
+4. continue_work (remainingTasks: ["notify Mary"])
+5. send_message to Mary
 
 ## What You Should NOT Do
 - Don't send messages to the same person repeatedly (respect cooldown periods)
@@ -59,4 +88,44 @@ export function buildOfficeManagerUserPrompt(contextFormatted: string): string {
 	return `${contextFormatted}
 
 Based on the current state above, analyze the situation and decide what actions (if any) would be most helpful right now. Remember to think step by step and only take action when it would genuinely help.`;
+}
+
+interface CompletedAction {
+	tool: string;
+	result: string;
+}
+
+export function buildContinuationPrompt(
+	contextFormatted: string,
+	completedActions: CompletedAction[],
+	remainingTasks: string[],
+	reason: string
+): string {
+	const completedSummary = completedActions
+		.map((a, i) => `${i + 1}. ${a.tool}: ${a.result}`)
+		.join('\n');
+
+	const remainingList = remainingTasks
+		.map((t, i) => `${i + 1}. ${t}`)
+		.join('\n');
+
+	return `${contextFormatted}
+
+## Continuation Context
+You are continuing a multi-step task. Here's what has happened so far:
+
+### Actions Completed
+${completedSummary || 'None yet'}
+
+### Reason for Continuation
+${reason}
+
+### Remaining Tasks
+${remainingList}
+
+Please complete the next task from the remaining list. After completing it:
+- If more tasks remain, use **continue_work** with the updated remaining tasks
+- If all tasks are complete, do not use continue_work
+
+Focus on completing ONE task at a time, then signal if more remain.`;
 }

@@ -2,6 +2,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getChatSession, updateChatTitle, deleteChatSession } from '$lib/ai/architect';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:architect:chats');
 
 // GET - Get a specific chat session
 export const GET: RequestHandler = async ({ params }) => {
@@ -26,7 +29,7 @@ export const GET: RequestHandler = async ({ params }) => {
 			}
 		});
 	} catch (error) {
-		console.error('[Architect Chat] Get error:', error);
+		log.error({ error, chatId: params.id }, 'Error getting architect chat session');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
@@ -57,7 +60,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 			}
 		});
 	} catch (error) {
-		console.error('[Architect Chat] Update error:', error);
+		log.error({ error, chatId: params.id }, 'Error updating architect chat session');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
@@ -71,7 +74,7 @@ export const DELETE: RequestHandler = async ({ params }) => {
 		await deleteChatSession(params.id);
 		return json({ success: true });
 	} catch (error) {
-		console.error('[Architect Chat] Delete error:', error);
+		log.error({ error, chatId: params.id }, 'Error deleting architect chat session');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

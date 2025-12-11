@@ -1,4 +1,9 @@
 import { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM } from '$env/static/private';
+import * as nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('server:email');
 
 interface EmailOptions {
 	to: string;
@@ -7,25 +12,60 @@ interface EmailOptions {
 	text?: string;
 }
 
+// Create transporter singleton
+let transporter: Transporter | null = null;
+
+function getTransporter(): Transporter {
+	if (!transporter && SMTP_HOST) {
+		transporter = nodemailer.createTransport({
+			host: SMTP_HOST,
+			port: parseInt(SMTP_PORT || '587', 10),
+			secure: parseInt(SMTP_PORT || '587', 10) === 465, // true for 465, false for other ports
+			auth: {
+				user: SMTP_USER,
+				pass: SMTP_PASSWORD
+			}
+		});
+	}
+	return transporter!;
+}
+
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
-	// In development, log the email instead of sending
-	if (process.env.NODE_ENV === 'development') {
-		console.log('=== EMAIL (DEV MODE) ===');
-		console.log(`To: ${options.to}`);
-		console.log(`Subject: ${options.subject}`);
-		console.log(`Body: ${options.text || options.html}`);
-		console.log('========================');
+	// In development or when SMTP is not configured, log the email instead of sending
+	if (!SMTP_HOST) {
+		log.info('Email (dev mode - no SMTP configured)', {
+			to: options.to,
+			subject: options.subject,
+			bodyPreview: (options.text || options.html).substring(0, 100)
+		});
 		return true;
 	}
 
-	// In production, implement actual email sending
-	// This is a placeholder for nodemailer or similar
+	// In production with SMTP configured, send actual email
 	try {
-		// TODO: Implement actual email sending with nodemailer
-		console.log('Email would be sent to:', options.to);
+		const transport = getTransporter();
+
+		const info = await transport.sendMail({
+			from: SMTP_FROM,
+			to: options.to,
+			subject: options.subject,
+			html: options.html,
+			text: options.text || options.html.replace(/<[^>]*>/g, '') // Strip HTML as fallback
+		});
+
+		log.info('Email sent successfully', {
+			messageId: info.messageId,
+			to: options.to,
+			subject: options.subject
+		});
+
 		return true;
 	} catch (error) {
-		console.error('Failed to send email:', error);
+		log.error('Failed to send email', {
+			error: error instanceof Error ? error.message : String(error),
+			to: options.to,
+			subject: options.subject
+		});
 		return false;
 	}
 }

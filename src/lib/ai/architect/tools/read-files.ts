@@ -5,6 +5,9 @@ import {
 	searchFiles,
 	formatFileForContext
 } from '$lib/server/services/file-reader';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:architect:tools:read-files');
 
 interface ReadFilesParams {
 	paths: string[];
@@ -215,13 +218,14 @@ export const searchFilesTool: AITool<SearchFilesParams, SearchFilesResult> = {
 				truncated: result.truncated
 			};
 		} catch (error) {
-			console.error('[search_files] Error:', error);
+			const errorMsg = error instanceof Error ? error.message : 'Unknown error searching files';
+			log.error('Error searching files', { pattern: params.pattern, error: errorMsg });
 			return {
 				success: false,
 				files: [],
 				total: 0,
 				truncated: false,
-				error: error instanceof Error ? error.message : 'Unknown error searching files'
+				error: errorMsg
 			};
 		}
 	},

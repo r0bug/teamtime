@@ -2,6 +2,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createChatSession, listChatSessions } from '$lib/ai/architect';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:architect:chats');
 
 // GET - List all chat sessions
 export const GET: RequestHandler = async ({ locals }) => {
@@ -22,7 +25,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			}))
 		});
 	} catch (error) {
-		console.error('[Architect Chats] List error:', error);
+		log.error({ error }, 'List error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
@@ -46,7 +49,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 			}
 		});
 	} catch (error) {
-		console.error('[Architect Chats] Create error:', error);
+		log.error({ error, userId: locals.user?.id }, 'Create error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

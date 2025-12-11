@@ -1,4 +1,5 @@
 import { hash, verify } from '@node-rs/argon2';
+import { randomInt } from 'crypto';
 
 const ARGON2_OPTIONS = {
 	memoryCost: 19456,
@@ -19,12 +20,11 @@ export async function verifyPin(pin: string, hashedPin: string): Promise<boolean
 }
 
 export function generatePin(): string {
-	const pin = Math.floor(100000 + Math.random() * 900000).toString();
-	return pin;
+	return randomInt(100000, 1000000).toString();
 }
 
 export function generate2FACode(): string {
-	return Math.floor(100000 + Math.random() * 900000).toString();
+	return randomInt(100000, 1000000).toString();
 }
 
 export function validatePinFormat(pin: string): boolean {

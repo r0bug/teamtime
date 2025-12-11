@@ -2,6 +2,9 @@
 import { db, taskTemplates, users, locations } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:create-recurring-task');
 
 interface RecurrenceRule {
 	frequency: 'daily' | 'weekly' | 'monthly' | 'custom';
@@ -214,7 +217,7 @@ export const createRecurringTaskTool: AITool<CreateRecurringTaskParams, CreateRe
 				recurrenceDescription: formatRecurrence(params.recurrence)
 			};
 		} catch (error) {
-			console.error('[AI Tool] create_recurring_task error:', error);
+			log.error('Create recurring task tool error', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

@@ -2,6 +2,9 @@
 import { db, inventoryDrops, inventoryDropPhotos, inventoryDropItems, tasks, users } from '$lib/server/db';
 import { eq, sql } from 'drizzle-orm';
 import { createJob } from '$lib/server/jobs/queue';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('server:inventory-drops');
 
 export interface CreateDropInput {
 	userId: string;
@@ -68,7 +71,7 @@ export async function createDrop(input: CreateDropInput): Promise<{
 		priority: 10 // Higher priority for new drops
 	});
 
-	console.log(`[InventoryDropService] Created drop ${drop.id} with processing job ${job.id}`);
+	log.info('Created drop with processing job', { dropId: drop.id, jobId: job.id });
 
 	return { drop, jobId: job.id };
 }
@@ -231,7 +234,7 @@ export async function createFinalizeTask(
 		.set({ finalizeTaskId: task.id })
 		.where(eq(inventoryDrops.id, dropId));
 
-	console.log(`[InventoryDropService] Created finalize task ${task.id} for drop ${dropId}`);
+	log.info('Created finalize task for drop', { taskId: task.id, dropId });
 
 	return task.id;
 }
@@ -269,7 +272,7 @@ export async function retryDrop(dropId: string, userId: string): Promise<string>
 		priority: 5 // Slightly lower priority for retries
 	});
 
-	console.log(`[InventoryDropService] Retrying drop ${dropId} with job ${job.id}`);
+	log.info('Retrying drop with new job', { dropId, jobId: job.id });
 
 	return job.id;
 }
@@ -293,5 +296,5 @@ export async function cancelDrop(dropId: string): Promise<void> {
 	// Delete the drop (cascade will handle photos)
 	await db.delete(inventoryDrops).where(eq(inventoryDrops.id, dropId));
 
-	console.log(`[InventoryDropService] Cancelled drop ${dropId}`);
+	log.info('Cancelled drop', { dropId });
 }

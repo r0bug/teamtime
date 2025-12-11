@@ -2,6 +2,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, tasks, users, pricingDecisions, pricingDecisionPhotos } from '$lib/server/db';
 import { eq, and, isNull, desc } from 'drizzle-orm';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:ebay-tasks');
 
 // GET /api/ebay-tasks - List eBay listing tasks (for eBay-capable users)
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -89,7 +92,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 		return json({ tasks: tasksWithDecisions });
 	} catch (error) {
-		console.error('Error fetching eBay tasks:', error);
+		log.error({ error, userId: locals.user?.id }, 'Error fetching eBay tasks');
 		return json({ error: 'Failed to fetch eBay tasks' }, { status: 500 });
 	}
 };

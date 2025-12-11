@@ -2,6 +2,9 @@
 import { db, conversations, conversationParticipants, messages, users } from '$lib/server/db';
 import { eq, and } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('ai:tools:send-recommendation');
 
 interface SendRecommendationParams {
 	title: string;
@@ -191,7 +194,7 @@ export const sendRecommendationTool: AITool<SendRecommendationParams, SendRecomm
 				messagesSent
 			};
 		} catch (error) {
-			console.error('[AI Tool] send_recommendation error:', error);
+			log.error('Send recommendation tool error', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

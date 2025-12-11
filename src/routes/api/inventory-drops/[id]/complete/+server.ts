@@ -3,6 +3,9 @@ import type { RequestHandler } from './$types';
 import { db, inventoryDrops } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:inventory-drops:complete');
 
 // POST /api/inventory-drops/[id]/complete - Mark a drop as reviewed
 export const POST: RequestHandler = async ({ locals, params }) => {
@@ -51,7 +54,7 @@ export const POST: RequestHandler = async ({ locals, params }) => {
 			reviewedAt: updated.reviewedAt?.toISOString()
 		});
 	} catch (error) {
-		console.error('Error completing drop review:', error);
+		log.error('Error completing drop review', { dropId, error: error instanceof Error ? error.message : String(error) });
 		return json({ error: 'Failed to complete review' }, { status: 500 });
 	}
 };

@@ -9,6 +9,9 @@ import {
 	addAssistantMessage
 } from '$lib/ai/office-manager/chat';
 import { isManager } from '$lib/server/auth/roles';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:office-manager:actions:confirm');
 
 // POST - Confirm/approve a pending action
 export const POST: RequestHandler = async ({ locals, params }) => {
@@ -69,7 +72,7 @@ export const POST: RequestHandler = async ({ locals, params }) => {
 			message: resultMessage
 		});
 	} catch (error) {
-		console.error('[Office Manager Action] Confirm error:', error);
+		log.error({ error, actionId: params.id, userId: locals.user?.id }, 'Confirm error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
