@@ -5,6 +5,7 @@ import { build, files, version } from '$service-worker';
 
 const CACHE_NAME = `teamtime-${version}`;
 
+// Only cache build assets and static files (JS, CSS, images, fonts)
 const ASSETS = [...build, ...files];
 
 self.addEventListener('install', (event: ExtendableEvent) => {
@@ -18,6 +19,7 @@ self.addEventListener('install', (event: ExtendableEvent) => {
 self.addEventListener('activate', (event: ExtendableEvent) => {
 	event.waitUntil(
 		caches.keys().then(async (keys) => {
+			// Delete old caches
 			for (const key of keys) {
 				if (key !== CACHE_NAME) {
 					await caches.delete(key);
@@ -33,11 +35,33 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 
 	const url = new URL(event.request.url);
 
-	// Don't cache API requests
+	// NEVER cache API requests
 	if (url.pathname.startsWith('/api/')) {
 		return;
 	}
 
+	// NEVER cache HTML pages (navigation requests)
+	// This prevents stale user data from being shown after login/logout
+	if (event.request.mode === 'navigate' ||
+		event.request.headers.get('accept')?.includes('text/html')) {
+		event.respondWith(
+			fetch(event.request).catch(() => {
+				return caches.match('/offline.html') || new Response('Offline', { status: 503 });
+			})
+		);
+		return;
+	}
+
+	// Only serve from cache for static assets (JS, CSS, images, fonts)
+	const isStaticAsset = ASSETS.some(asset => url.pathname.endsWith(asset) || url.pathname === asset) ||
+		url.pathname.match(/\.(js|css|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot|ico|webp)$/);
+
+	if (!isStaticAsset) {
+		// Not a static asset - go to network
+		return;
+	}
+
+	// For static assets: try cache first, then network
 	event.respondWith(
 		caches.match(event.request).then((cached) => {
 			if (cached) {
@@ -53,10 +77,6 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 				}
 				return response;
 			}).catch(() => {
-				// Return offline fallback for navigation requests
-				if (event.request.mode === 'navigate') {
-					return caches.match('/offline.html') || new Response('Offline', { status: 503 });
-				}
 				return new Response('Offline', { status: 503 });
 			});
 		})
