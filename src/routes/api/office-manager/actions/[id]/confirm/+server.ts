@@ -15,8 +15,8 @@ const log = createLogger('api:office-manager:actions:confirm');
 
 // POST - Confirm/approve a pending action
 export const POST: RequestHandler = async ({ locals, params }) => {
-	// Require manager or admin role
-	if (!isManager(locals.user)) {
+	// Require any authenticated user (permission check happens at tool level)
+	if (!locals.user) {
 		return json({ success: false, error: 'Unauthorized' }, { status: 403 });
 	}
 
@@ -49,8 +49,8 @@ export const POST: RequestHandler = async ({ locals, params }) => {
 			}, { status: 400 });
 		}
 
-		// Execute the action
-		const { success, result } = await executeConfirmedAction(params.id, action);
+		// Execute the action (pass user ID for permission checking)
+		const { success, result } = await executeConfirmedAction(params.id, action, locals.user!.id);
 
 		// Update the pending action status
 		await approvePendingAction(params.id, result as Record<string, unknown>);

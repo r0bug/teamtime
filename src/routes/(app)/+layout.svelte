@@ -54,6 +54,7 @@
 		{ href: '/schedule', label: 'Schedule', icon: 'calendar', show: true },
 		{ href: '/tasks', label: 'Tasks', icon: 'clipboard', show: true },
 		{ href: '/messages', label: 'Messages', icon: 'chat', show: true },
+		{ href: '/sales', label: 'Sales', icon: 'chart', show: true },
 		{ href: '/info', label: 'Info', icon: 'info', show: true },
 		{ href: '/pricing', label: 'Pricing', icon: 'tag', show: true },
 		{ href: '/inventory/drops', label: 'Drops', icon: 'box', show: isPurchaser },

@@ -24,15 +24,37 @@ const log = createLogger('ai:office-manager:chat');
 // System prompt for Office Manager chat
 const OFFICE_MANAGER_SYSTEM_PROMPT = `You are the Office Manager AI assistant for TeamTime, a staff management system for a thrift store.
 
-Your role is to help managers with:
+Your role is to help ALL users with their tasks - from basic staff to managers and admins. Different users have different permission levels.
+
+## CRITICAL: Permission Checking (MUST DO FIRST)
+
+At the START of EVERY new conversation, you MUST call the \`get_my_permissions\` tool FIRST before doing anything else. This tells you:
+- The user's role and permission level
+- Which tools you are ALLOWED to use for this user
+- Which tools you must NOT attempt
+
+NEVER attempt to use a tool that the user doesn't have permission for. If they ask for something they can't do, politely explain and suggest they contact a manager.
+
+## Multi-Step Tasks
+
+When a user request requires multiple tools:
+1. First call \`get_my_permissions\` to understand what you can do
+2. Plan all the steps needed
+3. Execute tools ONE AT A TIME in sequence
+4. After each tool completes, immediately call the next one
+5. If using \`continue_work\`, call it to signal you have more work to do
+6. Complete ALL steps before giving your final response
+
+IMPORTANT: Do not stop after the first tool. If you need to use multiple tools, keep going until the task is complete.
+
+## Available Capabilities (subject to user permissions)
+
 - Scheduling and shift management
 - Staff communication (messages and SMS)
 - Task creation and assignment
 - Cash count management
 - Inventory processing
-- Permission management (temporary permission grants/changes)
-
-You have access to tools that can perform actions. Some tools require user confirmation before execution - when you call these tools, the action will be queued for approval.
+- Permission management (admin only)
 
 ## Memory & Past Conversations
 You have access to your conversation history through these tools:
@@ -45,15 +67,16 @@ Use these when:
 - Checking if you've handled a similar situation before
 - Understanding the history with a particular user
 
-Guidelines:
+## Guidelines
 - Be helpful, professional, and concise
 - Explain what actions you're taking and why
 - If a tool requires confirmation, explain what will happen when approved
 - For scheduling changes, always consider who is currently working
 - Be careful with SMS - only use for urgent matters
 - When creating tasks, set appropriate priorities
+- ALWAYS respect the user's permission level
 
-Permission Management Guidelines:
+## Permission Management Guidelines (Admin Only)
 - Use permission tools to temporarily adjust user access when needed
 - ALWAYS view current permissions before making changes (use view_user_permissions first)
 - Provide clear, detailed justifications for all permission changes
@@ -81,17 +104,25 @@ export interface ProcessMessageResult {
 
 /**
  * Process a user message in the Office Manager chat
+ * @param chatId - The chat session ID
+ * @param userMessage - The user's message
+ * @param model - The LLM model to use
+ * @param requestingUserId - The ID of the user making the request (for permission checking)
  */
 export async function processUserMessage(
 	chatId: string,
 	userMessage: string,
-	model = 'claude-sonnet-4-20250514'
+	model = 'claude-sonnet-4-20250514',
+	requestingUserId?: string
 ): Promise<ProcessMessageResult> {
 	// Get the chat session
 	const session = await getChatSession(chatId);
 	if (!session) {
 		throw new Error(`Chat session ${chatId} not found`);
 	}
+
+	// Use the session's userId if requestingUserId not provided
+	const userId = requestingUserId || session.userId;
 
 	// Add user message to chat
 	await addUserMessage(chatId, userMessage);
@@ -180,7 +211,9 @@ ${userMessage}`;
 					config: {
 						provider: 'anthropic',
 						model
-					}
+					},
+					chatId,
+					userId
 				};
 
 				const validation = tool.validate(toolCall.params);
@@ -286,10 +319,14 @@ ${userMessage}`;
 
 /**
  * Execute a confirmed pending action
+ * @param actionId - The pending action ID
+ * @param pendingAction - The pending action to execute
+ * @param requestingUserId - The ID of the user confirming the action
  */
 export async function executeConfirmedAction(
 	actionId: string,
-	pendingAction: PendingAction
+	pendingAction: PendingAction,
+	requestingUserId?: string
 ): Promise<{ success: boolean; result: unknown }> {
 	const tool = officeManagerTools.find(t => t.name === pendingAction.toolName);
 	if (!tool) {
@@ -304,7 +341,9 @@ export async function executeConfirmedAction(
 		config: {
 			provider: 'anthropic',
 			model: 'claude-sonnet-4-20250514'
-		}
+		},
+		chatId: pendingAction.chatId,
+		userId: requestingUserId
 	};
 
 	try {
@@ -361,11 +400,16 @@ export interface StreamEvent {
 
 /**
  * Process a user message with streaming response
+ * @param chatId - The chat session ID
+ * @param userMessage - The user's message
+ * @param model - The LLM model to use
+ * @param requestingUserId - The ID of the user making the request (for permission checking)
  */
 export async function* processUserMessageStream(
 	chatId: string,
 	userMessage: string,
-	model = 'claude-sonnet-4-20250514'
+	model = 'claude-sonnet-4-20250514',
+	requestingUserId?: string
 ): AsyncGenerator<StreamEvent> {
 	// Get the chat session
 	const session = await getChatSession(chatId);
@@ -373,6 +417,9 @@ export async function* processUserMessageStream(
 		yield { type: 'error', error: `Chat session ${chatId} not found` };
 		return;
 	}
+
+	// Use the session's userId if requestingUserId not provided
+	const userId = requestingUserId || session.userId;
 
 	// Add user message to chat
 	await addUserMessage(chatId, userMessage);
@@ -473,7 +520,9 @@ ${userMessage}`;
 						runId,
 						agent: 'office_manager',
 						dryRun: false,
-						config: { provider: 'anthropic', model }
+						config: { provider: 'anthropic', model },
+						chatId,
+						userId
 					};
 
 					const validation = tool.validate(params);

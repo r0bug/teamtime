@@ -44,3 +44,9 @@ ai-keys.json
 
 # Admin documentation with credentials
 DATABASE_ADMIN_ACCESS.md
+
+# Scraper imports - sensitive files
+scraper-imports/nrscreds.secret
+scraper-imports/*.log
+scraper-imports/venv/
+scraper-imports/*.tar.gz

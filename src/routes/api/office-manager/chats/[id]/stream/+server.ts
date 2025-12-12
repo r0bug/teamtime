@@ -9,8 +9,8 @@ const log = createLogger('api:office-manager:chats:stream');
 
 // POST - Send a message and stream AI response
 export const POST: RequestHandler = async ({ locals, params, request }) => {
-	// Require manager or admin role
-	if (!isManager(locals.user)) {
+	// Require any authenticated user (Office Manager now supports all users with permission checking)
+	if (!locals.user) {
 		return new Response(JSON.stringify({ error: 'Unauthorized' }), {
 			status: 403,
 			headers: { 'Content-Type': 'application/json' }
@@ -39,10 +39,11 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 
 		// Create a readable stream for SSE
 		const encoder = new TextEncoder();
+		const userId = locals.user!.id;
 		const stream = new ReadableStream({
 			async start(controller) {
 				try {
-					for await (const event of processUserMessageStream(params.id, message.trim())) {
+					for await (const event of processUserMessageStream(params.id, message.trim(), undefined, userId)) {
 						const data = JSON.stringify(event);
 						controller.enqueue(encoder.encode(`data: ${data}\n\n`));
 					}

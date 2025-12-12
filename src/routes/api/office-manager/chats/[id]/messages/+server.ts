@@ -9,8 +9,8 @@ const log = createLogger('api:office-manager:chats:messages');
 
 // POST - Send a message and get AI response
 export const POST: RequestHandler = async ({ locals, params, request }) => {
-	// Require manager or admin role
-	if (!isManager(locals.user)) {
+	// Require any authenticated user (Office Manager now supports all users with permission checking)
+	if (!locals.user) {
 		return json({ success: false, error: 'Unauthorized' }, { status: 403 });
 	}
 
@@ -28,8 +28,8 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 			return json({ success: false, error: 'Message is required' }, { status: 400 });
 		}
 
-		// Process the message and get AI response
-		const result = await processUserMessage(params.id, message.trim());
+		// Process the message and get AI response (pass user ID for permission checking)
+		const result = await processUserMessage(params.id, message.trim(), undefined, locals.user!.id);
 
 		return json({
 			success: true,

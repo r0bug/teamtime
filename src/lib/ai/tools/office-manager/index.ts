@@ -13,6 +13,8 @@ export { processInventoryPhotosTool } from './process-inventory-photos';
 export { continueWorkTool } from './continue-work';
 export { reviewPastChatsTool } from './review-past-chats';
 export { getChatDetailsTool } from './get-chat-details';
+export { getMyPermissionsTool } from './get-my-permissions';
+export { viewSalesTool } from './view-sales';
 export {
 	viewUserPermissionsTool,
 	grantTemporaryPermissionTool,
@@ -38,26 +40,34 @@ import { processInventoryPhotosTool } from './process-inventory-photos';
 import { continueWorkTool } from './continue-work';
 import { reviewPastChatsTool } from './review-past-chats';
 import { getChatDetailsTool } from './get-chat-details';
+import { getMyPermissionsTool } from './get-my-permissions';
+import { viewSalesTool } from './view-sales';
 import { permissionTools } from './permission-tools';
 import type { AITool } from '../../types';
 
 // Use explicit any for the tools array since each tool has its own type parameters
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const officeManagerTools: AITool<any, any>[] = [
+	// Permission check tool - should be called first
+	getMyPermissionsTool,
+	// Read-only tools
+	viewScheduleTool,
+	getAvailableStaffTool,
+	reviewPastChatsTool,
+	getChatDetailsTool,
+	viewSalesTool,
+	// Action tools
 	sendMessageTool,
 	createTaskTool,
 	cancelTaskTool,
 	sendSMSTool,
-	getAvailableStaffTool,
-	viewScheduleTool,
 	tradeShiftsTool,
 	createRecurringTaskTool,
 	createScheduleTool,
 	createCashCountTaskTool,
 	processInventoryPhotosTool,
 	continueWorkTool,
-	reviewPastChatsTool,
-	getChatDetailsTool,
+	// Permission management tools
 	...permissionTools
 ];
 

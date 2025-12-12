@@ -1,0 +1,165 @@
+{
+  "date": "12/11/2025",
+  "vendors": [
+    {
+      "vendor_id": "17011",
+      "vendor_name": "Amber Alvarez",
+      "total_sales": 54.0,
+      "vendor_amount": 46.98,
+      "retained_amount": 7.02
+    },
+    {
+      "vendor_id": "17015",
+      "vendor_name": "Andrew Nelson",
+      "total_sales": 218.0,
+      "vendor_amount": 189.66,
+      "retained_amount": 28.34
+    },
+    {
+      "vendor_id": "19983",
+      "vendor_name": "Ashlee Overhoit",
+      "total_sales": 35.0,
+      "vendor_amount": 30.45,
+      "retained_amount": 4.55
+    },
+    {
+      "vendor_id": "19803",
+      "vendor_name": "ASHLEY MARTINEZ",
+      "total_sales": 155.0,
+      "vendor_amount": 134.85,
+      "retained_amount": 20.15
+    },
+    {
+      "vendor_id": "17297",
+      "vendor_name": "Ashley Sonnier",
+      "total_sales": 8.0,
+      "vendor_amount": 6.96,
+      "retained_amount": 1.04
+    },
+    {
+      "vendor_id": "19985",
+      "vendor_name": "Brenda Yanez",
+      "total_sales": 5.0,
+      "vendor_amount": 4.35,
+      "retained_amount": 0.65
+    },
+    {
+      "vendor_id": "17012",
+      "vendor_name": "David George",
+      "total_sales": 150.5,
+      "vendor_amount": 130.94,
+      "retained_amount": 19.56
+    },
+    {
+      "vendor_id": "19804",
+      "vendor_name": "GABRIEL VALENCIA",
+      "total_sales": 3.0,
+      "vendor_amount": 2.25,
+      "retained_amount": 0.75
+    },
+    {
+      "vendor_id": "17270",
+      "vendor_name": "HPH",
+      "total_sales": 2.5,
+      "vendor_amount": 2.18,
+      "retained_amount": 0.32
+    },
+    {
+      "vendor_id": "17006",
+      "vendor_name": "Kristy Turner",
+      "total_sales": 35.0,
+      "vendor_amount": 30.45,
+      "retained_amount": 4.55
+    },
+    {
+      "vendor_id": "19900",
+      "vendor_name": "Meli's Crafts",
+      "total_sales": 30.0,
+      "vendor_amount": 26.1,
+      "retained_amount": 3.9
+    },
+    {
+      "vendor_id": "17180",
+      "vendor_name": "Michael Morrison",
+      "total_sales": 7.0,
+      "vendor_amount": 5.25,
+      "retained_amount": 1.75
+    },
+    {
+      "vendor_id": "17043",
+      "vendor_name": "Michelle Daughs",
+      "total_sales": 8.0,
+      "vendor_amount": 6.96,
+      "retained_amount": 1.04
+    },
+    {
+      "vendor_id": "17301",
+      "vendor_name": "Patricia Nowlin",
+      "total_sales": 42.0,
+      "vendor_amount": 36.54,
+      "retained_amount": 5.46
+    },
+    {
+      "vendor_id": "17271",
+      "vendor_name": "Rachel Magana",
+      "total_sales": 55.0,
+      "vendor_amount": 47.85,
+      "retained_amount": 7.15
+    },
+    {
+      "vendor_id": "17007",
+      "vendor_name": "Rex Dietz",
+      "total_sales": 30.0,
+      "vendor_amount": 15.0,
+      "retained_amount": 15.0
+    },
+    {
+      "vendor_id": "19689",
+      "vendor_name": "Sora Blu",
+      "total_sales": 8.0,
+      "vendor_amount": 6.96,
+      "retained_amount": 1.04
+    },
+    {
+      "vendor_id": "17009",
+      "vendor_name": "Storlie's Relics",
+      "total_sales": 175.5,
+      "vendor_amount": 0.0,
+      "retained_amount": 175.5
+    },
+    {
+      "vendor_id": "17309",
+      "vendor_name": "Toba Garrett",
+      "total_sales": 82.0,
+      "vendor_amount": 71.34,
+      "retained_amount": 10.66
+    },
+    {
+      "vendor_id": "17383",
+      "vendor_name": "Wayne S. Simla",
+      "total_sales": 5.0,
+      "vendor_amount": 2.5,
+      "retained_amount": 2.5
+    },
+    {
+      "vendor_id": "17021",
+      "vendor_name": "Yakima Finds Books",
+      "total_sales": 3.0,
+      "vendor_amount": 0.0,
+      "retained_amount": 3.0
+    },
+    {
+      "vendor_id": "17010",
+      "vendor_name": "Yakima Finds Geek Stuff",
+      "total_sales": 10.0,
+      "vendor_amount": 0.0,
+      "retained_amount": 10.0
+    }
+  ],
+  "totals": {
+    "total_sales": 1121.5,
+    "total_vendor_amount": 797.57,
+    "total_retained": 323.93,
+    "vendor_count": 22
+  }
+}

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, pgEnum, decimal, serial, unique } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, pgEnum, decimal, serial, unique, date } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Enums
@@ -1493,3 +1493,53 @@ export type Permission = typeof permissions.$inferSelect;
 export type NewPermission = typeof permissions.$inferInsert;
 export type UserTypePermission = typeof userTypePermissions.$inferSelect;
 export type NewUserTypePermission = typeof userTypePermissions.$inferInsert;
+
+// ============================================================================
+// SALES METRICS
+// ============================================================================
+
+// Vendor sales detail (stored in JSONB for flexibility)
+export interface VendorSalesData {
+	vendor_id: string;
+	vendor_name: string;
+	total_sales: number;
+	vendor_amount: number;
+	retained_amount: number;
+	// Future: linked TeamTime user
+	linked_user_id?: string;
+}
+
+// Sales Snapshots - periodic captures of daily sales from LOB software
+export const salesSnapshots = pgTable('sales_snapshots', {
+	id: uuid('id').primaryKey().defaultRandom(),
+
+	// When this snapshot was captured
+	capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
+
+	// The business day this data represents
+	saleDate: date('sale_date').notNull(),
+
+	// Totals
+	totalSales: decimal('total_sales', { precision: 12, scale: 2 }).notNull(),
+	totalVendorAmount: decimal('total_vendor_amount', { precision: 12, scale: 2 }).notNull(),
+	totalRetained: decimal('total_retained', { precision: 12, scale: 2 }).notNull(),
+	vendorCount: integer('vendor_count').notNull(),
+
+	// Per-vendor breakdown (JSONB for flexibility)
+	vendors: jsonb('vendors').$type<VendorSalesData[]>().notNull(),
+
+	// Source tracking
+	source: text('source').default('scraper'), // 'scraper', 'manual', 'api'
+
+	// For linking to scheduled AI runs
+	aiRunId: uuid('ai_run_id'),
+
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Index for efficient date range queries
+// Note: Add via migration: CREATE INDEX idx_sales_snapshots_sale_date ON sales_snapshots(sale_date);
+
+// Sales Snapshot Types
+export type SalesSnapshot = typeof salesSnapshots.$inferSelect;
+export type NewSalesSnapshot = typeof salesSnapshots.$inferInsert;

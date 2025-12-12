@@ -14,8 +14,8 @@ const log = createLogger('api:office-manager:actions:reject');
 
 // POST - Reject a pending action
 export const POST: RequestHandler = async ({ locals, params }) => {
-	// Require manager or admin role
-	if (!isManager(locals.user)) {
+	// Require any authenticated user (they can only reject their own chat's actions)
+	if (!locals.user) {
 		return json({ success: false, error: 'Unauthorized' }, { status: 403 });
 	}
 

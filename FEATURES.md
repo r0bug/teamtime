@@ -8,6 +8,7 @@ This document provides detailed information about TeamTime features, their imple
 2. [Mobile Navigation](#mobile-navigation)
 3. [Push Notifications](#push-notifications)
 4. [Item Pricing & eBay Routing](#item-pricing--ebay-routing)
+5. [Sales Dashboard](#sales-dashboard)
 
 ---
 
@@ -418,14 +419,22 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 
 ### Revenue Optimizer
 
-**Purpose**: Analyze patterns across scheduling, tasks, and expenses. Write long-term observations for the Office Manager.
+**Purpose**: Analyze patterns across scheduling, tasks, expenses, and sales. Write long-term observations for the Office Manager.
 
-**Triggers**: Runs nightly for comprehensive analysis.
+**Triggers**: Runs nightly at 9pm (after store closing) for comprehensive analysis.
 
 **Available Tools**:
 - `write_memory` — Store observations about users, locations, or global patterns
 - `create_policy` — Create guidelines for the Office Manager to follow
 - `send_recommendation` — Send strategic insights to administrators
+- `analyze_sales_patterns` — Analyze sales data and staffing patterns for insights
+
+**Sales Analysis Types** (`analyze_sales_patterns` tool):
+- `daily_summary` — Sales, retained, labor cost, profit per day, sales/labor hour
+- `hourly_velocity` — How fast sales accumulate throughout the day (detects peak hours)
+- `labor_efficiency` — Which staff correlate with higher sales days
+- `vendor_performance` — Individual vendor sales, retained, days active, avg daily
+- `weekly_trends` — Week-over-week sales, profit, labor costs
 
 **Analysis Areas**:
 - Scheduling efficiency
@@ -434,6 +443,9 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 - Workflow optimization
 - Training needs
 - Cost optimization
+- **Sales profitability** (retained earnings vs labor costs)
+- **Vendor performance** tracking
+- **Staffing correlation** with sales
 
 ### Ada (Architecture Advisor)
 
@@ -493,3 +505,74 @@ All AI agents are configured in Admin → AI:
 ---
 
 *Last updated: December 2024*
+
+---
+
+## Sales Dashboard
+
+### Overview
+
+The Sales Dashboard provides visibility into daily sales, vendor performance, and profitability metrics. Data is automatically imported from NRS Accounting via an hourly scraper during business hours.
+
+### Access
+
+**URL**: `/sales` (available to all authenticated users via main navigation)
+
+### Features
+
+#### Summary Cards
+- **Total Retained**: Sum of retained earnings for the period
+- **Total Sales**: Gross sales for the period
+- **Avg Daily Retained**: Average daily retained earnings
+- **Avg Daily Sales**: Average gross daily sales
+
+#### View Modes
+
+**Daily View**:
+- Interactive line chart showing Sales vs Retained over time
+- Configurable date range (7, 14, or 30 days)
+- Hover tooltips on data points
+- Detailed table with date, sales, vendor payout, retained, and vendor count
+
+**Weekly View**:
+- Horizontal bar chart aggregating by week
+- Shows total retained with gradient bars
+- Displays number of days with data per week
+
+**Vendor View**:
+- Top vendors ranked by total sales
+- Progress bars showing relative performance
+- Shows both total sales and retained earnings per vendor
+
+### Data Collection
+
+**Sales Scraper** (`scraper-imports/`):
+- Pulls daily vendor sales from NRS Accounting
+- Runs hourly during business hours:
+  - M-S: 12pm - 8pm
+  - Sun: 1pm - 6pm
+- Stores snapshots in `sales_snapshots` table with vendor JSONB data
+
+**Import API**:
+- `POST /api/sales/import` — Accepts scraper JSON output
+- Authenticated via `CRON_SECRET` Bearer token
+
+**Query API**:
+- `GET /api/sales` — Query sales snapshots
+- Supports `?date=`, `?startDate=`, `?endDate=`, `?latest=true`, `?limit=`
+
+### Office Manager Integration
+
+The Office Manager has access to the `view_sales` tool:
+- Query any date's sales data
+- Calculate profitability (retained - labor costs)
+- Show top vendors, totals, vendor counts
+
+### Files
+
+- `src/routes/(app)/sales/+page.svelte` — Dashboard UI
+- `src/routes/(app)/sales/+page.server.ts` — Server data loading
+- `src/routes/api/sales/+server.ts` — Query API
+- `src/routes/api/sales/import/+server.ts` — Import API
+- `src/lib/ai/tools/office-manager/view-sales.ts` — Office Manager tool
+- `scraper-imports/` — NRS scraper scripts and configuration

@@ -9,8 +9,8 @@ const log = createLogger('api:office-manager:chats');
 
 // GET - List user's chat sessions
 export const GET: RequestHandler = async ({ locals }) => {
-	// Require manager or admin role
-	if (!isManager(locals.user)) {
+	// Require any authenticated user (Office Manager now supports all users with permission checking)
+	if (!locals.user) {
 		return json({ success: false, error: 'Unauthorized' }, { status: 403 });
 	}
 
@@ -38,8 +38,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 // POST - Create a new chat session
 export const POST: RequestHandler = async ({ locals, request }) => {
-	// Require manager or admin role
-	if (!isManager(locals.user)) {
+	// Require any authenticated user (Office Manager now supports all users with permission checking)
+	if (!locals.user) {
 		return json({ success: false, error: 'Unauthorized' }, { status: 403 });
 	}
 
