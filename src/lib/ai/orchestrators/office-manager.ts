@@ -369,7 +369,8 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 		}
 	} catch (error) {
 		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-		log.error('Run error occurred', { runId, error: errorMsg });
+		const errorStack = error instanceof Error ? error.stack : undefined;
+		log.error({ runId, error: errorMsg, stack: errorStack }, 'Run error occurred');
 		errors.push(errorMsg);
 	}
 

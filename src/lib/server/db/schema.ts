@@ -841,6 +841,61 @@ export const aiPolicyNotes = pgTable('ai_policy_notes', {
 });
 
 // ============================================
+// AI TOOL CONTROL PANEL TABLES
+// ============================================
+
+// AI Tool Configuration - per-tool overrides for enabling/disabling and behavior
+export const aiToolConfig = pgTable('ai_tool_config', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	agent: text('agent').notNull(), // 'office_manager' | 'revenue_optimizer' | 'architect'
+	toolName: text('tool_name').notNull(),
+	isEnabled: boolean('is_enabled').notNull().default(true),
+	requiresConfirmation: boolean('requires_confirmation'), // null = use default from tool definition
+	cooldownPerUserMinutes: integer('cooldown_per_user_minutes'),
+	cooldownGlobalMinutes: integer('cooldown_global_minutes'),
+	rateLimitMaxPerHour: integer('rate_limit_max_per_hour'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	uniqueAgentTool: unique().on(table.agent, table.toolName)
+}));
+
+// AI Tool Keywords - keywords that force a specific tool to be called
+export const aiToolKeywords = pgTable('ai_tool_keywords', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	agent: text('agent').notNull(),
+	toolName: text('tool_name').notNull(),
+	keyword: text('keyword').notNull(),
+	matchType: text('match_type').notNull().default('contains'), // 'contains' | 'exact' | 'regex'
+	isActive: boolean('is_active').notNull().default(true),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// AI Context Provider Configuration - per-provider settings
+export const aiContextConfig = pgTable('ai_context_config', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	agent: text('agent').notNull(),
+	providerId: text('provider_id').notNull(), // 'users', 'attendance', 'tasks', 'memory', 'locations', 'user_permissions'
+	isEnabled: boolean('is_enabled').notNull().default(true),
+	priorityOverride: integer('priority_override'), // null = use default from provider
+	customContext: text('custom_context'), // "Always include" text appended to provider output
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	uniqueAgentProvider: unique().on(table.agent, table.providerId)
+}));
+
+// AI Context Keywords - keywords that trigger context injection from a specific provider
+export const aiContextKeywords = pgTable('ai_context_keywords', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	agent: text('agent').notNull(),
+	providerId: text('provider_id').notNull(),
+	keyword: text('keyword').notNull(),
+	isActive: boolean('is_active').notNull().default(true),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// ============================================
 // ARCHITECTURE ADVISOR (ADA) TABLES
 // ============================================
 
@@ -1493,6 +1548,16 @@ export type Permission = typeof permissions.$inferSelect;
 export type NewPermission = typeof permissions.$inferInsert;
 export type UserTypePermission = typeof userTypePermissions.$inferSelect;
 export type NewUserTypePermission = typeof userTypePermissions.$inferInsert;
+
+// AI Tool Control Panel Types
+export type AIToolConfig = typeof aiToolConfig.$inferSelect;
+export type NewAIToolConfig = typeof aiToolConfig.$inferInsert;
+export type AIToolKeyword = typeof aiToolKeywords.$inferSelect;
+export type NewAIToolKeyword = typeof aiToolKeywords.$inferInsert;
+export type AIContextConfig = typeof aiContextConfig.$inferSelect;
+export type NewAIContextConfig = typeof aiContextConfig.$inferInsert;
+export type AIContextKeyword = typeof aiContextKeywords.$inferSelect;
+export type NewAIContextKeyword = typeof aiContextKeywords.$inferInsert;
 
 // ============================================================================
 // SALES METRICS

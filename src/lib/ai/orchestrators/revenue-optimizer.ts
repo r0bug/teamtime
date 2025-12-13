@@ -221,7 +221,8 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 		}
 	} catch (error) {
 		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-		log.error('Run error occurred', { runId, error: errorMsg });
+		const errorStack = error instanceof Error ? error.stack : undefined;
+		log.error({ runId, error: errorMsg, stack: errorStack }, 'Run error occurred');
 		errors.push(errorMsg);
 	}
 

@@ -1,14 +1,47 @@
 import type { PageServerLoad, Actions } from './$types';
 import { redirect, fail } from '@sveltejs/kit';
-import { db, aiConfig, aiActions, aiMemory, aiPolicyNotes, users } from '$lib/server/db';
+import { db, aiConfig, aiActions, aiMemory, aiPolicyNotes, users, aiToolConfig, aiToolKeywords, aiContextConfig, aiContextKeywords } from '$lib/server/db';
 import { eq, desc, and, gte } from 'drizzle-orm';
 import { isAdmin } from '$lib/server/auth/roles';
 import { getAPIKeys, saveAPIKeys, hasAPIKey, getAvailableProviders } from '$lib/ai/config/keys';
 import { MODEL_OPTIONS, TONE_DESCRIPTIONS, DEFAULT_INSTRUCTIONS } from '$lib/ai/config';
 import type { AIAgent, AIProvider, AITone } from '$lib/ai/types';
 import { createLogger } from '$lib/server/logger';
+import { officeManagerTools } from '$lib/ai/tools/office-manager';
+import { revenueOptimizerTools } from '$lib/ai/tools/revenue-optimizer';
+import { architectTools } from '$lib/ai/architect/tools';
+import { aiConfigService } from '$lib/ai/services/config-service';
 
 const log = createLogger('admin:ai');
+
+// Get tool definitions for each agent
+const AGENT_TOOLS = {
+	office_manager: officeManagerTools.map(t => ({
+		name: t.name,
+		description: t.description,
+		requiresConfirmation: t.requiresConfirmation || false
+	})),
+	revenue_optimizer: revenueOptimizerTools.map(t => ({
+		name: t.name,
+		description: t.description,
+		requiresConfirmation: t.requiresConfirmation || false
+	})),
+	architect: architectTools.map(t => ({
+		name: t.name,
+		description: t.description,
+		requiresConfirmation: t.requiresConfirmation || false
+	}))
+} as const;
+
+// Context providers that can be configured
+const CONTEXT_PROVIDERS = [
+	{ id: 'user-permissions', name: 'User Permissions', priority: 5 },
+	{ id: 'memory', name: 'AI Memory', priority: 10 },
+	{ id: 'users', name: 'Staff Roster', priority: 15 },
+	{ id: 'attendance', name: 'Attendance', priority: 20 },
+	{ id: 'tasks', name: 'Tasks', priority: 25 },
+	{ id: 'locations', name: 'Locations', priority: 30 }
+];
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!isAdmin(locals.user)) {
@@ -70,6 +103,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// Check which API keys are configured
 	const availableProviders = getAvailableProviders();
 
+	// Get tool configurations from database
+	const toolConfigs = await db.select().from(aiToolConfig);
+	const toolKeywords = await db.select().from(aiToolKeywords).where(eq(aiToolKeywords.isActive, true));
+	const contextConfigs = await db.select().from(aiContextConfig);
+	const contextKeywords = await db.select().from(aiContextKeywords).where(eq(aiContextKeywords.isActive, true));
+
 	return {
 		officeManager: officeManagerConfig || null,
 		revenueOptimizer: revenueOptimizerConfig || null,
@@ -88,7 +127,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 		hasSegmindKey: hasAPIKey('segmind'),
 		modelOptions: MODEL_OPTIONS,
 		toneDescriptions: TONE_DESCRIPTIONS,
-		defaultInstructions: DEFAULT_INSTRUCTIONS
+		defaultInstructions: DEFAULT_INSTRUCTIONS,
+		// Tool control data
+		agentTools: AGENT_TOOLS,
+		contextProviders: CONTEXT_PROVIDERS,
+		toolConfigs,
+		toolKeywords,
+		contextConfigs,
+		contextKeywords
 	};
 };
 
@@ -282,6 +328,224 @@ export const actions: Actions = {
 		} catch (error) {
 			log.error('Error adding policy', { error, contentLength: content.trim().length, priority });
 			return fail(500, { error: 'Failed to add policy' });
+		}
+	},
+
+	// Update tool configuration (enable/disable, confirmation)
+	updateToolConfig: async ({ request, locals }) => {
+		if (!isAdmin(locals.user)) {
+			return fail(403, { error: 'Not authorized' });
+		}
+
+		const formData = await request.formData();
+		const agent = formData.get('agent') as AIAgent;
+		const toolName = formData.get('toolName') as string;
+		const isEnabled = formData.get('isEnabled') === 'true';
+		const requiresConfirmation = formData.has('requiresConfirmation') ? formData.get('requiresConfirmation') === 'true' : null;
+
+		if (!agent || !toolName) {
+			return fail(400, { error: 'Agent and tool name are required' });
+		}
+
+		try {
+			// Check if config exists
+			const existing = await db
+				.select()
+				.from(aiToolConfig)
+				.where(and(eq(aiToolConfig.agent, agent), eq(aiToolConfig.toolName, toolName)))
+				.limit(1);
+
+			if (existing.length > 0) {
+				await db
+					.update(aiToolConfig)
+					.set({
+						isEnabled,
+						requiresConfirmation,
+						updatedAt: new Date()
+					})
+					.where(and(eq(aiToolConfig.agent, agent), eq(aiToolConfig.toolName, toolName)));
+			} else {
+				await db.insert(aiToolConfig).values({
+					agent,
+					toolName,
+					isEnabled,
+					requiresConfirmation
+				});
+			}
+
+			// Invalidate cache so changes take effect immediately
+			aiConfigService.invalidateCache();
+
+			return { success: true, message: `${toolName} configuration updated` };
+		} catch (error) {
+			log.error('Error updating tool config', { error, agent, toolName });
+			return fail(500, { error: 'Failed to update tool configuration' });
+		}
+	},
+
+	// Add a force keyword for a tool
+	addToolKeyword: async ({ request, locals }) => {
+		if (!isAdmin(locals.user)) {
+			return fail(403, { error: 'Not authorized' });
+		}
+
+		const formData = await request.formData();
+		const agent = formData.get('agent') as AIAgent;
+		const toolName = formData.get('toolName') as string;
+		const keyword = formData.get('keyword') as string;
+
+		if (!agent || !toolName || !keyword?.trim()) {
+			return fail(400, { error: 'Agent, tool name, and keyword are required' });
+		}
+
+		try {
+			await db.insert(aiToolKeywords).values({
+				agent,
+				toolName,
+				keyword: keyword.trim().toLowerCase(),
+				matchType: 'contains',
+				isActive: true
+			});
+
+			aiConfigService.invalidateCache();
+
+			return { success: true, message: `Keyword "${keyword}" added to ${toolName}` };
+		} catch (error) {
+			log.error('Error adding tool keyword', { error, agent, toolName, keyword });
+			return fail(500, { error: 'Failed to add keyword' });
+		}
+	},
+
+	// Remove a force keyword
+	removeToolKeyword: async ({ request, locals }) => {
+		if (!isAdmin(locals.user)) {
+			return fail(403, { error: 'Not authorized' });
+		}
+
+		const formData = await request.formData();
+		const keywordId = formData.get('keywordId') as string;
+
+		if (!keywordId) {
+			return fail(400, { error: 'Keyword ID is required' });
+		}
+
+		try {
+			await db.delete(aiToolKeywords).where(eq(aiToolKeywords.id, keywordId));
+			aiConfigService.invalidateCache();
+
+			return { success: true, message: 'Keyword removed' };
+		} catch (error) {
+			log.error('Error removing tool keyword', { error, keywordId });
+			return fail(500, { error: 'Failed to remove keyword' });
+		}
+	},
+
+	// Add a context trigger keyword
+	addContextKeyword: async ({ request, locals }) => {
+		if (!isAdmin(locals.user)) {
+			return fail(403, { error: 'Not authorized' });
+		}
+
+		const formData = await request.formData();
+		const agent = formData.get('agent') as AIAgent;
+		const providerId = formData.get('providerId') as string;
+		const keyword = formData.get('keyword') as string;
+
+		if (!agent || !providerId || !keyword?.trim()) {
+			return fail(400, { error: 'Agent, provider, and keyword are required' });
+		}
+
+		try {
+			await db.insert(aiContextKeywords).values({
+				agent,
+				providerId,
+				keyword: keyword.trim().toLowerCase(),
+				isActive: true
+			});
+
+			aiConfigService.invalidateCache();
+
+			return { success: true, message: `Context keyword "${keyword}" added` };
+		} catch (error) {
+			log.error('Error adding context keyword', { error, agent, providerId, keyword });
+			return fail(500, { error: 'Failed to add keyword' });
+		}
+	},
+
+	// Remove a context keyword
+	removeContextKeyword: async ({ request, locals }) => {
+		if (!isAdmin(locals.user)) {
+			return fail(403, { error: 'Not authorized' });
+		}
+
+		const formData = await request.formData();
+		const keywordId = formData.get('keywordId') as string;
+
+		if (!keywordId) {
+			return fail(400, { error: 'Keyword ID is required' });
+		}
+
+		try {
+			await db.delete(aiContextKeywords).where(eq(aiContextKeywords.id, keywordId));
+			aiConfigService.invalidateCache();
+
+			return { success: true, message: 'Keyword removed' };
+		} catch (error) {
+			log.error('Error removing context keyword', { error, keywordId });
+			return fail(500, { error: 'Failed to remove keyword' });
+		}
+	},
+
+	// Update context provider configuration
+	updateContextConfig: async ({ request, locals }) => {
+		if (!isAdmin(locals.user)) {
+			return fail(403, { error: 'Not authorized' });
+		}
+
+		const formData = await request.formData();
+		const agent = formData.get('agent') as AIAgent;
+		const providerId = formData.get('providerId') as string;
+		const isEnabled = formData.get('isEnabled') === 'true';
+		const priorityOverride = formData.has('priorityOverride') ? parseInt(formData.get('priorityOverride') as string, 10) : null;
+		const customContext = formData.get('customContext') as string || null;
+
+		if (!agent || !providerId) {
+			return fail(400, { error: 'Agent and provider ID are required' });
+		}
+
+		try {
+			const existing = await db
+				.select()
+				.from(aiContextConfig)
+				.where(and(eq(aiContextConfig.agent, agent), eq(aiContextConfig.providerId, providerId)))
+				.limit(1);
+
+			if (existing.length > 0) {
+				await db
+					.update(aiContextConfig)
+					.set({
+						isEnabled,
+						priorityOverride,
+						customContext,
+						updatedAt: new Date()
+					})
+					.where(and(eq(aiContextConfig.agent, agent), eq(aiContextConfig.providerId, providerId)));
+			} else {
+				await db.insert(aiContextConfig).values({
+					agent,
+					providerId,
+					isEnabled,
+					priorityOverride,
+					customContext
+				});
+			}
+
+			aiConfigService.invalidateCache();
+
+			return { success: true, message: 'Context provider configuration updated' };
+		} catch (error) {
+			log.error('Error updating context config', { error, agent, providerId });
+			return fail(500, { error: 'Failed to update context configuration' });
 		}
 	}
 };

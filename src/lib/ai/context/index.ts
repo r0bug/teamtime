@@ -5,18 +5,27 @@ import { tasksProvider } from './providers/tasks';
 import { usersProvider } from './providers/users';
 import { locationsProvider } from './providers/locations';
 import { memoryProvider } from './providers/memory';
+import { userPermissionsProvider, setCurrentUserId } from './providers/user-permissions';
+import { aiConfigService } from '../services/config-service';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('ai:context');
 
-// Registry of all context providers
+// Registry of all context providers with their default priorities
 const providers: AIContextProvider[] = [
-	memoryProvider,
-	attendanceProvider,
-	tasksProvider,
-	usersProvider,
-	locationsProvider
+	userPermissionsProvider, // First - permissions context (priority 5)
+	memoryProvider,          // Priority 10
+	attendanceProvider,      // Priority 20
+	tasksProvider,           // Priority 25
+	usersProvider,           // Priority 15
+	locationsProvider        // Priority 30
 ];
+
+// Map provider moduleId to the provider for easy lookup
+const providerMap = new Map(providers.map(p => [p.moduleId, p]));
+
+// Re-export for use by orchestrator
+export { setCurrentUserId };
 
 export async function assembleContext(
 	agent: AIAgent,
@@ -27,15 +36,40 @@ export async function assembleContext(
 	const summary: Record<string, number> = {};
 	let totalTokens = 0;
 
-	// Filter providers for this agent and sort by priority
-	const agentProviders = providers
+	// Get database-configured context provider settings
+	const providerDefaults = providers
 		.filter(p => p.agents.includes(agent))
-		.sort((a, b) => a.priority - b.priority);
+		.map(p => ({
+			providerId: p.moduleId,
+			priority: p.priority,
+			moduleName: p.moduleName
+		}));
 
-	for (const provider of agentProviders) {
+	const configuredProviders = await aiConfigService.getAllContextConfigs(agent, providerDefaults);
+
+	// Build list of providers with their effective priorities
+	const agentProviders: Array<{ provider: AIContextProvider; config: typeof configuredProviders[0] }> = [];
+	for (const config of configuredProviders) {
+		const provider = providerMap.get(config.providerId);
+		if (provider && provider.agents.includes(agent)) {
+			agentProviders.push({ provider, config });
+		}
+	}
+
+	// Sort by effective priority (config override or default)
+	agentProviders.sort((a, b) => a.config.priority - b.config.priority);
+
+	for (const { provider, config } of agentProviders) {
 		try {
-			const enabled = await provider.isEnabled();
-			if (!enabled) continue;
+			// Check if provider is enabled (DB config overrides)
+			if (!config.isEnabled) {
+				log.debug({ moduleId: provider.moduleId }, 'Skipping disabled context provider');
+				continue;
+			}
+
+			// Also check the provider's own isEnabled (runtime check)
+			const runtimeEnabled = await provider.isEnabled();
+			if (!runtimeEnabled) continue;
 
 			const context = await provider.getContext();
 			const tokenEstimate = provider.estimateTokens(context);
@@ -46,7 +80,13 @@ export async function assembleContext(
 				continue;
 			}
 
-			const content = provider.formatForPrompt(context);
+			let content = provider.formatForPrompt(context);
+
+			// Append custom context if configured
+			if (config.customContext) {
+				content += `\n\n### Additional Notes\n${config.customContext}`;
+			}
+
 			modules.push({
 				moduleId: provider.moduleId,
 				moduleName: provider.moduleName,

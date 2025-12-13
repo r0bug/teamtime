@@ -60,11 +60,21 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 
 Three specialized AI agents run in the background:
 
-**Office Manager** — Monitors attendance, flags missing staff, creates/cancels tasks, sends proactive messages, views schedules, and manages permissions. 15+ tools available. Runs on a 15-minute cron schedule during business hours.
+**Office Manager** — Monitors attendance, flags missing staff, creates/cancels tasks, sends proactive messages, views schedules, and manages permissions. 22+ tools available. Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours.
 
-**Revenue Optimizer** — Analyzes patterns across scheduling, task completion, and expenses. Writes long-term observations and creates policies for the Office Manager to follow. Runs nightly.
+**Revenue Optimizer** — Analyzes patterns across scheduling, task completion, and expenses. Writes long-term observations and creates policies for the Office Manager to follow. 4 specialized tools. Runs nightly.
 
-**Ada (Architecture Advisor)** — Interactive AI consultant for system design decisions. Uses tiered models (quick, standard, deliberate) and creates Architecture Decision Records.
+**Ada (Architecture Advisor)** — Interactive AI consultant for system design decisions. Uses tiered models (quick, standard, deliberate) and creates Architecture Decision Records. 5 tools for code analysis and documentation.
+
+### AI Control Panel
+
+Full administrative control over AI behavior via `/admin/ai → Tool Control`:
+
+- **Per-Agent Tool Configuration**: Enable/disable individual tools for each mentat
+- **Force Keywords**: Define keywords that force specific tools to run (e.g., "apply schedule" forces `create_schedule`)
+- **Context Trigger Keywords**: Keywords that inject relevant context into the AI prompt (e.g., "staff" triggers user roster loading)
+- **Hot Reload**: Configuration changes take effect within 30 seconds (no restart required)
+- **Fallback Behavior**: Code defaults are used when no database configuration exists
 
 **Supported AI Providers**:
 - Anthropic (Claude 4/3.5/3 series)
@@ -202,7 +212,7 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-37 tables organized across domains:
+41 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries
 - **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules
@@ -210,7 +220,7 @@ All endpoints require authentication except static files. Role-based authorizati
 - **Inventory**: inventory_drops, inventory_drop_photos, inventory_drop_items
 - **Expenses**: atm_withdrawals, withdrawal_allocations, purchase_requests
 - **Messaging**: conversations, messages, message_photos
-- **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes
+- **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes, ai_tool_config, ai_tool_keywords, ai_context_config, ai_context_keywords
 - **Admin**: app_settings, audit_logs, info_posts
 
 ## License

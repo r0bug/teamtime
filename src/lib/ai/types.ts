@@ -86,7 +86,7 @@ export interface ToolExecutionContext {
 export interface LLMStreamEvent {
 	type: 'text' | 'tool_use' | 'done';
 	content?: string;
-	toolCall?: { name: string; params: Record<string, unknown> };
+	toolCall?: { id?: string; name: string; params: Record<string, unknown> };
 	usage?: { inputTokens: number; outputTokens: number };
 }
 
@@ -106,6 +106,8 @@ export interface LLMRequest {
 	tools?: AITool[];
 	maxTokens?: number;
 	temperature?: number;
+	/** Force a specific tool to be called (tool_choice: tool) */
+	forcedTool?: string;
 }
 
 export interface LLMResponse {

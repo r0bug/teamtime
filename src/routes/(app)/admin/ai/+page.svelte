@@ -7,7 +7,14 @@
 	export let form: ActionData;
 
 	// Tab state
-	let activeTab: 'dashboard' | 'office-manager' | 'revenue-optimizer' | 'policies' | 'api-keys' = 'dashboard';
+	let activeTab: 'dashboard' | 'office-manager' | 'revenue-optimizer' | 'policies' | 'api-keys' | 'tool-control' = 'dashboard';
+
+	// Tool control state
+	let selectedAgent: 'office_manager' | 'revenue_optimizer' | 'architect' = 'office_manager';
+	let expandedTool: string | null = null;
+	let newKeyword = '';
+	let newContextKeyword = '';
+	let selectedProviderId = '';
 
 	// New policy form
 	let newPolicyContent = '';
@@ -32,6 +39,35 @@
 	$: if (roCurrentModels.length > 0 && !roCurrentModels.find(m => m.value === roModel)) {
 		roModel = roCurrentModels[0].value;
 	}
+
+	// Helper functions for tool control
+	function getToolConfig(agent: string, toolName: string) {
+		return data.toolConfigs.find(c => c.agent === agent && c.toolName === toolName);
+	}
+
+	function getToolKeywords(agent: string, toolName: string) {
+		return data.toolKeywords.filter(k => k.agent === agent && k.toolName === toolName);
+	}
+
+	function getContextKeywords(agent: string, providerId: string) {
+		return data.contextKeywords.filter(k => k.agent === agent && k.providerId === providerId);
+	}
+
+	function getContextConfig(agent: string, providerId: string) {
+		return data.contextConfigs.find(c => c.agent === agent && c.providerId === providerId);
+	}
+
+	function isToolEnabled(agent: string, toolName: string): boolean {
+		const config = getToolConfig(agent, toolName);
+		return config?.isEnabled ?? true; // Default enabled
+	}
+
+	function toggleTool(toolName: string) {
+		expandedTool = expandedTool === toolName ? null : toolName;
+	}
+
+	// Get tools for selected agent
+	$: currentTools = data.agentTools[selectedAgent] || [];
 </script>
 
 <svelte:head>
@@ -111,6 +147,12 @@
 					class="px-3 py-2 text-sm font-medium border-b-2 whitespace-nowrap {activeTab === 'api-keys' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
 				>
 					API Keys
+				</button>
+				<button
+					on:click={() => activeTab = 'tool-control'}
+					class="px-3 py-2 text-sm font-medium border-b-2 whitespace-nowrap {activeTab === 'tool-control' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
+				>
+					Tool Control
 				</button>
 			</nav>
 		</div>
@@ -599,6 +641,241 @@
 
 				<button type="submit" class="btn-primary w-full">Save API Keys</button>
 			</form>
+		{/if}
+
+		<!-- Tool Control Tab -->
+		{#if activeTab === 'tool-control'}
+			<div class="space-y-6">
+				<!-- Agent Selector -->
+				<div class="flex gap-2">
+					<button
+						on:click={() => selectedAgent = 'office_manager'}
+						class="px-4 py-2 rounded-lg font-medium transition-colors {selectedAgent === 'office_manager' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+					>
+						Office Manager ({data.agentTools.office_manager.length})
+					</button>
+					<button
+						on:click={() => selectedAgent = 'revenue_optimizer'}
+						class="px-4 py-2 rounded-lg font-medium transition-colors {selectedAgent === 'revenue_optimizer' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+					>
+						Revenue Optimizer ({data.agentTools.revenue_optimizer.length})
+					</button>
+					<button
+						on:click={() => selectedAgent = 'architect'}
+						class="px-4 py-2 rounded-lg font-medium transition-colors {selectedAgent === 'architect' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+					>
+						Architect ({data.agentTools.architect.length})
+					</button>
+				</div>
+
+				<!-- Tools List -->
+				<div class="card">
+					<div class="card-header">
+						<h3 class="font-semibold">Tools</h3>
+						<p class="text-sm text-gray-500">Configure which tools are enabled and their trigger keywords</p>
+					</div>
+					<div class="divide-y">
+						{#each currentTools as tool}
+							{@const config = getToolConfig(selectedAgent, tool.name)}
+							{@const keywords = getToolKeywords(selectedAgent, tool.name)}
+							{@const enabled = config?.isEnabled ?? true}
+							<div class="p-4">
+								<div class="flex items-center justify-between">
+									<div class="flex items-center gap-3">
+										<!-- Enable Toggle -->
+										<form method="POST" action="?/updateToolConfig" use:enhance={() => {
+											return async ({ update }) => {
+												await update();
+												invalidateAll();
+											};
+										}}>
+											<input type="hidden" name="agent" value={selectedAgent} />
+											<input type="hidden" name="toolName" value={tool.name} />
+											<input type="hidden" name="isEnabled" value={(!enabled).toString()} />
+											<button type="submit" class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 {enabled ? 'bg-primary-600' : 'bg-gray-200'}">
+												<span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {enabled ? 'translate-x-5' : 'translate-x-0'}"></span>
+											</button>
+										</form>
+										<div>
+											<div class="font-medium text-gray-900">{tool.name}</div>
+											<div class="text-sm text-gray-500 line-clamp-1">{tool.description}</div>
+										</div>
+									</div>
+									<div class="flex items-center gap-2">
+										{#if keywords.length > 0}
+											<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+												{keywords.length} keyword{keywords.length !== 1 ? 's' : ''}
+											</span>
+										{/if}
+										{#if tool.requiresConfirmation}
+											<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+												Requires Approval
+											</span>
+										{/if}
+										<button
+											on:click={() => toggleTool(tool.name)}
+											class="p-1 rounded hover:bg-gray-100"
+										>
+											<svg class="w-5 h-5 text-gray-500 transition-transform {expandedTool === tool.name ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+											</svg>
+										</button>
+									</div>
+								</div>
+
+								<!-- Expanded Content -->
+								{#if expandedTool === tool.name}
+									<div class="mt-4 pt-4 border-t space-y-4">
+										<!-- Force Keywords -->
+										<div>
+											<label class="block text-sm font-medium text-gray-700 mb-2">Force Keywords</label>
+											<p class="text-xs text-gray-500 mb-2">When a message contains these keywords, this tool will be forced to run</p>
+											<div class="flex flex-wrap gap-2 mb-2">
+												{#each keywords as kw}
+													<form method="POST" action="?/removeToolKeyword" use:enhance={() => {
+														return async ({ update }) => {
+															await update();
+															invalidateAll();
+														};
+													}} class="inline">
+														<input type="hidden" name="keywordId" value={kw.id} />
+														<button type="submit" class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm bg-blue-100 text-blue-800 hover:bg-blue-200 group">
+															{kw.keyword}
+															<svg class="w-3 h-3 opacity-50 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+															</svg>
+														</button>
+													</form>
+												{/each}
+												{#if keywords.length === 0}
+													<span class="text-sm text-gray-400 italic">No keywords configured</span>
+												{/if}
+											</div>
+											<form method="POST" action="?/addToolKeyword" use:enhance={() => {
+												return async ({ update }) => {
+													newKeyword = '';
+													await update();
+													invalidateAll();
+												};
+											}} class="flex gap-2">
+												<input type="hidden" name="agent" value={selectedAgent} />
+												<input type="hidden" name="toolName" value={tool.name} />
+												<input
+													type="text"
+													name="keyword"
+													bind:value={newKeyword}
+													placeholder="Add keyword..."
+													class="input flex-1 text-sm"
+												/>
+												<button type="submit" class="btn-secondary text-sm" disabled={!newKeyword.trim()}>Add</button>
+											</form>
+										</div>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Context Providers Section -->
+				<div class="card">
+					<div class="card-header">
+						<h3 class="font-semibold">Context Providers</h3>
+						<p class="text-sm text-gray-500">Configure which context is injected based on message keywords</p>
+					</div>
+					<div class="divide-y">
+						{#each data.contextProviders as provider}
+							{@const config = getContextConfig(selectedAgent, provider.id)}
+							{@const keywords = getContextKeywords(selectedAgent, provider.id)}
+							{@const enabled = config?.isEnabled ?? true}
+							<div class="p-4">
+								<div class="flex items-center justify-between">
+									<div class="flex items-center gap-3">
+										<!-- Enable Toggle -->
+										<form method="POST" action="?/updateContextConfig" use:enhance={() => {
+											return async ({ update }) => {
+												await update();
+												invalidateAll();
+											};
+										}}>
+											<input type="hidden" name="agent" value={selectedAgent} />
+											<input type="hidden" name="providerId" value={provider.id} />
+											<input type="hidden" name="isEnabled" value={(!enabled).toString()} />
+											<button type="submit" class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 {enabled ? 'bg-primary-600' : 'bg-gray-200'}">
+												<span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {enabled ? 'translate-x-5' : 'translate-x-0'}"></span>
+											</button>
+										</form>
+										<div>
+											<div class="font-medium text-gray-900">{provider.name}</div>
+											<div class="text-sm text-gray-500">Priority: {config?.priorityOverride ?? provider.priority}</div>
+										</div>
+									</div>
+									<div class="flex items-center gap-2">
+										{#if keywords.length > 0}
+											<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+												{keywords.length} trigger{keywords.length !== 1 ? 's' : ''}
+											</span>
+										{/if}
+									</div>
+								</div>
+
+								<!-- Trigger Keywords -->
+								<div class="mt-3 pt-3 border-t">
+									<label class="block text-xs font-medium text-gray-700 mb-2">Trigger Keywords</label>
+									<div class="flex flex-wrap gap-2 mb-2">
+										{#each keywords as kw}
+											<form method="POST" action="?/removeContextKeyword" use:enhance={() => {
+												return async ({ update }) => {
+													await update();
+													invalidateAll();
+												};
+											}} class="inline">
+												<input type="hidden" name="keywordId" value={kw.id} />
+												<button type="submit" class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm bg-green-100 text-green-800 hover:bg-green-200 group">
+													{kw.keyword}
+													<svg class="w-3 h-3 opacity-50 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+													</svg>
+												</button>
+											</form>
+										{/each}
+										{#if keywords.length === 0}
+											<span class="text-sm text-gray-400 italic">No triggers configured</span>
+										{/if}
+									</div>
+									<form method="POST" action="?/addContextKeyword" use:enhance={() => {
+										return async ({ update }) => {
+											newContextKeyword = '';
+											await update();
+											invalidateAll();
+										};
+									}} class="flex gap-2">
+										<input type="hidden" name="agent" value={selectedAgent} />
+										<input type="hidden" name="providerId" value={provider.id} />
+										<input
+											type="text"
+											name="keyword"
+											placeholder="Add trigger keyword..."
+											class="input flex-1 text-sm"
+										/>
+										<button type="submit" class="btn-secondary text-sm">Add</button>
+									</form>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Info Box -->
+				<div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+					<p class="text-sm text-blue-800">
+						<strong>How it works:</strong> Keywords trigger context injection or force specific tools.
+						When a user message contains a trigger keyword, the associated context provider's data is included in the AI prompt.
+						Force keywords will ensure a specific tool is called regardless of the AI's decision.
+						Changes take effect within 30 seconds (cache TTL).
+					</p>
+				</div>
+			</div>
 		{/if}
 	</div>
 </div>

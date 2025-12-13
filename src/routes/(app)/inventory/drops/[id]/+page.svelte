@@ -28,6 +28,15 @@
 	};
 	let creatingPricing = false;
 
+	// Modal state for adding new item
+	let showAddItemModal = false;
+	let addItemForm = {
+		description: '',
+		suggestedPrice: '',
+		sourcePhotoIds: [] as string[]
+	};
+	let addingItem = false;
+
 	// Computed stats
 	$: activeItems = data.drop.items.filter(i => !i.deleted);
 	$: deletedItems = data.drop.items.filter(i => i.deleted);
@@ -306,6 +315,63 @@
 
 	// Selected photo for lightbox
 	let lightboxPhoto: string | null = null;
+
+	// Add Item functions
+	function openAddItemModal() {
+		addItemForm = {
+			description: '',
+			suggestedPrice: '',
+			sourcePhotoIds: []
+		};
+		showAddItemModal = true;
+	}
+
+	function closeAddItemModal() {
+		showAddItemModal = false;
+	}
+
+	function togglePhotoSelection(photoId: string) {
+		if (addItemForm.sourcePhotoIds.includes(photoId)) {
+			addItemForm.sourcePhotoIds = addItemForm.sourcePhotoIds.filter(id => id !== photoId);
+		} else {
+			addItemForm.sourcePhotoIds = [...addItemForm.sourcePhotoIds, photoId];
+		}
+	}
+
+	async function addItem() {
+		if (!addItemForm.description.trim()) {
+			error = 'Please enter an item description';
+			return;
+		}
+
+		addingItem = true;
+		error = '';
+
+		try {
+			const response = await fetch(`/api/inventory-drops/${data.drop.id}/items`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					description: addItemForm.description.trim(),
+					suggestedPrice: addItemForm.suggestedPrice ? parseFloat(addItemForm.suggestedPrice) : null,
+					sourcePhotoIds: addItemForm.sourcePhotoIds.length > 0 ? addItemForm.sourcePhotoIds : null
+				})
+			});
+
+			if (!response.ok) {
+				const result = await response.json();
+				throw new Error(result.error || 'Failed to add item');
+			}
+
+			closeAddItemModal();
+			success = 'Item added successfully!';
+			await invalidateAll();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to add item';
+		} finally {
+			addingItem = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -516,6 +582,17 @@
 							{/if}
 						</p>
 					</div>
+					{#if !data.drop.reviewedAt}
+						<button
+							on:click={openAddItemModal}
+							class="btn-secondary text-sm"
+						>
+							<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+							</svg>
+							Add Item
+						</button>
+					{/if}
 				</div>
 				<div class="space-y-4">
 					{#each data.drop.items as item}
@@ -642,7 +719,18 @@
 	{:else if data.drop.status === 'completed'}
 		<div class="card">
 			<div class="card-body text-center py-8">
-				<p class="text-gray-600">No items were identified in this drop.</p>
+				<p class="text-gray-600 mb-4">No items were identified in this drop.</p>
+				{#if !data.drop.reviewedAt}
+					<button
+						on:click={openAddItemModal}
+						class="btn-primary"
+					>
+						<svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+						</svg>
+						Add Item Manually
+					</button>
+				{/if}
 			</div>
 		</div>
 	{:else if data.drop.status === 'processing'}
@@ -768,6 +856,99 @@
 								Creating...
 							{:else}
 								Create Pricing
+							{/if}
+						</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Add Item Modal -->
+{#if showAddItemModal}
+	<div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+		<div class="bg-white rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto" on:click|stopPropagation>
+			<div class="p-6">
+				<div class="flex items-start justify-between mb-4">
+					<h2 class="text-lg font-semibold">Add Item Manually</h2>
+					<button on:click={closeAddItemModal} class="text-gray-400 hover:text-gray-600">
+						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+					</button>
+				</div>
+
+				<form on:submit|preventDefault={addItem} class="space-y-4">
+					<div>
+						<label for="itemDescription" class="block text-sm font-medium text-gray-700 mb-1">Item Description *</label>
+						<textarea
+							id="itemDescription"
+							bind:value={addItemForm.description}
+							rows="2"
+							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+							placeholder="Describe the item (e.g., 'Vintage brass table lamp with green shade')"
+							required
+						></textarea>
+					</div>
+
+					<div>
+						<label for="suggestedPrice" class="block text-sm font-medium text-gray-700 mb-1">Suggested Price (optional)</label>
+						<div class="relative">
+							<span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+							<input
+								id="suggestedPrice"
+								type="number"
+								step="0.01"
+								min="0"
+								bind:value={addItemForm.suggestedPrice}
+								class="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+								placeholder="0.00"
+							/>
+						</div>
+					</div>
+
+					<!-- Photo Selection -->
+					{#if data.drop.photos.length > 0}
+						<div>
+							<label class="block text-sm font-medium text-gray-700 mb-2">
+								Select Photos (optional)
+								{#if addItemForm.sourcePhotoIds.length > 0}
+									<span class="font-normal text-gray-500">({addItemForm.sourcePhotoIds.length} selected)</span>
+								{/if}
+							</label>
+							<div class="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto p-1">
+								{#each data.drop.photos as photo}
+									<button
+										type="button"
+										on:click={() => togglePhotoSelection(photo.id)}
+										class="aspect-square bg-gray-100 rounded-lg overflow-hidden relative {addItemForm.sourcePhotoIds.includes(photo.id) ? 'ring-2 ring-primary-500' : 'hover:opacity-80'}"
+									>
+										<img src={photo.filePath} alt="Photo" class="w-full h-full object-cover" />
+										{#if addItemForm.sourcePhotoIds.includes(photo.id)}
+											<div class="absolute inset-0 bg-primary-500 bg-opacity-30 flex items-center justify-center">
+												<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+												</svg>
+											</div>
+										{/if}
+									</button>
+								{/each}
+							</div>
+							<p class="text-xs text-gray-500 mt-1">Click photos to select which ones show this item</p>
+						</div>
+					{/if}
+
+					<div class="flex gap-3 pt-2">
+						<button type="button" on:click={closeAddItemModal} class="btn-secondary flex-1">
+							Cancel
+						</button>
+						<button type="submit" disabled={addingItem} class="btn-primary flex-1">
+							{#if addingItem}
+								<div class="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent mr-2"></div>
+								Adding...
+							{:else}
+								Add Item
 							{/if}
 						</button>
 					</div>

@@ -267,7 +267,8 @@
 			};
 			currentMessages = [...currentMessages, confirmMsg];
 		} else {
-			alert(`Failed to confirm action: ${result.error}`);
+			// Show error - use message field (contains formatted error) or error field
+			alert(`Failed to confirm action: ${result.message || result.error || 'Unknown error'}`);
 		}
 	}
 

@@ -2,6 +2,7 @@
 import { db, inventoryDrops, inventoryDropPhotos, inventoryDropItems, tasks, users } from '$lib/server/db';
 import { eq, sql } from 'drizzle-orm';
 import { createJob } from '$lib/server/jobs/queue';
+import { processPendingJobs } from '$lib/server/jobs';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('server:inventory-drops');
@@ -72,6 +73,11 @@ export async function createDrop(input: CreateDropInput): Promise<{
 	});
 
 	log.info('Created drop with processing job', { dropId: drop.id, jobId: job.id });
+
+	// Process immediately (don't await - let it run in background)
+	processPendingJobs(1).catch(err => {
+		log.error({ error: err, dropId: drop.id }, 'Failed to process drop job immediately');
+	});
 
 	return { drop, jobId: job.id };
 }
@@ -273,6 +279,11 @@ export async function retryDrop(dropId: string, userId: string): Promise<string>
 	});
 
 	log.info('Retrying drop with new job', { dropId, jobId: job.id });
+
+	// Process immediately (don't await - let it run in background)
+	processPendingJobs(1).catch(err => {
+		log.error({ error: err, dropId }, 'Failed to process retry job immediately');
+	});
 
 	return job.id;
 }

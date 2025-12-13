@@ -8,7 +8,10 @@ This document provides detailed information about TeamTime features, their imple
 2. [Mobile Navigation](#mobile-navigation)
 3. [Push Notifications](#push-notifications)
 4. [Item Pricing & eBay Routing](#item-pricing--ebay-routing)
-5. [Sales Dashboard](#sales-dashboard)
+5. [Inventory Drops (AI-Powered)](#inventory-drops-ai-powered-batch-identification)
+6. [AI Operations Assistants](#ai-operations-assistants)
+7. [AI Control Panel](#ai-control-panel)
+8. [Sales Dashboard](#sales-dashboard)
 
 ---
 
@@ -501,6 +504,109 @@ All AI agents are configured in Admin → AI:
 - DeepSeek Chat / DeepSeek R1 (Reasoning)
 - Llama 3.1 405B/70B/8B
 - Kimi K2 (262K context)
+
+---
+
+## AI Control Panel
+
+### Overview
+
+The AI Control Panel provides administrators with full control over AI agent behavior without requiring code changes. Configure which tools are enabled, set keywords that trigger specific behaviors, and manage context injection rules—all through a web interface.
+
+### Access
+
+**URL**: Admin → AI → Tool Control (`/admin/ai`)
+
+### Features
+
+#### Per-Agent Configuration
+
+Each AI agent (Office Manager, Revenue Optimizer, Architect) can be configured independently:
+
+- **Tool Enable/Disable**: Toggle individual tools on/off
+- **Tool Confirmation Override**: Change whether a tool requires user approval
+- **Force Keywords**: Define keywords that force a specific tool to run
+- **Context Trigger Keywords**: Define keywords that inject specific context
+
+#### Tool Configuration
+
+For each tool, administrators can:
+
+1. **Enable/Disable**: Turn tools on or off without code changes
+2. **View Tool Details**: See description and default configuration
+3. **Add Force Keywords**: When a user message contains these keywords, the tool will be forced to execute
+4. **View Keyword Count**: See how many keywords are configured
+
+**Example Force Keywords**:
+- "apply schedule", "create schedule" → forces `create_schedule` tool
+- "send sms", "text message" → forces `send_sms` tool
+
+#### Context Provider Configuration
+
+Context providers inject relevant data into AI prompts. Configure:
+
+1. **Enable/Disable**: Control which context is available
+2. **Priority Override**: Change the order context is assembled
+3. **Trigger Keywords**: Define keywords that cause context injection
+4. **Custom Context**: Add custom text to always include
+
+**Available Context Providers**:
+| Provider | Description | Default Priority |
+|----------|-------------|------------------|
+| User Permissions | Current user's access rights | 5 |
+| AI Memory | Stored observations and learnings | 10 |
+| Staff Roster | Active users with IDs | 15 |
+| Attendance | Clock-in/out status | 20 |
+| Tasks | Pending and recent tasks | 25 |
+| Locations | Store locations | 30 |
+
+**Example Context Keywords**:
+- "schedule", "shift", "staff" → triggers Staff Roster context injection
+- "task", "assignment" → triggers Tasks context injection
+
+### Technical Implementation
+
+#### Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `ai_tool_config` | Per-tool enable/disable and settings |
+| `ai_tool_keywords` | Force keywords per tool |
+| `ai_context_config` | Per-provider enable/disable and priority |
+| `ai_context_keywords` | Trigger keywords per provider |
+
+#### Cache Behavior
+
+- **30-second TTL**: Configuration changes take effect within 30 seconds
+- **Hot Reload**: No server restart required
+- **Fallback**: Code defaults used when no database config exists
+- **Immediate Invalidation**: Admin changes clear cache instantly
+
+#### API Integration
+
+The configuration service is used by:
+- `orchestrator.ts` — Checks force keywords before LLM calls
+- `context/index.ts` — Filters and orders context providers
+- Admin UI — CRUD operations via form actions
+
+### Files
+
+- **Service**: `src/lib/ai/services/config-service.ts`
+- **Schema**: `src/lib/server/db/schema.ts` (ai_tool_*, ai_context_* tables)
+- **Admin UI**: `src/routes/(app)/admin/ai/+page.svelte` (Tool Control tab)
+- **Server Actions**: `src/routes/(app)/admin/ai/+page.server.ts`
+
+### Usage Example
+
+**Scenario**: You want "create schedule" requests to always use the `create_schedule` tool, even if the AI might otherwise just describe what it would do.
+
+1. Go to Admin → AI → Tool Control
+2. Select "Office Manager" agent
+3. Find `create_schedule` tool and expand it
+4. Add force keyword: "create schedule"
+5. Add force keyword: "apply schedule"
+
+Now when a user says "create a schedule for next week", the system will force the `create_schedule` tool to run.
 
 ---
 

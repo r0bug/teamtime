@@ -1,7 +1,7 @@
 // Office Manager Chat Orchestrator
 // Single-model approach with confirmation workflow for dangerous actions
 import { randomUUID } from 'crypto';
-import { anthropicProvider } from '../../providers/anthropic';
+import { anthropicProvider, streamWithToolResults, type ToolResult } from '../../providers/anthropic';
 import { officeManagerTools } from '../../tools/office-manager';
 import {
 	getChatSession,
@@ -18,6 +18,9 @@ import { assembleOfficeManagerContext } from '../context';
 import type { AITool, ToolExecutionContext, LLMRequest } from '../../types';
 import type { OfficeManagerMessage } from '$lib/server/db/schema';
 import { createLogger } from '$lib/server/logger';
+import { db, users } from '$lib/server/db';
+import { eq } from 'drizzle-orm';
+import { aiConfigService } from '../../services/config-service';
 
 const log = createLogger('ai:office-manager:chat');
 
@@ -26,26 +29,38 @@ const OFFICE_MANAGER_SYSTEM_PROMPT = `You are the Office Manager AI assistant fo
 
 Your role is to help ALL users with their tasks - from basic staff to managers and admins. Different users have different permission levels.
 
-## CRITICAL: Permission Checking (MUST DO FIRST)
+## Permissions
 
-At the START of EVERY new conversation, you MUST call the \`get_my_permissions\` tool FIRST before doing anything else. This tells you:
-- The user's role and permission level
-- Which tools you are ALLOWED to use for this user
-- Which tools you must NOT attempt
+The user's permissions are provided in the context below under "Your Permissions for This User".
+- ONLY use tools listed under "ALLOWED Tools"
+- NEVER attempt to use tools listed under "DENIED Tools"
+- If a user asks for something you cannot do, politely explain and suggest they contact a manager
 
-NEVER attempt to use a tool that the user doesn't have permission for. If they ask for something they can't do, politely explain and suggest they contact a manager.
+## CRITICAL: You Must Use Tools - NEVER just describe actions
 
-## Multi-Step Tasks
+When a user asks you to DO something (create, apply, schedule, send, etc.), you MUST call tools. NEVER respond with only text like "I'll do this" or "Let me create that" - that is WRONG.
 
-When a user request requires multiple tools:
-1. First call \`get_my_permissions\` to understand what you can do
-2. Plan all the steps needed
-3. Execute tools ONE AT A TIME in sequence
-4. After each tool completes, immediately call the next one
-5. If using \`continue_work\`, call it to signal you have more work to do
-6. Complete ALL steps before giving your final response
+### Example - User says "apply this schedule for Emily and Patty next week"
 
-IMPORTANT: Do not stop after the first tool. If you need to use multiple tools, keep going until the task is complete.
+**WRONG RESPONSE** (DO NOT DO THIS):
+"I'll create the schedule for next week. Let me apply this weekly pattern."
+
+**CORRECT RESPONSE** (DO THIS):
+Call get_available_staff tool immediately to get user IDs, then call create_schedule.
+
+### Rules:
+1. If user asks to CREATE/APPLY/SCHEDULE something → call a tool NOW
+2. If you need user IDs from names → call get_available_staff FIRST
+3. NEVER say "I'll do X" without actually calling a tool in the same response
+4. Text-only responses are ONLY acceptable for questions/clarifications, NOT action requests
+
+## Multi-Step Schedule Creation
+
+When creating schedules with staff names (Emily, Patty, Michael, etc.):
+1. IMMEDIATELY call get_available_staff to get their user IDs
+2. Match names to IDs from the result
+3. Call create_schedule with the matched user IDs
+4. Do NOT just describe what you'll do - actually do it
 
 ## Available Capabilities (subject to user permissions)
 
@@ -74,7 +89,7 @@ Use these when:
 - For scheduling changes, always consider who is currently working
 - Be careful with SMS - only use for urgent matters
 - When creating tasks, set appropriate priorities
-- ALWAYS respect the user's permission level
+- ALWAYS respect the user's permission level shown in the context
 
 ## Permission Management Guidelines (Admin Only)
 - Use permission tools to temporarily adjust user access when needed
@@ -88,6 +103,74 @@ Use these when:
 - Changes to manager-level user types require human approval
 
 Current context about the business will be provided. Use this to inform your responses.`;
+
+// Staff names to watch for (common names that might be in scheduling requests)
+// This remains hardcoded since staff names are dynamic per installation
+const STAFF_NAME_PATTERNS = /\b(emily|patty|michael|dale|terrance|terrence)\b/i;
+
+/**
+ * Check if a message contains keywords that should trigger context injection
+ * Uses the database-driven config service for dynamic keyword management
+ */
+async function needsStaffContext(message: string): Promise<boolean> {
+	// Check for staff names (always triggers staff context)
+	const hasStaffName = STAFF_NAME_PATTERNS.test(message);
+	if (hasStaffName) return true;
+
+	// Check database-configured context trigger keywords
+	const triggeredProviders = await aiConfigService.findTriggeredContextProviders('office_manager', message);
+	// If 'users' provider is triggered, we need staff context
+	return triggeredProviders.includes('users');
+}
+
+/**
+ * Check which tool (if any) should be forced based on message keywords
+ * Uses the database-driven config service for dynamic keyword management
+ */
+async function findForcedTool(message: string): Promise<string | null> {
+	// Check database-configured force keywords
+	const forcedTool = await aiConfigService.findForcedTool('office_manager', message);
+
+	// For create_schedule, also require staff names for safety
+	if (forcedTool === 'create_schedule') {
+		const hasStaffName = STAFF_NAME_PATTERNS.test(message);
+		return hasStaffName ? forcedTool : null;
+	}
+
+	return forcedTool;
+}
+
+/**
+ * Pre-fetch staff list with IDs and names for context enrichment
+ */
+async function getStaffListForContext(): Promise<string> {
+	try {
+		const staffList = await db
+			.select({
+				id: users.id,
+				name: users.name,
+				role: users.role
+			})
+			.from(users)
+			.where(eq(users.isActive, true));
+
+		if (staffList.length === 0) {
+			return '';
+		}
+
+		const lines = ['## Staff Directory (for scheduling - use these exact IDs)'];
+		for (const staff of staffList) {
+			lines.push(`- **${staff.name}** (${staff.role}): ID = \`${staff.id}\``);
+		}
+		lines.push('');
+		lines.push('When creating schedules, use the user IDs above, not names.');
+
+		return lines.join('\n');
+	} catch (error) {
+		log.error({ error }, 'Failed to fetch staff list for context');
+		return '';
+	}
+}
 
 export interface ProcessMessageResult {
 	response: string;
@@ -127,8 +210,8 @@ export async function processUserMessage(
 	// Add user message to chat
 	await addUserMessage(chatId, userMessage);
 
-	// Assemble context
-	const context = await assembleOfficeManagerContext();
+	// Assemble context with user permissions
+	const context = await assembleOfficeManagerContext(3000, userId);
 
 	// Build conversation history for the LLM
 	const conversationHistory = buildConversationHistory(session.messages);
@@ -398,8 +481,19 @@ export interface StreamEvent {
 	error?: string;
 }
 
+// Track executed tool calls with their IDs for continuation
+interface ExecutedToolCall {
+	id: string;
+	name: string;
+	params: Record<string, unknown>;
+	result: unknown;
+	requiresConfirmation: boolean;
+	pendingActionId?: string;
+}
+
 /**
  * Process a user message with streaming response
+ * Supports multi-turn tool use - continues calling LLM until no more tool calls
  * @param chatId - The chat session ID
  * @param userMessage - The user's message
  * @param model - The LLM model to use
@@ -411,36 +505,64 @@ export async function* processUserMessageStream(
 	model = 'claude-sonnet-4-20250514',
 	requestingUserId?: string
 ): AsyncGenerator<StreamEvent> {
+	log.info({ chatId, userMessage: userMessage.substring(0, 100), requestingUserId }, 'STREAM START: processUserMessageStream called');
+
 	// Get the chat session
+	log.debug({ chatId }, 'STREAM: Getting chat session...');
 	const session = await getChatSession(chatId);
 	if (!session) {
+		log.error({ chatId }, 'STREAM ERROR: Chat session not found');
 		yield { type: 'error', error: `Chat session ${chatId} not found` };
 		return;
 	}
+	log.debug({ chatId, messageCount: session.messages.length }, 'STREAM: Session retrieved');
 
 	// Use the session's userId if requestingUserId not provided
 	const userId = requestingUserId || session.userId;
 
 	// Add user message to chat
+	log.debug({ chatId }, 'STREAM: Adding user message to chat...');
 	await addUserMessage(chatId, userMessage);
+	log.debug({ chatId }, 'STREAM: User message added');
 
-	// Assemble context
-	const context = await assembleOfficeManagerContext();
+	// Assemble context with user permissions
+	log.debug({ chatId, userId }, 'STREAM: Assembling context...');
+	const context = await assembleOfficeManagerContext(3000, userId);
+	log.debug({ chatId, contextLength: context.length }, 'STREAM: Context assembled');
+
+	// Check if we need to pre-fetch staff data for scheduling requests (using config service)
+	let staffContext = '';
+	const shouldFetchStaff = await needsStaffContext(userMessage);
+	if (shouldFetchStaff) {
+		log.info({ chatId }, 'STREAM: Context trigger keywords matched, pre-fetching staff data');
+		staffContext = await getStaffListForContext();
+		log.debug({ chatId, staffContextLength: staffContext.length }, 'STREAM: Staff context fetched');
+	}
 
 	// Build conversation history for the LLM
 	const conversationHistory = buildConversationHistory(session.messages);
+	log.debug({ chatId, historyLength: conversationHistory.length }, 'STREAM: Conversation history built');
 
 	// Build the user prompt with context
 	const userPrompt = `${conversationHistory}
 
 ## Current Context
 ${context}
+${staffContext ? '\n' + staffContext : ''}
 
 ## User Message
-${userMessage}`;
+${userMessage}
+
+${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly with create_schedule - do NOT call get_available_staff first.' : ''}`;
 
 	// Get tools formatted for the LLM
 	const tools = officeManagerTools;
+
+	// Check if we should force a specific tool (using database-configured keywords)
+	const forcedToolName = await findForcedTool(userMessage);
+	if (forcedToolName) {
+		log.info({ chatId, forcedTool: forcedToolName }, 'STREAM: Force keyword matched, forcing tool');
+	}
 
 	// Make the streaming LLM request
 	const request: LLMRequest = {
@@ -448,32 +570,61 @@ ${userMessage}`;
 		systemPrompt: OFFICE_MANAGER_SYSTEM_PROMPT,
 		userPrompt,
 		tools,
-		maxTokens: 2048,
-		temperature: 0.3
+		maxTokens: 4096, // Increased for large schedule creation
+		temperature: 0.3,
+		forcedTool: forcedToolName || undefined
 	};
 
 	const runId = randomUUID();
 	let fullContent = '';
-	const processedToolCalls: ProcessMessageResult['toolCalls'] = [];
+	const allToolCalls: ExecutedToolCall[] = [];
 	const pendingActions: PendingAction[] = [];
 	let tokensUsed = 0;
+	const MAX_CONTINUATION_TURNS = 5; // Prevent infinite loops
+
+	log.info({ chatId, runId, model }, 'STREAM: Starting LLM request');
 
 	try {
 		if (!anthropicProvider.stream) {
+			log.error({ chatId }, 'STREAM ERROR: Streaming not supported');
 			throw new Error('Streaming not supported by this provider');
 		}
+
+		// Track messages for multi-turn continuation
+		// For Anthropic API, we need: user message, then assistant response with tool_use
+		const messages: Array<{ role: 'user' | 'assistant'; content: string | Array<{type: string; [key: string]: unknown}> }> = [
+			{ role: 'user', content: userPrompt }
+		];
+
+		let continuationTurn = 0;
+		let needsContinuation = false;
+		let currentTurnToolCalls: ExecutedToolCall[] = [];
+		let currentTurnContent = '';
+
+		log.info({ chatId, promptLength: userPrompt.length, toolCount: tools.length }, 'STREAM: Calling anthropicProvider.stream');
+		// First turn - use the normal stream
+		let chunkCount = 0;
 		for await (const chunk of anthropicProvider.stream(request)) {
+			chunkCount++;
+			if (chunkCount === 1) {
+				log.info({ chatId }, 'STREAM: First chunk received from LLM');
+			}
 			if (chunk.type === 'text' && chunk.content) {
 				fullContent += chunk.content;
+				currentTurnContent += chunk.content;
 				yield { type: 'text', content: chunk.content };
 			} else if (chunk.type === 'tool_use' && chunk.toolCall) {
-				const { name, params } = chunk.toolCall;
+				const { id, name, params } = chunk.toolCall;
+				const toolId = id || `tool_${randomUUID().slice(0, 8)}`;
 				log.info({ toolName: name, params }, 'Tool called with params');
 				yield { type: 'tool_start', toolName: name, toolParams: params };
 
 				const tool = tools.find(t => t.name === name);
 				if (!tool) {
-					yield { type: 'tool_result', toolName: name, result: { error: `Unknown tool: ${name}` } };
+					const result = { error: `Unknown tool: ${name}` };
+					currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+					yield { type: 'tool_result', toolName: name, result };
+					needsContinuation = true;
 					continue;
 				}
 
@@ -491,12 +642,13 @@ ${userMessage}`;
 					);
 
 					pendingActions.push(pendingAction);
-
-					processedToolCalls.push({
+					currentTurnToolCalls.push({
+						id: toolId,
 						name,
 						params,
-						pendingActionId: pendingAction.id,
-						requiresConfirmation: true
+						result: { pending: true, confirmationMessage },
+						requiresConfirmation: true,
+						pendingActionId: pendingAction.id
 					});
 
 					yield {
@@ -514,6 +666,7 @@ ${userMessage}`;
 						toolParams: params,
 						executed: false
 					});
+					// Don't continue for pending confirmations
 				} else {
 					// Execute the tool immediately
 					const executionContext: ToolExecutionContext = {
@@ -528,14 +681,15 @@ ${userMessage}`;
 					const validation = tool.validate(params);
 					if (!validation.valid) {
 						const result = { error: validation.error };
-						processedToolCalls.push({ name, params, result, requiresConfirmation: false });
+						currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
 						yield { type: 'tool_result', toolName: name, result };
+						needsContinuation = true;
 						continue;
 					}
 
 					try {
 						const result = await tool.execute(params, executionContext);
-						processedToolCalls.push({ name, params, result, requiresConfirmation: false });
+						currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
 
 						// Format result for human-readable display
 						const formattedResult = tool.formatResult ? tool.formatResult(result) : undefined;
@@ -550,11 +704,15 @@ ${userMessage}`;
 							executed: true,
 							executionResult: result as Record<string, unknown>
 						});
+
+						// We executed a tool - need to continue the conversation
+						needsContinuation = true;
 					} catch (error) {
 						const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 						const result = { error: errorMessage };
-						processedToolCalls.push({ name, params, result, requiresConfirmation: false });
+						currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
 						yield { type: 'tool_result', toolName: name, result };
+						needsContinuation = true;
 
 						await logAIAction({
 							runId,
@@ -568,8 +726,183 @@ ${userMessage}`;
 					}
 				}
 			} else if (chunk.type === 'done' && chunk.usage) {
-				tokensUsed = chunk.usage.inputTokens + chunk.usage.outputTokens;
+				tokensUsed += chunk.usage.inputTokens + chunk.usage.outputTokens;
+				log.info({ chatId, chunkCount, tokensUsed }, 'STREAM: First turn complete');
 			}
+		}
+
+		log.info({ chatId, toolCallCount: currentTurnToolCalls.length, needsContinuation, contentLength: currentTurnContent.length }, 'STREAM: First turn finished, checking continuation');
+
+		// Add tool calls from first turn to the total
+		allToolCalls.push(...currentTurnToolCalls);
+
+		// Multi-turn continuation loop
+		while (needsContinuation && continuationTurn < MAX_CONTINUATION_TURNS) {
+			continuationTurn++;
+			needsContinuation = false;
+			log.info({ chatId, turn: continuationTurn, pendingToolCalls: currentTurnToolCalls.length }, 'STREAM: Starting continuation turn');
+
+			// Build the assistant message with tool_use blocks for the previous turn
+			// IMPORTANT: Must include ALL tool_use blocks - Anthropic requires a tool_result for each one
+			const assistantContent: Array<{type: string; [key: string]: unknown}> = [];
+			if (currentTurnContent) {
+				assistantContent.push({ type: 'text', text: currentTurnContent });
+			}
+			for (const tc of currentTurnToolCalls) {
+				// Include ALL tool_use blocks, even confirmation-required ones
+				assistantContent.push({
+					type: 'tool_use',
+					id: tc.id,
+					name: tc.name,
+					input: tc.params
+				});
+			}
+
+			// Add assistant message to history
+			messages.push({ role: 'assistant', content: assistantContent });
+
+			// Build tool results for ALL tools - Anthropic requires tool_result for every tool_use
+			const toolResults: ToolResult[] = currentTurnToolCalls.map(tc => ({
+				toolUseId: tc.id,
+				toolName: tc.name,
+				// For confirmation-required tools, return the pending status as the result
+				result: tc.result,
+				isError: !!(tc.result && typeof tc.result === 'object' && 'error' in tc.result)
+			}));
+
+			// Reset for the next turn
+			currentTurnToolCalls = [];
+			currentTurnContent = '';
+
+			// Build tool result content for adding to history after this turn completes
+			const toolResultContentForHistory: Array<{type: string; [key: string]: unknown}> = toolResults.map(tr => ({
+				type: 'tool_result' as const,
+				tool_use_id: tr.toolUseId,
+				content: typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result),
+				is_error: tr.isError === true ? true : undefined // Only include if actually an error
+			}));
+
+			log.info({
+				chatId,
+				turn: continuationTurn,
+				toolResultCount: toolResults.length,
+				toolIds: toolResults.map(tr => tr.toolUseId)
+			}, 'STREAM: Calling streamWithToolResults');
+			// Continue the conversation with tool results
+			let contChunkCount = 0;
+			for await (const chunk of streamWithToolResults(request, messages, toolResults)) {
+				contChunkCount++;
+				if (contChunkCount === 1) {
+					log.info({ chatId, turn: continuationTurn }, 'STREAM: First continuation chunk received');
+				}
+				if (chunk.type === 'text' && chunk.content) {
+					fullContent += chunk.content;
+					currentTurnContent += chunk.content;
+					yield { type: 'text', content: chunk.content };
+				} else if (chunk.type === 'tool_use' && chunk.toolCall) {
+					const { id, name, params } = chunk.toolCall;
+					const toolId = id || `tool_${randomUUID().slice(0, 8)}`;
+					log.info({ toolName: name, params, turn: continuationTurn }, 'Tool called in continuation');
+					yield { type: 'tool_start', toolName: name, toolParams: params };
+
+					const tool = tools.find(t => t.name === name);
+					if (!tool) {
+						const result = { error: `Unknown tool: ${name}` };
+						currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+						yield { type: 'tool_result', toolName: name, result };
+						needsContinuation = true;
+						continue;
+					}
+
+					// Same tool execution logic as first turn
+					if (tool.requiresConfirmation) {
+						const confirmationMessage = tool.getConfirmationMessage
+							? tool.getConfirmationMessage(params)
+							: `Confirm action: ${name}?`;
+
+						const pendingAction = await createPendingAction(
+							chatId,
+							name,
+							params,
+							confirmationMessage
+						);
+
+						pendingActions.push(pendingAction);
+						currentTurnToolCalls.push({
+							id: toolId,
+							name,
+							params,
+							result: { pending: true, confirmationMessage },
+							requiresConfirmation: true,
+							pendingActionId: pendingAction.id
+						});
+
+						yield {
+							type: 'pending_action',
+							toolName: name,
+							pendingActionId: pendingAction.id,
+							confirmationMessage
+						};
+					} else {
+						const executionContext: ToolExecutionContext = {
+							runId,
+							agent: 'office_manager',
+							dryRun: false,
+							config: { provider: 'anthropic', model },
+							chatId,
+							userId
+						};
+
+						const validation = tool.validate(params);
+						if (!validation.valid) {
+							const result = { error: validation.error };
+							currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+							yield { type: 'tool_result', toolName: name, result };
+							needsContinuation = true;
+							continue;
+						}
+
+						try {
+							const result = await tool.execute(params, executionContext);
+							currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+
+							const formattedResult = tool.formatResult ? tool.formatResult(result) : undefined;
+							yield { type: 'tool_result', toolName: name, result, formattedResult };
+
+							await logAIAction({
+								runId,
+								provider: 'anthropic',
+								model,
+								toolName: name,
+								toolParams: params,
+								executed: true,
+								executionResult: result as Record<string, unknown>
+							});
+
+							needsContinuation = true;
+						} catch (error) {
+							const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+							const result = { error: errorMessage };
+							currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+							yield { type: 'tool_result', toolName: name, result };
+							needsContinuation = true;
+						}
+					}
+				} else if (chunk.type === 'done' && chunk.usage) {
+					tokensUsed += chunk.usage.inputTokens + chunk.usage.outputTokens;
+				}
+			}
+
+			// Add this turn's tool calls to the total
+			allToolCalls.push(...currentTurnToolCalls);
+
+			// Add the tool results to message history for subsequent turns
+			// This ensures Anthropic API receives complete tool_use/tool_result pairs
+			messages.push({ role: 'user', content: toolResultContentForHistory });
+		}
+
+		if (continuationTurn >= MAX_CONTINUATION_TURNS) {
+			log.warn({ chatId, turns: continuationTurn }, 'Hit max continuation turns limit');
 		}
 
 		// Build the full response content
@@ -581,9 +914,9 @@ ${userMessage}`;
 			}
 		}
 
-		// Save the assistant message
-		const messageToolCalls = processedToolCalls.length > 0
-			? processedToolCalls.map(tc => ({
+		// Save the assistant message with all tool calls
+		const messageToolCalls = allToolCalls.length > 0
+			? allToolCalls.map(tc => ({
 				name: tc.name,
 				params: tc.params,
 				result: tc.result,
@@ -591,11 +924,15 @@ ${userMessage}`;
 			}))
 			: undefined;
 
+		log.debug({ chatId }, 'STREAM: Saving assistant message...');
 		await addAssistantMessage(chatId, responseContent, messageToolCalls);
 
+		log.info({ chatId, totalToolCalls: allToolCalls.length, tokensUsed, pendingActionCount: pendingActions.length }, 'STREAM COMPLETE: Finished successfully');
 		yield { type: 'done', tokensUsed };
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+		const errorStack = error instanceof Error ? error.stack : undefined;
+		log.error({ chatId, error: errorMessage, stack: errorStack }, 'STREAM ERROR: Exception caught');
 		yield { type: 'error', error: errorMessage };
 	}
 }
