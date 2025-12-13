@@ -11,7 +11,8 @@ This document provides detailed information about TeamTime features, their imple
 5. [Inventory Drops (AI-Powered)](#inventory-drops-ai-powered-batch-identification)
 6. [AI Operations Assistants](#ai-operations-assistants)
 7. [AI Control Panel](#ai-control-panel)
-8. [Sales Dashboard](#sales-dashboard)
+8. [Timezone Handling](#timezone-handling)
+9. [Sales Dashboard](#sales-dashboard)
 
 ---
 
@@ -607,6 +608,68 @@ The configuration service is used by:
 5. Add force keyword: "apply schedule"
 
 Now when a user says "create a schedule for next week", the system will force the `create_schedule` tool to run.
+
+---
+
+## Timezone Handling
+
+### Overview
+
+TeamTime operates in **Pacific Time (America/Los_Angeles)** for all business operations. The server runs in UTC, but all date/time operations are converted to/from Pacific timezone automatically.
+
+### Key Behaviors
+
+#### Server-Side Operations
+
+All server-side date/time operations use Pacific timezone:
+
+- **Clock In/Out**: Times recorded in Pacific, stored as UTC
+- **Task Due Dates**: "End of day" means 11:59 PM Pacific
+- **Task Rules**: Time windows (e.g., "before 10 AM") evaluated in Pacific
+- **Cron Jobs**: Day-of-week and hour checks use Pacific time
+- **Reports**: Date range filtering uses Pacific day boundaries
+- **AI Context**: All date references provided to AI in Pacific format
+
+#### Client-Side Display
+
+All times displayed to users are in Pacific timezone:
+
+- Dashboard clock times
+- Message timestamps
+- Schedule views
+- "Today" indicators
+
+#### DST Handling
+
+The timezone utility automatically handles Daylight Saving Time:
+- **PST** (Pacific Standard Time): UTC-8 (November - March)
+- **PDT** (Pacific Daylight Time): UTC-7 (March - November)
+
+### Technical Implementation
+
+**Centralized Utility**: `src/lib/server/utils/timezone.ts`
+
+```typescript
+// Key functions available:
+parsePacificDatetime(datetimeLocal)   // Parse datetime-local as Pacific
+getPacificDayBounds(date)             // Get start/end of day in Pacific
+getPacificDateParts(date)             // Get year/month/day/hour/etc in Pacific
+toPacificDateString(date)             // Format as "Dec 13, 2025"
+toPacificTimeString(date)             // Format as "9:30 AM"
+toPacificDateTimeString(date)         // Full datetime format
+createPacificDateTime(dateStr, h, m)  // Create Date from Pacific components
+```
+
+### Why Pacific Time?
+
+TeamTime was built for Yakima Finds, a business operating in Washington State (Pacific timezone). All scheduling, task rules, and business logic are designed around Pacific business hours.
+
+### Important Notes
+
+1. **Database Storage**: All timestamps stored in UTC (PostgreSQL default)
+2. **API Responses**: Dates returned as ISO strings (UTC)
+3. **Form Inputs**: `datetime-local` inputs interpreted as Pacific
+4. **First Clock-In**: "First clock-in of the day" triggers at Pacific midnight, not UTC midnight
 
 ---
 

@@ -17,6 +17,10 @@ export function setCurrentUserId(userId: string | null) {
 	currentUserId = userId;
 }
 
+export function getCurrentUserId(): string | null {
+	return currentUserId;
+}
+
 interface PermissionsContext {
 	userId: string | null;
 	userName: string | null;

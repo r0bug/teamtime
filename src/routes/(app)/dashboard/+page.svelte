@@ -24,7 +24,7 @@
 	<div class="mb-6">
 		<h1 class="text-2xl font-bold text-gray-900">Hello, {user?.name?.split(' ')[0]}</h1>
 		<p class="text-gray-600">
-			{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+			{new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'long', month: 'long', day: 'numeric' })}
 		</p>
 	</div>
 
@@ -44,7 +44,7 @@
 				<div class="mb-4">
 					<p class="text-sm text-gray-600">Started at</p>
 					<p class="text-xl font-semibold">
-						{new Date(activeTimeEntry.clockIn).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+						{new Date(activeTimeEntry.clockIn).toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' })}
 					</p>
 					{#if activeTimeEntry.clockInAddress}
 						<p class="text-sm text-gray-500">{activeTimeEntry.clockInAddress}</p>
@@ -66,9 +66,9 @@
 					<div class="mb-4">
 						<p class="text-sm text-gray-600">Next Shift</p>
 						<p class="text-xl font-semibold">
-							{new Date(nextShift.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+							{new Date(nextShift.startTime).toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' })}
 							-
-							{new Date(nextShift.endTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+							{new Date(nextShift.endTime).toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' })}
 						</p>
 						{#if nextShift.location}
 							<p class="text-sm text-gray-500">{nextShift.location.name}</p>

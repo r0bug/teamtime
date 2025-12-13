@@ -3,6 +3,7 @@ import { db, shifts, users, locations } from '$lib/server/db';
 import { eq, inArray } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { createPacificDateTime } from '$lib/server/utils/timezone';
 
 const log = createLogger('ai:tools:create-schedule');
 
@@ -183,17 +184,16 @@ export const createScheduleTool: AITool<CreateScheduleParams, CreateScheduleResu
 					continue;
 				}
 
-				// Parse date and times
-				const [year, month, day] = assignment.date.split('-').map(Number);
+				// Parse date and times as Pacific timezone
 				const [startHour, startMin] = assignment.startTime.split(':').map(Number);
 				const [endHour, endMin] = assignment.endTime.split(':').map(Number);
 
-				const startTime = new Date(year, month - 1, day, startHour, startMin);
-				let endTime = new Date(year, month - 1, day, endHour, endMin);
+				const startTime = createPacificDateTime(assignment.date, startHour, startMin);
+				let endTime = createPacificDateTime(assignment.date, endHour, endMin);
 
 				// Handle overnight shifts (end time before start time)
 				if (endTime <= startTime) {
-					endTime.setDate(endTime.getDate() + 1);
+					endTime = new Date(endTime.getTime() + 24 * 60 * 60 * 1000);
 				}
 
 				try {

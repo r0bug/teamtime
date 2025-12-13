@@ -95,7 +95,7 @@
 	<div class="grid grid-cols-7 gap-1 lg:gap-2">
 		{#each weekDays as day}
 			{@const dayShifts = getShiftsForDay(day)}
-			{@const isToday = day.toDateString() === new Date().toDateString()}
+			{@const isToday = day.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' }) === new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' })}
 			<div class="min-h-[120px] lg:min-h-[200px]">
 				<div class="text-center py-2 font-medium {isToday ? 'bg-primary-100 text-primary-700 rounded-t-lg' : 'bg-gray-100'}">
 					<div class="text-xs lg:text-sm">{day.toLocaleDateString('en-US', { weekday: 'short' })}</div>

@@ -4,6 +4,7 @@ import { db, users, shifts, locations, storeHours, appSettings } from '$lib/serv
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
 import { createLogger } from '$lib/server/logger';
+import { parsePacificDatetime } from '$lib/server/utils/timezone';
 
 const log = createLogger('admin:schedule');
 
@@ -239,8 +240,8 @@ export const actions: Actions = {
 			await db.insert(shifts).values({
 				userId,
 				locationId: locationId || null,
-				startTime: new Date(startTime),
-				endTime: new Date(endTime),
+				startTime: parsePacificDatetime(startTime),
+				endTime: parsePacificDatetime(endTime),
 				notes: notes || null,
 				createdBy: locals.user?.id
 			});
@@ -296,8 +297,8 @@ export const actions: Actions = {
 				.set({
 					userId: userId || undefined,
 					locationId: locationId || null,
-					startTime: new Date(startTime),
-					endTime: new Date(endTime),
+					startTime: parsePacificDatetime(startTime),
+					endTime: parsePacificDatetime(endTime),
 					notes: notes || null,
 					updatedAt: new Date()
 				})
@@ -356,19 +357,21 @@ export const actions: Actions = {
 			// Create shifts for each week
 			for (let week = 0; week < repeatCount; week++) {
 				for (const dateStr of dates) {
-					const baseDate = new Date(dateStr);
-					// Add weeks offset
-					baseDate.setDate(baseDate.getDate() + (week * 7));
+					// Parse date and add weeks offset
+					const [year, month, day] = dateStr.split('-').map(Number);
+					const adjustedDay = day + (week * 7);
 
-					const shiftStart = new Date(baseDate);
-					shiftStart.setHours(startHour, startMin, 0, 0);
+					// Create datetime-local strings and parse as Pacific
+					const startDatetimeLocal = `${year}-${String(month).padStart(2, '0')}-${String(adjustedDay).padStart(2, '0')}T${startTime}`;
+					const endDatetimeLocal = `${year}-${String(month).padStart(2, '0')}-${String(adjustedDay).padStart(2, '0')}T${endTime}`;
 
-					const shiftEnd = new Date(baseDate);
-					shiftEnd.setHours(endHour, endMin, 0, 0);
+					const shiftStart = parsePacificDatetime(startDatetimeLocal);
+					let shiftEnd = parsePacificDatetime(endDatetimeLocal);
 
 					// Handle overnight shifts (end time before start time)
 					if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
-						shiftEnd.setDate(shiftEnd.getDate() + 1);
+						// Add one day to end time
+						shiftEnd = new Date(shiftEnd.getTime() + 24 * 60 * 60 * 1000);
 					}
 
 					shiftsToCreate.push({

@@ -9,6 +9,7 @@
 import { db, taskAssignmentRules, taskTemplates, tasks, users, timeEntries } from '$lib/server/db';
 import { eq, and, sql, desc, isNull, gte, ne } from 'drizzle-orm';
 import type { TaskAssignmentRule, TaskTemplate, User } from '$lib/server/db/schema';
+import { getPacificDateParts, getPacificStartOfDay, getPacificEndOfDay } from '$lib/server/utils/timezone';
 
 export type TriggerEvent =
 	| 'clock_in'
@@ -114,23 +115,24 @@ function evaluateConditions(rule: TaskAssignmentRule, context: TriggerContext): 
 	if (!conditions) return true;
 
 	const now = context.timestamp || new Date();
+	// Use Pacific timezone for all time-based evaluations
+	const pacificNow = getPacificDateParts(now);
 
 	// Location check
 	if (conditions.locationId && context.locationId !== conditions.locationId) {
 		return false;
 	}
 
-	// Day of week check
+	// Day of week check (Pacific timezone)
 	if (conditions.daysOfWeek && conditions.daysOfWeek.length > 0) {
-		const dayOfWeek = now.getDay();
-		if (!conditions.daysOfWeek.includes(dayOfWeek)) {
+		if (!conditions.daysOfWeek.includes(pacificNow.weekday)) {
 			return false;
 		}
 	}
 
-	// Time window check
+	// Time window check (Pacific timezone)
 	if (conditions.timeWindowStart || conditions.timeWindowEnd) {
-		const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+		const currentTime = `${String(pacificNow.hour).padStart(2, '0')}:${String(pacificNow.minute).padStart(2, '0')}`;
 
 		if (conditions.timeWindowStart && currentTime < conditions.timeWindowStart) {
 			return false;
@@ -274,11 +276,8 @@ async function createTaskFromRule(
 	assigneeId: string,
 	context: TriggerContext
 ): Promise<void> {
-	const now = new Date();
-
-	// Calculate due date (default: end of day)
-	const dueAt = new Date(now);
-	dueAt.setHours(23, 59, 59, 999);
+	// Calculate due date as end of day in Pacific timezone
+	const dueAt = getPacificEndOfDay();
 
 	await db.insert(tasks).values({
 		templateId: template.id,
@@ -297,14 +296,14 @@ async function createTaskFromRule(
 }
 
 /**
- * Check if user is first to clock in at location today
+ * Check if user is first to clock in at location today (Pacific timezone)
  */
 export async function isFirstClockInAtLocation(
 	userId: string,
 	locationId: string
 ): Promise<boolean> {
-	const startOfDay = new Date();
-	startOfDay.setHours(0, 0, 0, 0);
+	// Use Pacific timezone for "today" boundary
+	const startOfDay = getPacificStartOfDay();
 
 	const existingClockIns = await db
 		.select({ count: sql<number>`count(*)` })
@@ -389,9 +388,8 @@ export async function processTimeIntoShiftRules(): Promise<{
 				// Check if we've passed the threshold
 				if (hoursWorked < requiredHours) continue;
 
-				// Check if we already created a task for this entry and rule today
-				const startOfDay = new Date();
-				startOfDay.setHours(0, 0, 0, 0);
+				// Check if we already created a task for this entry and rule today (Pacific timezone)
+				const startOfDay = getPacificStartOfDay();
 
 				const existingTask = await db
 					.select({ count: sql<number>`count(*)` })

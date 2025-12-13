@@ -3,6 +3,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { db, tasks, users, taskTemplates } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { parsePacificDatetime } from '$lib/server/utils/timezone';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user || !isManager(locals.user)) {
@@ -48,7 +49,7 @@ export const actions: Actions = {
 			description,
 			assignedTo,
 			priority: priority || 'medium',
-			dueAt: dueAt ? new Date(dueAt) : null,
+			dueAt: dueAt ? parsePacificDatetime(dueAt) : null,
 			photoRequired,
 			notesRequired,
 			source: 'manual',

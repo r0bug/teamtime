@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, timeEntries, users } from '$lib/server/db';
 import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
+import { parsePacificDate, parsePacificEndOfDay, toPacificDateTimeString } from '$lib/server/utils/timezone';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!locals.user) {
@@ -19,12 +20,13 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	const conditions = [];
 
+	// Parse dates as Pacific timezone - start at midnight, end at 23:59:59
 	if (startDate) {
-		conditions.push(gte(timeEntries.clockIn, new Date(startDate)));
+		conditions.push(gte(timeEntries.clockIn, parsePacificDate(startDate)));
 	}
 
 	if (endDate) {
-		conditions.push(lte(timeEntries.clockIn, new Date(endDate)));
+		conditions.push(lte(timeEntries.clockIn, parsePacificEndOfDay(endDate)));
 	}
 
 	if (userId) {
@@ -79,7 +81,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	if (format === 'csv') {
 		const csvHeader = 'Employee,Email,Clock In,Clock Out,Hours,Location In,Location Out,Notes\n';
 		const csvRows = entries.map(e =>
-			`"${e.userName}","${e.userEmail}","${e.clockIn?.toISOString() || ''}","${e.clockOut?.toISOString() || ''}","${e.hoursWorked?.toFixed(2) || ''}","${e.clockInAddress || ''}","${e.clockOutAddress || ''}","${e.notes || ''}"`
+			`"${e.userName}","${e.userEmail}","${e.clockIn ? toPacificDateTimeString(e.clockIn) : ''}","${e.clockOut ? toPacificDateTimeString(e.clockOut) : ''}","${e.hoursWorked?.toFixed(2) || ''}","${e.clockInAddress || ''}","${e.clockOutAddress || ''}","${e.notes || ''}"`
 		).join('\n');
 
 		return new Response(csvHeader + csvRows, {

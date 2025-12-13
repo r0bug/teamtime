@@ -14,6 +14,7 @@ import { eq, and, sql, gte } from 'drizzle-orm';
 import { processTimeIntoShiftRules } from '$lib/server/services/task-rules';
 import { CRON_SECRET } from '$env/static/private';
 import { createLogger } from '$lib/server/logger';
+import { getPacificDateParts, getPacificEndOfDay } from '$lib/server/utils/timezone';
 
 const log = createLogger('api:tasks:cron');
 
@@ -39,6 +40,7 @@ function validateCronRequest(request: Request): boolean {
  * Simple cron expression matcher
  * Supports: minute hour day month weekday
  * Uses * for any, specific numbers, or ranges like 1-5
+ * NOTE: All evaluations use Pacific timezone for business logic
  */
 function matchesCron(expression: string, date: Date): boolean {
 	const parts = expression.trim().split(/\s+/);
@@ -46,11 +48,13 @@ function matchesCron(expression: string, date: Date): boolean {
 
 	const [minuteExpr, hourExpr, dayExpr, monthExpr, weekdayExpr] = parts;
 
-	const minute = date.getMinutes();
-	const hour = date.getHours();
-	const day = date.getDate();
-	const month = date.getMonth() + 1;
-	const weekday = date.getDay();
+	// Use Pacific timezone for all cron matching
+	const pacific = getPacificDateParts(date);
+	const minute = pacific.minute;
+	const hour = pacific.hour;
+	const day = pacific.day;
+	const month = pacific.month;
+	const weekday = pacific.weekday;
 
 	return (
 		matchesCronPart(minuteExpr, minute) &&
@@ -125,13 +129,14 @@ export const GET: RequestHandler = async ({ request, url }) => {
 				// Check if cron matches current time (with 15-minute window)
 				if (!matchesCron(cronExpr, now)) continue;
 
-				// Check conditions
+				// Check conditions (using Pacific timezone)
 				const conditions = rule.conditions;
+				const pacificNow = getPacificDateParts(now);
 				if (conditions?.daysOfWeek && conditions.daysOfWeek.length > 0) {
-					if (!conditions.daysOfWeek.includes(now.getDay())) continue;
+					if (!conditions.daysOfWeek.includes(pacificNow.weekday)) continue;
 				}
 				if (conditions?.timeWindowStart || conditions?.timeWindowEnd) {
-					const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+					const currentTime = `${String(pacificNow.hour).padStart(2, '0')}:${String(pacificNow.minute).padStart(2, '0')}`;
 					if (conditions.timeWindowStart && currentTime < conditions.timeWindowStart) continue;
 					if (conditions.timeWindowEnd && currentTime > conditions.timeWindowEnd) continue;
 				}
@@ -170,9 +175,8 @@ export const GET: RequestHandler = async ({ request, url }) => {
 					continue;
 				}
 
-				// Create the task
-				const dueAt = new Date(now);
-				dueAt.setHours(23, 59, 59, 999);
+				// Create the task with due date at end of day Pacific time
+				const dueAt = getPacificEndOfDay(now);
 
 				await db.insert(tasks).values({
 					templateId: template.id,

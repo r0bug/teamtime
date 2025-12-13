@@ -1,7 +1,10 @@
 // Attendance Context Provider - Clock in/out status and scheduled vs actual
 import { db, users, shifts, timeEntries } from '$lib/server/db';
-import { eq, and, gte, lte, isNull, isNotNull } from 'drizzle-orm';
+import { eq, and, gte, lte, isNull, isNotNull, inArray } from 'drizzle-orm';
 import type { AIContextProvider, AIAgent } from '../../types';
+import { getCurrentUserId } from './user-permissions';
+import { visibilityService } from '$lib/server/services/visibility-service';
+import { getPacificDayBounds, toPacificTimeString } from '$lib/server/utils/timezone';
 
 interface AttendanceData {
 	currentlyClockedIn: {
@@ -46,12 +49,21 @@ export const attendanceProvider: AIContextProvider<AttendanceData> = {
 
 	async getContext(): Promise<AttendanceData> {
 		const now = new Date();
-		const todayStart = new Date(now);
-		todayStart.setHours(0, 0, 0, 0);
-		const todayEnd = new Date(now);
-		todayEnd.setHours(23, 59, 59, 999);
+		// Use Pacific timezone for "today" boundaries
+		const { start: todayStart, end: todayEnd } = getPacificDayBounds(now);
 
-		// Get all active users
+		// Get visibility filter for attendance
+		const currentUserId = getCurrentUserId();
+		let visibleUserIds: string[] | null = null;
+
+		if (currentUserId) {
+			const filter = await visibilityService.getVisibilityFilter(currentUserId, 'attendance');
+			if (!filter.includeAll) {
+				visibleUserIds = await visibilityService.getVisibleUserIds(currentUserId, 'attendance');
+			}
+		}
+
+		// Get all active users (may be filtered later)
 		const activeUsers = await db
 			.select({ id: users.id, name: users.name })
 			.from(users)
@@ -59,20 +71,33 @@ export const attendanceProvider: AIContextProvider<AttendanceData> = {
 
 		const userMap = new Map(activeUsers.map(u => [u.id, u.name]));
 
+		// Build conditions for shifts and time entries
+		const shiftConditions = [
+			gte(shifts.startTime, todayStart),
+			lte(shifts.startTime, todayEnd)
+		];
+		const timeEntryConditions = [gte(timeEntries.clockIn, todayStart)];
+
+		// Add visibility filter if needed
+		if (visibleUserIds !== null) {
+			const userIds = visibleUserIds.length > 0 ? visibleUserIds : (currentUserId ? [currentUserId] : []);
+			if (userIds.length > 0) {
+				shiftConditions.push(inArray(shifts.userId, userIds));
+				timeEntryConditions.push(inArray(timeEntries.userId, userIds));
+			}
+		}
+
 		// Get today's shifts
 		const todayShifts = await db
 			.select()
 			.from(shifts)
-			.where(and(
-				gte(shifts.startTime, todayStart),
-				lte(shifts.startTime, todayEnd)
-			));
+			.where(and(...shiftConditions));
 
 		// Get today's time entries (including those still clocked in)
 		const todayTimeEntries = await db
 			.select()
 			.from(timeEntries)
-			.where(gte(timeEntries.clockIn, todayStart));
+			.where(and(...timeEntryConditions));
 
 		// Currently clocked in (no clock out)
 		const currentlyClockedIn = todayTimeEntries
@@ -173,7 +198,7 @@ export const attendanceProvider: AIContextProvider<AttendanceData> = {
 		if (context.expectedButMissing.length > 0) {
 			lines.push('### Expected But Not Clocked In:');
 			for (const m of context.expectedButMissing) {
-				lines.push(`- ${m.userName}: ${m.minutesLate} min late (shift: ${m.shiftStartTime.toLocaleTimeString()} - ${m.shiftEndTime.toLocaleTimeString()})`);
+				lines.push(`- ${m.userName}: ${m.minutesLate} min late (shift: ${toPacificTimeString(m.shiftStartTime)} - ${toPacificTimeString(m.shiftEndTime)})`);
 			}
 			lines.push('');
 		}
@@ -181,7 +206,7 @@ export const attendanceProvider: AIContextProvider<AttendanceData> = {
 		if (context.recentClockOuts.length > 0) {
 			lines.push('### Recent Clock Outs (last 2 hrs):');
 			for (const c of context.recentClockOuts) {
-				lines.push(`- ${c.userName} at ${c.clockedOutAt.toLocaleTimeString()}`);
+				lines.push(`- ${c.userName} at ${toPacificTimeString(c.clockedOutAt)}`);
 			}
 		}
 

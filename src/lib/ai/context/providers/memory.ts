@@ -1,7 +1,9 @@
 // Memory & Policy Context Provider - Long-term observations and behavior policies
 import { db, aiMemory, aiPolicyNotes, users, locations } from '$lib/server/db';
-import { eq, and, gte, desc, isNull, or } from 'drizzle-orm';
+import { eq, and, gte, desc, isNull, or, inArray } from 'drizzle-orm';
 import type { AIContextProvider, AIAgent } from '../../types';
+import { getCurrentUserId } from './user-permissions';
+import { visibilityService } from '$lib/server/services/visibility-service';
 
 interface MemoryData {
 	memories: {
@@ -37,6 +39,17 @@ export const memoryProvider: AIContextProvider<MemoryData> = {
 	},
 
 	async getContext(): Promise<MemoryData> {
+		// Get visibility filter for user-scoped data
+		const currentUserId = getCurrentUserId();
+		let visibleUserIds: string[] | null = null;
+
+		if (currentUserId) {
+			const filter = await visibilityService.getVisibilityFilter(currentUserId, 'users');
+			if (!filter.includeAll) {
+				visibleUserIds = await visibilityService.getVisibleUserIds(currentUserId, 'users');
+			}
+		}
+
 		// Get user and location maps for naming
 		const activeUsers = await db
 			.select({ id: users.id, name: users.name })
@@ -50,21 +63,38 @@ export const memoryProvider: AIContextProvider<MemoryData> = {
 			.where(eq(locations.isActive, true));
 		const locationMap = new Map(activeLocations.map(l => [l.id, l.name]));
 
-		// Get active memories (high confidence or recent)
-		const activeMemories = await db
+		// Build memory query conditions
+		// User-scoped memories are filtered by visibility, global/location memories are always visible
+		const baseCondition = and(
+			eq(aiMemory.isActive, true),
+			or(
+				gte(aiMemory.confidence, '0.6'),
+				gte(aiMemory.lastObservedAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) // Last 7 days
+			)
+		);
+
+		// Get all active memories first
+		const allMemories = await db
 			.select()
 			.from(aiMemory)
-			.where(and(
-				eq(aiMemory.isActive, true),
-				or(
-					gte(aiMemory.confidence, '0.6'),
-					gte(aiMemory.lastObservedAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) // Last 7 days
-				)
-			))
+			.where(baseCondition)
 			.orderBy(desc(aiMemory.confidence))
-			.limit(20);
+			.limit(50); // Fetch more, then filter
 
-		const memories = activeMemories.map(m => ({
+		// Filter user-scoped memories based on visibility
+		const filteredMemories = allMemories.filter(m => {
+			// Global and location-scoped memories are always visible
+			if (m.scope !== 'user' || !m.userId) return true;
+
+			// If full visibility, show all
+			if (visibleUserIds === null) return true;
+
+			// Check if this user's memories are visible
+			if (currentUserId && m.userId === currentUserId) return true; // Own memories
+			return visibleUserIds.includes(m.userId);
+		}).slice(0, 20); // Limit to 20
+
+		const memories = filteredMemories.map(m => ({
 			id: m.id,
 			scope: m.scope,
 			memoryType: m.memoryType,

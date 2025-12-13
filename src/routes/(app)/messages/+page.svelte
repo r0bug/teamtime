@@ -29,8 +29,8 @@
 
 		if (diff < 60000) return 'Just now';
 		if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-		if (diff < 86400000) return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+		if (diff < 86400000) return date.toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' });
+		return date.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' });
 	}
 
 	function closeModal() {

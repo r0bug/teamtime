@@ -2,6 +2,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 import { db, shifts, users, locations } from '$lib/server/db';
 import { eq, gte, lte, and, desc } from 'drizzle-orm';
+import { parsePacificDatetime } from '$lib/server/utils/timezone';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user || locals.user.role !== 'manager') {
@@ -75,8 +76,8 @@ export const actions: Actions = {
 		await db.insert(shifts).values({
 			userId,
 			locationId,
-			startTime: new Date(startTime),
-			endTime: new Date(endTime),
+			startTime: parsePacificDatetime(startTime),
+			endTime: parsePacificDatetime(endTime),
 			notes,
 			createdBy: locals.user.id
 		});

@@ -33,7 +33,11 @@
 
 	function formatTime(dateStr: string | Date) {
 		const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
-		return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+		return date.toLocaleTimeString('en-US', {
+			hour: 'numeric',
+			minute: '2-digit',
+			timeZone: 'America/Los_Angeles'
+		});
 	}
 
 	function openAddShift(date: Date) {
@@ -46,18 +50,28 @@
 		selectedDate = null;
 	}
 
+	// Convert a date to Pacific datetime-local string with specific hours
+	function toPacificDatetimeLocalWithTime(date: Date, hour: number, minute: number = 0): string {
+		// Get the date parts in Pacific timezone
+		const options: Intl.DateTimeFormatOptions = {
+			timeZone: 'America/Los_Angeles',
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit'
+		};
+		const parts = new Intl.DateTimeFormat('en-US', options).formatToParts(date);
+		const get = (type: string) => parts.find(p => p.type === type)?.value || '00';
+		return `${get('year')}-${get('month')}-${get('day')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+	}
+
 	function getDefaultStartTime() {
 		if (!selectedDate) return '';
-		const d = new Date(selectedDate);
-		d.setHours(9, 0, 0, 0);
-		return d.toISOString().slice(0, 16);
+		return toPacificDatetimeLocalWithTime(selectedDate, 9, 0);
 	}
 
 	function getDefaultEndTime() {
 		if (!selectedDate) return '';
-		const d = new Date(selectedDate);
-		d.setHours(17, 0, 0, 0);
-		return d.toISOString().slice(0, 16);
+		return toPacificDatetimeLocalWithTime(selectedDate, 17, 0);
 	}
 </script>
 
@@ -111,7 +125,7 @@
 	<div class="grid grid-cols-7 gap-2">
 		{#each weekDays as day}
 			{@const dayShifts = getShiftsForDay(day)}
-			{@const isToday = day.toDateString() === new Date().toDateString()}
+			{@const isToday = day.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' }) === new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' })}
 			<div class="min-h-[200px]">
 				<div class="text-center py-2 font-medium {isToday ? 'bg-primary-100 text-primary-700 rounded-t-lg' : 'bg-gray-100'}">
 					<div class="text-xs">{day.toLocaleDateString('en-US', { weekday: 'short' })}</div>

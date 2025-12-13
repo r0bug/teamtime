@@ -1,7 +1,9 @@
 // Users Context Provider - Staff roster and roles
 import { db, users } from '$lib/server/db';
-import { eq } from 'drizzle-orm';
+import { eq, and, inArray, or } from 'drizzle-orm';
 import type { AIContextProvider, AIAgent } from '../../types';
+import { getCurrentUserId } from './user-permissions';
+import { visibilityService } from '$lib/server/services/visibility-service';
 
 interface UsersData {
 	roster: {
@@ -28,6 +30,35 @@ export const usersProvider: AIContextProvider<UsersData> = {
 	},
 
 	async getContext(): Promise<UsersData> {
+		// Get visibility filter for users
+		const currentUserId = getCurrentUserId();
+		let visibleUserIds: string[] | null = null;
+
+		if (currentUserId) {
+			const filter = await visibilityService.getVisibilityFilter(currentUserId, 'users');
+			if (!filter.includeAll) {
+				visibleUserIds = await visibilityService.getVisibleUserIds(currentUserId, 'users');
+			}
+		}
+
+		// Build query conditions
+		const conditions = [eq(users.isActive, true)];
+
+		if (visibleUserIds !== null) {
+			// Add visibility filter - always include self
+			const userIds = visibleUserIds.length > 0 ? visibleUserIds : [];
+			if (currentUserId) {
+				conditions.push(
+					or(
+						eq(users.id, currentUserId),
+						userIds.length > 0 ? inArray(users.id, userIds) : eq(users.id, currentUserId)
+					)!
+				);
+			} else if (userIds.length > 0) {
+				conditions.push(inArray(users.id, userIds));
+			}
+		}
+
 		const activeUsers = await db
 			.select({
 				id: users.id,
@@ -36,7 +67,7 @@ export const usersProvider: AIContextProvider<UsersData> = {
 				email: users.email
 			})
 			.from(users)
-			.where(eq(users.isActive, true))
+			.where(and(...conditions))
 			.orderBy(users.name);
 
 		const byRole: Record<string, number> = {};

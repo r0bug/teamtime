@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, atmWithdrawals, withdrawalAllocations, users } from '$lib/server/db';
 import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
+import { parsePacificDate, parsePacificEndOfDay, toPacificDateTimeString } from '$lib/server/utils/timezone';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!locals.user) {
@@ -19,12 +20,13 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	const conditions = [];
 
+	// Parse dates as Pacific timezone - start at midnight, end at 23:59:59
 	if (startDate) {
-		conditions.push(gte(atmWithdrawals.withdrawnAt, new Date(startDate)));
+		conditions.push(gte(atmWithdrawals.withdrawnAt, parsePacificDate(startDate)));
 	}
 
 	if (endDate) {
-		conditions.push(lte(atmWithdrawals.withdrawnAt, new Date(endDate)));
+		conditions.push(lte(atmWithdrawals.withdrawnAt, parsePacificEndOfDay(endDate)));
 	}
 
 	if (userId) {
@@ -68,7 +70,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		const csvHeader = 'Employee,Email,Withdrawn At,Amount,Status,Location,Allocations\n';
 		const csvRows = withdrawals.map(w => {
 			const allocations = w.allocations.map(a => `${a.productDescription || 'N/A'}: $${a.amount}`).join('; ');
-			return `"${w.user.name}","${w.user.email}","${w.withdrawnAt.toISOString()}","${w.amount}","${w.status}","${w.address || ''}","${allocations}"`;
+			return `"${w.user.name}","${w.user.email}","${toPacificDateTimeString(w.withdrawnAt)}","${w.amount}","${w.status}","${w.address || ''}","${allocations}"`;
 		}).join('\n');
 
 		return new Response(csvHeader + csvRows, {

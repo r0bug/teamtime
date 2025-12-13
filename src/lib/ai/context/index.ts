@@ -5,9 +5,10 @@ import { tasksProvider } from './providers/tasks';
 import { usersProvider } from './providers/users';
 import { locationsProvider } from './providers/locations';
 import { memoryProvider } from './providers/memory';
-import { userPermissionsProvider, setCurrentUserId } from './providers/user-permissions';
+import { userPermissionsProvider, setCurrentUserId, getCurrentUserId } from './providers/user-permissions';
 import { aiConfigService } from '../services/config-service';
 import { createLogger } from '$lib/server/logger';
+import { getPacificDateParts, getPacificWeekday, toPacificDateString, toPacificDateTimeString } from '$lib/server/utils/timezone';
 
 const log = createLogger('ai:context');
 
@@ -24,8 +25,8 @@ const providers: AIContextProvider[] = [
 // Map provider moduleId to the provider for easy lookup
 const providerMap = new Map(providers.map(p => [p.moduleId, p]));
 
-// Re-export for use by orchestrator
-export { setCurrentUserId };
+// Re-export for use by orchestrator and other providers
+export { setCurrentUserId, getCurrentUserId };
 
 export async function assembleContext(
 	agent: AIAgent,
@@ -120,24 +121,28 @@ export async function assembleContext(
 
 export function formatContextForPrompt(context: AssembledContext): string {
 	const now = context.timestamp;
-	const today = now.toISOString().split('T')[0];
 
-	// Calculate end of week (Sunday)
-	const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
+	// Use Pacific timezone for all date references
+	const pacificParts = getPacificDateParts(now);
+	const today = toPacificDateString(now);
+	const weekdayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+	// Calculate end of week (Sunday) in Pacific
+	const dayOfWeek = pacificParts.weekday; // 0 = Sunday, 6 = Saturday
 	const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
 	const endOfWeek = new Date(now);
-	endOfWeek.setDate(now.getDate() + daysUntilSunday);
-	const endOfWeekStr = endOfWeek.toISOString().split('T')[0];
+	endOfWeek.setDate(endOfWeek.getDate() + daysUntilSunday);
+	const endOfWeekStr = toPacificDateString(endOfWeek);
 
 	// Calculate end of next week
 	const endOfNextWeek = new Date(endOfWeek);
 	endOfNextWeek.setDate(endOfNextWeek.getDate() + 7);
-	const endOfNextWeekStr = endOfNextWeek.toISOString().split('T')[0];
+	const endOfNextWeekStr = toPacificDateString(endOfNextWeek);
 
-	const header = `# Current State (as of ${now.toLocaleString()})
+	const header = `# Current State (as of ${toPacificDateTimeString(now)} Pacific)
 
 ## IMPORTANT: Date Reference (use these exact dates for tools)
-- **Today's date**: ${today} (${now.toLocaleDateString('en-US', { weekday: 'long' })})
+- **Today's date**: ${today} (${weekdayNames[dayOfWeek]})
 - **End of this week (Sunday)**: ${endOfWeekStr}
 - **End of next week**: ${endOfNextWeekStr}
 - For "rest of the week" schedules, use date="${today}" and endDate="${endOfWeekStr}"

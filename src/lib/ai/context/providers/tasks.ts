@@ -1,7 +1,10 @@
 // Tasks Context Provider - Task status, overdue items, and completion rates
 import { db, users, tasks, taskCompletions } from '$lib/server/db';
-import { eq, and, gte, lte, lt, isNotNull, desc, sql } from 'drizzle-orm';
+import { eq, and, gte, lte, lt, isNotNull, desc, sql, inArray, or } from 'drizzle-orm';
 import type { AIContextProvider, AIAgent } from '../../types';
+import { getCurrentUserId } from './user-permissions';
+import { visibilityService } from '$lib/server/services/visibility-service';
+import { getPacificStartOfDay, toPacificTimeString, toPacificDateString } from '$lib/server/utils/timezone';
 
 interface TasksData {
 	overdue: {
@@ -55,9 +58,36 @@ export const tasksProvider: AIContextProvider<TasksData> = {
 
 	async getContext(): Promise<TasksData> {
 		const now = new Date();
-		const todayStart = new Date(now);
-		todayStart.setHours(0, 0, 0, 0);
+		// Use Pacific timezone for "today" boundary
+		const todayStart = getPacificStartOfDay(now);
 		const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+		// Get visibility filter for the current user
+		const currentUserId = getCurrentUserId();
+		let visibleUserIds: string[] | null = null; // null means "all" (no filtering)
+
+		if (currentUserId) {
+			const filter = await visibilityService.getVisibilityFilter(currentUserId, 'tasks');
+			if (!filter.includeAll) {
+				visibleUserIds = await visibilityService.getVisibleUserIds(currentUserId, 'tasks');
+			}
+		}
+
+		// Helper to build visibility condition
+		const buildVisibilityCondition = () => {
+			if (visibleUserIds === null) return undefined; // No filtering
+			if (visibleUserIds.length === 0) {
+				// User can only see their own tasks (or none if no userId)
+				return currentUserId ? eq(tasks.assignedTo, currentUserId) : sql`false`;
+			}
+			// Can see own tasks + visible users' tasks
+			return or(
+				currentUserId ? eq(tasks.assignedTo, currentUserId) : undefined,
+				inArray(tasks.assignedTo, visibleUserIds)
+			);
+		};
+
+		const visibilityCondition = buildVisibilityCondition();
 
 		// Get active users
 		const activeUsers = await db
@@ -67,6 +97,12 @@ export const tasksProvider: AIContextProvider<TasksData> = {
 		const userMap = new Map(activeUsers.map(u => [u.id, u.name]));
 
 		// Get overdue tasks (past due, not completed)
+		const overdueConditions = [
+			lt(tasks.dueAt, now),
+			eq(tasks.status, 'not_started')
+		];
+		if (visibilityCondition) overdueConditions.push(visibilityCondition);
+
 		const overdueTasks = await db
 			.select({
 				id: tasks.id,
@@ -76,10 +112,7 @@ export const tasksProvider: AIContextProvider<TasksData> = {
 				priority: tasks.priority
 			})
 			.from(tasks)
-			.where(and(
-				lt(tasks.dueAt, now),
-				eq(tasks.status, 'not_started')
-			))
+			.where(and(...overdueConditions))
 			.orderBy(tasks.dueAt);
 
 		const overdue = overdueTasks.map(t => ({
@@ -93,6 +126,13 @@ export const tasksProvider: AIContextProvider<TasksData> = {
 		}));
 
 		// Get tasks due soon (within next 24 hours)
+		const dueSoonConditions = [
+			gte(tasks.dueAt, now),
+			lte(tasks.dueAt, tomorrow),
+			eq(tasks.status, 'not_started')
+		];
+		if (visibilityCondition) dueSoonConditions.push(visibilityCondition);
+
 		const dueSoonTasks = await db
 			.select({
 				id: tasks.id,
@@ -101,11 +141,7 @@ export const tasksProvider: AIContextProvider<TasksData> = {
 				dueAt: tasks.dueAt
 			})
 			.from(tasks)
-			.where(and(
-				gte(tasks.dueAt, now),
-				lte(tasks.dueAt, tomorrow),
-				eq(tasks.status, 'not_started')
-			))
+			.where(and(...dueSoonConditions))
 			.orderBy(tasks.dueAt);
 
 		const dueSoon = dueSoonTasks.map(t => ({
@@ -117,7 +153,22 @@ export const tasksProvider: AIContextProvider<TasksData> = {
 			hoursUntilDue: Math.round((new Date(t.dueAt!).getTime() - now.getTime()) / 3600000)
 		}));
 
-		// Get recently completed (today)
+		// Get recently completed (today) - filter by completedBy visibility
+		const completedConditions = [gte(taskCompletions.completedAt, todayStart)];
+		// For completed tasks, filter by who completed them
+		if (visibleUserIds !== null) {
+			if (visibleUserIds.length === 0) {
+				completedConditions.push(currentUserId ? eq(taskCompletions.completedBy, currentUserId) : sql`false`);
+			} else {
+				completedConditions.push(
+					or(
+						currentUserId ? eq(taskCompletions.completedBy, currentUserId) : undefined,
+						inArray(taskCompletions.completedBy, visibleUserIds)
+					)!
+				);
+			}
+		}
+
 		const completedToday = await db
 			.select({
 				id: taskCompletions.id,
@@ -128,7 +179,7 @@ export const tasksProvider: AIContextProvider<TasksData> = {
 			})
 			.from(taskCompletions)
 			.innerJoin(tasks, eq(taskCompletions.taskId, tasks.id))
-			.where(gte(taskCompletions.completedAt, todayStart))
+			.where(and(...completedConditions))
 			.orderBy(desc(taskCompletions.completedAt))
 			.limit(10);
 
@@ -140,31 +191,39 @@ export const tasksProvider: AIContextProvider<TasksData> = {
 			completedAt: new Date(c.completedAt)
 		}));
 
-		// Get unassigned tasks
-		const unassignedTasks = await db
-			.select({
-				id: tasks.id,
-				title: tasks.title,
-				dueAt: tasks.dueAt
-			})
-			.from(tasks)
-			.where(and(
-				sql`${tasks.assignedTo} IS NULL`,
-				eq(tasks.status, 'not_started')
-			))
-			.limit(10);
+		// Get unassigned tasks - only managers/admins should see these (to assign them)
+		// If visibility is filtered, don't show unassigned tasks
+		let unassigned: { taskId: string; title: string; dueAt?: Date }[] = [];
+		if (visibleUserIds === null) {
+			// Full visibility - show unassigned tasks
+			const unassignedTasks = await db
+				.select({
+					id: tasks.id,
+					title: tasks.title,
+					dueAt: tasks.dueAt
+				})
+				.from(tasks)
+				.where(and(
+					sql`${tasks.assignedTo} IS NULL`,
+					eq(tasks.status, 'not_started')
+				))
+				.limit(10);
 
-		const unassigned = unassignedTasks.map(t => ({
-			taskId: t.id,
-			title: t.title,
-			dueAt: t.dueAt ? new Date(t.dueAt) : undefined
-		}));
+			unassigned = unassignedTasks.map(t => ({
+				taskId: t.id,
+				title: t.title,
+				dueAt: t.dueAt ? new Date(t.dueAt) : undefined
+			}));
+		}
 
-		// Get in-progress count
+		// Get in-progress count (also filtered by visibility)
+		const inProgressConditions = [eq(tasks.status, 'in_progress')];
+		if (visibilityCondition) inProgressConditions.push(visibilityCondition);
+
 		const inProgressCount = await db
 			.select({ count: sql<number>`count(*)` })
 			.from(tasks)
-			.where(eq(tasks.status, 'in_progress'));
+			.where(and(...inProgressConditions));
 
 		return {
 			overdue,
@@ -215,7 +274,7 @@ export const tasksProvider: AIContextProvider<TasksData> = {
 		if (context.unassigned.length > 0) {
 			lines.push('### Unassigned Tasks:');
 			for (const t of context.unassigned) {
-				const due = t.dueAt ? ` (due ${t.dueAt.toLocaleDateString()})` : '';
+				const due = t.dueAt ? ` (due ${toPacificDateString(t.dueAt)})` : '';
 				lines.push(`- "${t.title}"${due}`);
 			}
 			lines.push('');
@@ -224,7 +283,7 @@ export const tasksProvider: AIContextProvider<TasksData> = {
 		if (context.recentlyCompleted.length > 0) {
 			lines.push('### Completed Today:');
 			for (const c of context.recentlyCompleted) {
-				lines.push(`- "${c.title}" by ${c.completedByName} at ${c.completedAt.toLocaleTimeString()}`);
+				lines.push(`- "${c.title}" by ${c.completedByName} at ${toPacificTimeString(c.completedAt)}`);
 			}
 		}
 

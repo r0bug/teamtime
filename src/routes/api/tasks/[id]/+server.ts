@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db, tasks, notifications, auditLogs } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { parsePacificDatetime } from '$lib/server/utils/timezone';
 
 // Get single task
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -73,7 +74,7 @@ export const PUT: RequestHandler = async ({ locals, params, request, getClientAd
 		if (body.description !== undefined) updateData.description = body.description;
 		if (body.assignedTo !== undefined) updateData.assignedTo = body.assignedTo;
 		if (body.priority !== undefined) updateData.priority = body.priority;
-		if (body.dueAt !== undefined) updateData.dueAt = body.dueAt ? new Date(body.dueAt) : null;
+		if (body.dueAt !== undefined) updateData.dueAt = body.dueAt ? parsePacificDatetime(body.dueAt) : null;
 		if (body.photoRequired !== undefined) updateData.photoRequired = body.photoRequired;
 		if (body.notesRequired !== undefined) updateData.notesRequired = body.notesRequired;
 	}

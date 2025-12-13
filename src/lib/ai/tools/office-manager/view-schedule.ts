@@ -3,6 +3,7 @@ import { db, users, shifts, locations, timeEntries } from '$lib/server/db';
 import { eq, and, gte, lte, isNull } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { toPacificDateString, toPacificTimeString, getPacificDayBounds } from '$lib/server/utils/timezone';
 
 const log = createLogger('ai:tools:view-schedule');
 
@@ -55,19 +56,16 @@ interface ViewScheduleResult {
 	error?: string;
 }
 
-// Helper to format time for display
+// Helper to format time for display (Pacific timezone)
 function formatTime(date: Date): string {
-	return date.toLocaleTimeString('en-US', {
-		hour: 'numeric',
-		minute: '2-digit',
-		hour12: true
-	});
+	return toPacificTimeString(date);
 }
 
-// Helper to format date for display
+// Helper to format date for display (Pacific timezone)
 function formatDate(dateStr: string): string {
-	const date = new Date(dateStr);
+	const date = new Date(dateStr + 'T12:00:00'); // Add time to avoid timezone issues with date-only strings
 	return date.toLocaleDateString('en-US', {
+		timeZone: 'America/Los_Angeles',
 		weekday: 'long',
 		month: 'short',
 		day: 'numeric'
@@ -150,10 +148,10 @@ export const viewScheduleTool: AITool<ViewScheduleParams, ViewScheduleResult> = 
 
 	async execute(params: ViewScheduleParams, context: ToolExecutionContext): Promise<ViewScheduleResult> {
 		try {
-			// Default to today if no date specified
+			// Default to today in Pacific timezone if no date specified
 			const today = new Date();
-			const startDateStr = params.date || today.toISOString().split('T')[0];
-			const startDate = new Date(startDateStr);
+			const startDateStr = params.date || toPacificDateString(today);
+			const startDate = new Date(startDateStr + 'T12:00:00'); // Use noon to avoid day boundary issues
 
 			// Determine if this is a range query
 			const isRange = !!params.endDate;
@@ -207,12 +205,10 @@ export const viewScheduleTool: AITool<ViewScheduleParams, ViewScheduleResult> = 
 				clockedInMap.set(entry.userId, entry.clockIn);
 			}
 
-			// Helper function to get schedule for a single day
+			// Helper function to get schedule for a single day (using Pacific timezone boundaries)
 			const getScheduleForDay = async (dayDate: Date): Promise<DaySchedule> => {
-				const dayStart = new Date(dayDate);
-				dayStart.setHours(0, 0, 0, 0);
-				const dayEnd = new Date(dayDate);
-				dayEnd.setHours(23, 59, 59, 999);
+				// Use Pacific timezone for day boundaries
+				const { start: dayStart, end: dayEnd } = getPacificDayBounds(dayDate);
 
 				const shiftConditions = [
 					lte(shifts.startTime, dayEnd),
@@ -247,7 +243,7 @@ export const viewScheduleTool: AITool<ViewScheduleParams, ViewScheduleResult> = 
 					}
 
 					const clockedInAt = clockedInMap.get(shift.userId);
-					const isToday = dayDate.toDateString() === today.toDateString();
+					const isToday = toPacificDateString(dayDate) === toPacificDateString(today);
 					locationScheduleMap.get(locationKey)!.push({
 						shiftId: shift.id,
 						userName: shift.userName,
@@ -284,7 +280,7 @@ export const viewScheduleTool: AITool<ViewScheduleParams, ViewScheduleResult> = 
 				});
 
 				const uniqueStaff = new Set(shiftsForDay.map(s => s.userId));
-				const dateStr = dayDate.toISOString().split('T')[0];
+				const dateStr = toPacificDateString(dayDate);
 
 				return {
 					date: dateStr,
@@ -355,7 +351,7 @@ export const viewScheduleTool: AITool<ViewScheduleParams, ViewScheduleResult> = 
 			log.error('View schedule tool error', { error });
 			return {
 				success: false,
-				date: params.date || new Date().toISOString().split('T')[0],
+				date: params.date || toPacificDateString(new Date()),
 				isRange: false,
 				days: [],
 				totalShifts: 0,

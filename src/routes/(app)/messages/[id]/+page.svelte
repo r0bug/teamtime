@@ -14,11 +14,11 @@
 	let loading = false;
 
 	function formatTime(date: string | Date) {
-		return new Date(date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+		return new Date(date).toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' });
 	}
 
 	function formatDate(date: string | Date) {
-		return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+		return new Date(date).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' });
 	}
 
 	async function scrollToBottom() {

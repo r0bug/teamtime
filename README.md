@@ -115,6 +115,7 @@ TeamTime is **mobile-first**. The same URL works on desktop, but the experience 
 | Auth | Lucia v3 with PIN/password + optional 2FA |
 | AI | Anthropic Claude, OpenAI GPT, Segmind (multi-provider) |
 | PWA | Service Worker with Workbox patterns |
+| Timezone | Pacific Time (America/Los_Angeles) - DST-aware |
 
 ## Quick Start
 
@@ -170,7 +171,7 @@ VAPID_PRIVATE_KEY=your-vapid-private-key
 ```
 src/
 ├── lib/
-│   ├── server/         # Auth, database, email services
+│   ├── server/         # Auth, database, email services, timezone utils
 │   ├── components/     # Reusable Svelte components
 │   ├── ai/             # AI orchestrators, tools, context providers
 │   └── utils/          # Date formatting, geolocation helpers
