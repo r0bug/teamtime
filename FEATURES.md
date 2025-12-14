@@ -421,6 +421,11 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 - Configure cron schedule
 - Set dry-run mode for testing
 
+**Technical Notes**:
+- **Attendance Context**: Shows ALL currently clocked-in users regardless of when they clocked in. Users clocked in >16 hours are flagged as "likely forgot to clock out"
+- **Tool Parameter Validation**: User ID parameters require valid UUIDs. AI receives helpful error messages directing it to use `get_available_staff` to look up IDs by name
+- **Streaming**: Tools with no required parameters (like `get_my_permissions`) are handled correctly with empty JSON defaulting to `{}`
+
 ### Revenue Optimizer
 
 **Purpose**: Analyze patterns across scheduling, tasks, expenses, and sales. Write long-term observations for the Office Manager.
@@ -557,7 +562,7 @@ Context providers inject relevant data into AI prompts. Configure:
 | User Permissions | Current user's access rights | 5 |
 | AI Memory | Stored observations and learnings | 10 |
 | Staff Roster | Active users with IDs | 15 |
-| Attendance | Clock-in/out status | 20 |
+| Attendance | Clock-in/out status (includes forgotten clock-outs) | 20 |
 | Tasks | Pending and recent tasks | 25 |
 | Locations | Store locations | 30 |
 

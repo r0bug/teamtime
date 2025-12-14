@@ -219,11 +219,12 @@ export const anthropicProvider: LLMProvider = {
 
 					try {
 						const event = JSON.parse(data);
-						// Debug: log all event types
-						log.debug({ eventType: event.type }, 'ANTHROPIC STREAM: Event received');
+						// Debug: log all event types and content
+						log.info({ eventType: event.type, hasContentBlock: !!event.content_block, hasDelta: !!event.delta }, 'ANTHROPIC STREAM: Event received');
 
 						if (event.type === 'message_start' && event.message?.usage) {
 							inputTokens = event.message.usage.input_tokens || 0;
+							log.info({ inputTokens, model: event.message.model }, 'ANTHROPIC STREAM: message_start with usage');
 						}
 
 						if (event.type === 'error') {
@@ -231,27 +232,42 @@ export const anthropicProvider: LLMProvider = {
 						}
 
 						if (event.type === 'content_block_start') {
+							log.info({ blockType: event.content_block?.type, blockIndex: event.index, toolName: event.content_block?.name, toolId: event.content_block?.id }, 'ANTHROPIC STREAM: content_block_start');
 							if (event.content_block?.type === 'tool_use') {
 								currentToolName = event.content_block.name || '';
 								currentToolId = event.content_block.id || '';
 								currentToolInput = '';
+								log.info({ currentToolName, currentToolId }, 'ANTHROPIC STREAM: Tool use started');
 							}
 						}
 
 						if (event.type === 'content_block_delta') {
+							log.info({ deltaType: event.delta?.type, hasText: !!event.delta?.text }, 'ANTHROPIC STREAM: content_block_delta');
 							if (event.delta?.type === 'text_delta' && event.delta.text) {
+								log.info({ textLength: event.delta.text.length }, 'ANTHROPIC STREAM: Yielding text');
 								yield { type: 'text', content: event.delta.text };
 							} else if (event.delta?.type === 'input_json_delta' && event.delta.partial_json) {
 								currentToolInput += event.delta.partial_json;
+								log.debug({ partialJsonLength: event.delta.partial_json.length, totalLength: currentToolInput.length }, 'ANTHROPIC STREAM: Accumulated input_json_delta');
+							} else if (event.delta?.type === 'thinking_delta') {
+								// Claude 4 might use thinking blocks - log but don't yield
+								log.info({ thinkingLength: event.delta?.thinking?.length }, 'ANTHROPIC STREAM: Thinking delta (not yielded)');
 							}
 						}
 
+						if (event.type === 'content_block_stop') {
+							log.info({ blockIndex: event.index, hadToolUse: !!currentToolName }, 'ANTHROPIC STREAM: content_block_stop');
+						}
 						if (event.type === 'content_block_stop' && currentToolName) {
+							log.info({ currentToolName, currentToolId, inputLength: currentToolInput.length, rawInput: currentToolInput.substring(0, 200) }, 'ANTHROPIC STREAM: About to parse tool JSON');
 							try {
-								const params = JSON.parse(currentToolInput);
+								// Handle empty input (tools with no parameters)
+								const jsonToParse = currentToolInput.trim() || '{}';
+								const params = JSON.parse(jsonToParse);
+								log.info({ currentToolName, params }, 'ANTHROPIC STREAM: Tool JSON parsed, yielding tool_use');
 								yield { type: 'tool_use', toolCall: { id: currentToolId, name: currentToolName, params } };
-							} catch {
-								// Invalid JSON, skip
+							} catch (parseError) {
+								log.error({ currentToolName, currentToolInput, parseError: parseError instanceof Error ? parseError.message : 'Unknown' }, 'ANTHROPIC STREAM: Failed to parse tool JSON');
 							}
 							currentToolName = '';
 							currentToolInput = '';
@@ -260,6 +276,7 @@ export const anthropicProvider: LLMProvider = {
 
 						if (event.type === 'message_delta' && event.usage) {
 							outputTokens = event.usage.output_tokens || 0;
+							log.info({ outputTokens }, 'ANTHROPIC STREAM: message_delta with usage');
 						}
 
 						if (event.type === 'message_stop') {
@@ -437,11 +454,13 @@ export async function* streamWithToolResults(
 
 					if (event.type === 'content_block_stop' && currentToolName) {
 						try {
-							const params = JSON.parse(currentToolInput);
+							// Handle empty input (tools with no parameters)
+							const jsonToParse = currentToolInput.trim() || '{}';
+							const params = JSON.parse(jsonToParse);
 							log.info({ toolName: currentToolName }, 'ANTHROPIC CONTINUE: Tool call complete');
 							yield { type: 'tool_use', toolCall: { id: currentToolId, name: currentToolName, params } };
 						} catch {
-							log.warn({ toolName: currentToolName }, 'ANTHROPIC CONTINUE: Invalid tool JSON');
+							log.warn({ toolName: currentToolName, currentToolInput }, 'ANTHROPIC CONTINUE: Invalid tool JSON');
 						}
 						currentToolName = '';
 						currentToolInput = '';

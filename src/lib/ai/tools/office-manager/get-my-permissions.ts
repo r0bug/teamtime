@@ -259,7 +259,7 @@ function generateSummary(
 
 export const getMyPermissionsTool: AITool<GetMyPermissionsParams, GetMyPermissionsResult> = {
 	name: 'get_my_permissions',
-	description: 'Get the current user\'s permissions and capabilities. Call this FIRST at the start of every conversation to understand what actions you are allowed to take on behalf of this user. This returns the user\'s role, capabilities, and which tools you can use.',
+	description: 'Get detailed information about the current user\'s permissions and capabilities. Only use this when the user specifically asks about their permissions, what they can do, or when you need to explain why an action is not allowed. Permission info is already in your context - do NOT call this for general questions.',
 	agent: 'office_manager',
 	parameters: {
 		type: 'object',
