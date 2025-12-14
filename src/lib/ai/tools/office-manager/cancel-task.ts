@@ -3,6 +3,7 @@ import { db, tasks, taskCompletions, users, conversations, conversationParticipa
 import { eq, and } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { isValidUUID } from '../utils/validation';
 
 const log = createLogger('ai:tools:cancel-task');
 
@@ -114,6 +115,13 @@ export const cancelTaskTool: AITool<CancelTaskParams, CancelTaskResult> = {
 	validate(params: CancelTaskParams) {
 		if (!params.taskId || params.taskId.trim().length === 0) {
 			return { valid: false, error: 'Task ID is required' };
+		}
+		// Validate task ID format
+		if (!isValidUUID(params.taskId)) {
+			return {
+				valid: false,
+				error: `Invalid taskId format: "${params.taskId}". Expected a UUID.`
+			};
 		}
 		if (!params.reason || params.reason.trim().length < 5) {
 			return { valid: false, error: 'Cancellation reason is required (min 5 chars)' };

@@ -3,6 +3,7 @@ import { db, conversations, conversationParticipants, messages, users } from '$l
 import { eq, and, sql } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { validateUserId } from '../utils/validation';
 
 const log = createLogger('ai:tools:send-message');
 
@@ -132,6 +133,13 @@ export const sendMessageTool: AITool<SendMessageParams, SendMessageResult> = {
 		}
 		if (!params.toUserId && !params.isAdminMessage) {
 			return { valid: false, error: 'Either toUserId or isAdminMessage is required' };
+		}
+		// Validate user ID format if provided (not required when isAdminMessage is true)
+		if (params.toUserId && !params.isAdminMessage) {
+			const userIdValidation = validateUserId(params.toUserId, 'toUserId');
+			if (!userIdValidation.valid) {
+				return userIdValidation;
+			}
 		}
 		return { valid: true };
 	},

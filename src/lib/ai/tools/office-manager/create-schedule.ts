@@ -4,6 +4,7 @@ import { eq, inArray } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
 import { createPacificDateTime } from '$lib/server/utils/timezone';
+import { isValidUUID } from '../utils/validation';
 
 const log = createLogger('ai:tools:create-schedule');
 
@@ -121,6 +122,21 @@ export const createScheduleTool: AITool<CreateScheduleParams, CreateScheduleResu
 			if (!a.userId) {
 				return { valid: false, error: `Assignment ${i + 1}: userId is required` };
 			}
+			// Validate user ID format
+			if (!isValidUUID(a.userId)) {
+				// Check if it looks like a name
+				const looksLikeName = /^[a-zA-Z\s]+$/.test(a.userId);
+				if (looksLikeName) {
+					return {
+						valid: false,
+						error: `Assignment ${i + 1}: "${a.userId}" appears to be a name, not a user ID. Use get_available_staff to look up user IDs by name.`
+					};
+				}
+				return {
+					valid: false,
+					error: `Assignment ${i + 1}: Invalid userId format "${a.userId}". Expected a UUID.`
+				};
+			}
 			if (!dateRegex.test(a.date)) {
 				return { valid: false, error: `Assignment ${i + 1}: date must be YYYY-MM-DD format` };
 			}
@@ -129,6 +145,13 @@ export const createScheduleTool: AITool<CreateScheduleParams, CreateScheduleResu
 			}
 			if (!timeRegex.test(a.endTime)) {
 				return { valid: false, error: `Assignment ${i + 1}: endTime must be HH:MM format` };
+			}
+			// Validate location ID format if provided
+			if (a.locationId && !isValidUUID(a.locationId)) {
+				return {
+					valid: false,
+					error: `Assignment ${i + 1}: Invalid locationId format "${a.locationId}". Expected a UUID.`
+				};
 			}
 		}
 

@@ -3,6 +3,7 @@ import { db, tasks, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { validateUserId } from '../utils/validation';
 
 const log = createLogger('ai:tools:create-task');
 
@@ -74,6 +75,11 @@ export const createTaskTool: AITool<CreateTaskParams, CreateTaskResult> = {
 		}
 		if (params.dueInHours !== undefined && params.dueInHours < 0) {
 			return { valid: false, error: 'dueInHours must be positive' };
+		}
+		// Validate user ID format if provided
+		const userIdValidation = validateUserId(params.assignToUserId, 'assignToUserId');
+		if (!userIdValidation.valid) {
+			return userIdValidation;
 		}
 		return { valid: true };
 	},

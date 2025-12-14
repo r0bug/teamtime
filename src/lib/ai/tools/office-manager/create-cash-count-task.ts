@@ -1,8 +1,9 @@
 // Create Cash Count Task Tool - Assign cash count tasks to users
-import { db, tasks, users, locations, cashCountConfigs } from '$lib/server/db';
+import { db, tasks, users, locations, cashCountConfigs, cashCountTaskLinks } from '$lib/server/db';
 import { eq, and } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { validateRequiredUserId, validateLocationId, isValidUUID } from '../utils/validation';
 
 const log = createLogger('ai:tools:create-cash-count-task');
 
@@ -78,11 +79,21 @@ export const createCashCountTaskTool: AITool<CreateCashCountTaskParams, CreateCa
 	},
 
 	validate(params: CreateCashCountTaskParams) {
-		if (!params.userId) {
-			return { valid: false, error: 'User ID is required' };
+		// Validate userId format (required)
+		const userIdValidation = validateRequiredUserId(params.userId, 'userId');
+		if (!userIdValidation.valid) {
+			return userIdValidation;
 		}
+		// Validate locationId format (required)
 		if (!params.locationId) {
 			return { valid: false, error: 'Location ID is required' };
+		}
+		if (!isValidUUID(params.locationId)) {
+			return { valid: false, error: `Invalid locationId format: "${params.locationId}". Expected a UUID.` };
+		}
+		// Validate configId format if provided (optional)
+		if (params.configId && !isValidUUID(params.configId)) {
+			return { valid: false, error: `Invalid configId format: "${params.configId}". Expected a UUID.` };
 		}
 		if (params.dueAt) {
 			const due = new Date(params.dueAt);
@@ -132,6 +143,7 @@ export const createCashCountTaskTool: AITool<CreateCashCountTaskParams, CreateCa
 
 			// Get cash count config if specified, or find default for location
 			let configName = 'Cash Count';
+			let configId = params.configId;
 			if (params.configId) {
 				const config = await db
 					.select({ id: cashCountConfigs.id, name: cashCountConfigs.name })
@@ -148,10 +160,11 @@ export const createCashCountTaskTool: AITool<CreateCashCountTaskParams, CreateCa
 					return { success: false, error: 'Cash count configuration not found or inactive' };
 				}
 				configName = config[0].name;
+				configId = config[0].id;
 			} else {
 				// Try to find a default config for the location
 				const config = await db
-					.select({ name: cashCountConfigs.name })
+					.select({ id: cashCountConfigs.id, name: cashCountConfigs.name })
 					.from(cashCountConfigs)
 					.where(
 						and(
@@ -163,7 +176,13 @@ export const createCashCountTaskTool: AITool<CreateCashCountTaskParams, CreateCa
 
 				if (config.length > 0) {
 					configName = config[0].name;
+					configId = config[0].id;
 				}
+			}
+
+			// Ensure we have a valid config for cash count tasks
+			if (!configId) {
+				return { success: false, error: 'No active cash count configuration found for this location. Please set up a cash count config first.' };
 			}
 
 			// Calculate due date
@@ -186,6 +205,15 @@ export const createCashCountTaskTool: AITool<CreateCashCountTaskParams, CreateCa
 					notesRequired: true
 				})
 				.returning({ id: tasks.id });
+
+			// Create link to cash count config so the UI can show the CashCountForm
+			await db
+				.insert(cashCountTaskLinks)
+				.values({
+					taskId: task.id,
+					configId: configId!,
+					locationId: params.locationId
+				});
 
 			return {
 				success: true,

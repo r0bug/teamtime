@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { sendSMS, formatPhoneToE164, isValidPhoneNumber } from '$lib/server/twilio';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { validateUserId } from '../utils/validation';
 
 const log = createLogger('ai:tools:send-sms');
 
@@ -71,6 +72,13 @@ export const sendSMSTool: AITool<SendSMSParams, SendSMSResult> = {
 		}
 		if (!params.toUserId && !params.toPhone) {
 			return { valid: false, error: 'Either toUserId or toPhone is required' };
+		}
+		// Validate user ID format if provided
+		if (params.toUserId) {
+			const userIdValidation = validateUserId(params.toUserId, 'toUserId');
+			if (!userIdValidation.valid) {
+				return userIdValidation;
+			}
 		}
 		if (params.toPhone && !isValidPhoneNumber(params.toPhone)) {
 			// Try to format it

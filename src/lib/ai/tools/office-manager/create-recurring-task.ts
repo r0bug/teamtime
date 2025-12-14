@@ -3,6 +3,7 @@ import { db, taskTemplates, users, locations } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { validateUserId, validateLocationId } from '../utils/validation';
 
 const log = createLogger('ai:tools:create-recurring-task');
 
@@ -157,6 +158,16 @@ export const createRecurringTaskTool: AITool<CreateRecurringTaskParams, CreateRe
 			if (!timeRegex.test(params.recurrence.timeOfDay)) {
 				return { valid: false, error: 'Invalid time format. Use HH:MM' };
 			}
+		}
+		// Validate assignee ID format if provided
+		const assigneeValidation = validateUserId(params.assigneeId, 'assigneeId');
+		if (!assigneeValidation.valid) {
+			return assigneeValidation;
+		}
+		// Validate location ID format if provided
+		const locationValidation = validateLocationId(params.locationId);
+		if (!locationValidation.valid) {
+			return locationValidation;
 		}
 		return { valid: true };
 	},

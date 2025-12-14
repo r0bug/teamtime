@@ -12,6 +12,7 @@ import {
 } from '$lib/server/services/permission-manager';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { validateRequiredUserId, isValidUUID } from '../utils/validation';
 
 const log = createLogger('ai:tools:permission-tools');
 
@@ -61,8 +62,9 @@ export const viewUserPermissionsTool: AITool<ViewPermissionsParams, ViewPermissi
 	requiresConfirmation: false,
 
 	validate(params: ViewPermissionsParams) {
-		if (!params.userId) {
-			return { valid: false, error: 'User ID is required' };
+		const userIdValidation = validateRequiredUserId(params.userId, 'userId');
+		if (!userIdValidation.valid) {
+			return userIdValidation;
 		}
 		return { valid: true };
 	},
@@ -176,8 +178,12 @@ export const grantTemporaryPermissionTool: AITool<GrantPermissionParams, GrantPe
 	},
 
 	validate(params: GrantPermissionParams) {
-		if (!params.userId) return { valid: false, error: 'User ID is required' };
+		const userIdValidation = validateRequiredUserId(params.userId, 'userId');
+		if (!userIdValidation.valid) return userIdValidation;
 		if (!params.permissionId) return { valid: false, error: 'Permission ID is required' };
+		if (!isValidUUID(params.permissionId)) {
+			return { valid: false, error: `Invalid permissionId format: "${params.permissionId}". Expected a UUID.` };
+		}
 		if (!params.durationHours || params.durationHours < 1) return { valid: false, error: 'Duration must be at least 1 hour' };
 		if (params.durationHours > 168) return { valid: false, error: 'Maximum duration is 168 hours (1 week)' };
 		if (!params.justification || params.justification.length < 10) return { valid: false, error: 'Justification must be at least 10 characters' };
@@ -284,8 +290,12 @@ export const changeUserTypeTool: AITool<ChangeUserTypeParams, ChangeUserTypeResu
 	},
 
 	validate(params: ChangeUserTypeParams) {
-		if (!params.userId) return { valid: false, error: 'User ID is required' };
+		const userIdValidation = validateRequiredUserId(params.userId, 'userId');
+		if (!userIdValidation.valid) return userIdValidation;
 		if (!params.newUserTypeId) return { valid: false, error: 'New user type ID is required' };
+		if (!isValidUUID(params.newUserTypeId)) {
+			return { valid: false, error: `Invalid newUserTypeId format: "${params.newUserTypeId}". Expected a UUID.` };
+		}
 		if (!params.durationHours || params.durationHours < 1) return { valid: false, error: 'Duration must be at least 1 hour' };
 		if (params.durationHours > 168) return { valid: false, error: 'Maximum duration is 168 hours (1 week)' };
 		if (!params.justification || params.justification.length < 10) return { valid: false, error: 'Justification must be at least 10 characters' };
@@ -372,6 +382,9 @@ export const rollbackPermissionChangeTool: AITool<RollbackParams, RollbackResult
 
 	validate(params: RollbackParams) {
 		if (!params.changeId) return { valid: false, error: 'Change ID is required' };
+		if (!isValidUUID(params.changeId)) {
+			return { valid: false, error: `Invalid changeId format: "${params.changeId}". Expected a UUID.` };
+		}
 		return { valid: true };
 	},
 

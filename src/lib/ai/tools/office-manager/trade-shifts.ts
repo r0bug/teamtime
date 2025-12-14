@@ -3,6 +3,7 @@ import { db, shifts, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { validateRequiredUserId, isValidUUID } from '../utils/validation';
 
 const log = createLogger('ai:tools:trade-shifts');
 
@@ -72,11 +73,22 @@ export const tradeShiftsTool: AITool<TradeShiftsParams, TradeShiftsResult> = {
 		if (!params.shiftId) {
 			return { valid: false, error: 'Shift ID is required' };
 		}
-		if (!params.fromUserId) {
-			return { valid: false, error: 'From user ID is required' };
+		// Validate shift ID format
+		if (!isValidUUID(params.shiftId)) {
+			return {
+				valid: false,
+				error: `Invalid shiftId format: "${params.shiftId}". Expected a UUID.`
+			};
 		}
-		if (!params.toUserId) {
-			return { valid: false, error: 'To user ID is required' };
+		// Validate fromUserId format
+		const fromUserIdValidation = validateRequiredUserId(params.fromUserId, 'fromUserId');
+		if (!fromUserIdValidation.valid) {
+			return fromUserIdValidation;
+		}
+		// Validate toUserId format
+		const toUserIdValidation = validateRequiredUserId(params.toUserId, 'toUserId');
+		if (!toUserIdValidation.valid) {
+			return toUserIdValidation;
 		}
 		if (params.fromUserId === params.toUserId) {
 			return { valid: false, error: 'Cannot trade a shift to the same user' };
