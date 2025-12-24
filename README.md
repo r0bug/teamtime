@@ -56,6 +56,16 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - Photo attachments for "where is this item?" scenarios
 - Conversation history retained for accountability
 
+### Gamification System
+- **Points economy** for attendance, tasks, pricing quality, and sales performance
+- **10-level progression** from Newcomer to Champion
+- **Streak system** with multipliers up to 1.5x for consistent performance
+- **17 achievements** across 5 categories (attendance, tasks, pricing, sales, special)
+- **Public leaderboards** (weekly/monthly) for team competition
+- **Admin pricing grading** with slider-based scoring (1-5) affecting points
+- **Daily sales attribution** based on shift hours worked
+- Loss aversion mechanics and social proof to drive engagement
+
 ### AI Operations Assistants ("Shackled Mentats")
 
 Three specialized AI agents run in the background:
@@ -191,10 +201,10 @@ src/
 
 ## API Overview
 
-TeamTime exposes **65+ REST endpoints** organized by domain:
+TeamTime exposes **70+ REST endpoints** organized by domain:
 
-- `/api/clock/in`, `/api/clock/out` — Time tracking (triggers task rules)
-- `/api/tasks`, `/api/tasks/[id]/complete` — Task management
+- `/api/clock/in`, `/api/clock/out` — Time tracking (triggers task rules + points)
+- `/api/tasks`, `/api/tasks/[id]/complete` — Task management (awards points)
 - `/api/tasks/cron` — Scheduled task processing (call every 15 min)
 - `/api/pricing-decisions` — Item pricing with photos
 - `/api/inventory-drops`, `/api/inventory-drops/[id]/process` — AI inventory
@@ -202,6 +212,7 @@ TeamTime exposes **65+ REST endpoints** organized by domain:
 - `/api/conversations`, `/api/messages` — Team messaging
 - `/api/ai/cron` — AI agent triggers
 - `/api/architect/chats` — Architecture advisor
+- `/api/points/cron` — Daily gamification processing (sales attribution, resets)
 
 All endpoints require authentication except static files. Role-based authorization is enforced at the API layer.
 
@@ -213,14 +224,15 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-41 tables organized across domains:
+48 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries
 - **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules
-- **Pricing**: pricing_decisions, pricing_decision_photos
+- **Pricing**: pricing_decisions, pricing_decision_photos, pricing_grades
 - **Inventory**: inventory_drops, inventory_drop_photos, inventory_drop_items
 - **Expenses**: atm_withdrawals, withdrawal_allocations, purchase_requests
 - **Messaging**: conversations, messages, message_photos
+- **Gamification**: point_transactions, user_stats, achievements, user_achievements, leaderboard_snapshots, team_goals
 - **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes, ai_tool_config, ai_tool_keywords, ai_context_config, ai_context_keywords
 - **Admin**: app_settings, audit_logs, info_posts
 

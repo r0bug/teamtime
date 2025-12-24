@@ -78,6 +78,13 @@
       "when": 1766043797190,
       "tag": "0010_giant_black_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1766579009853,
+      "tag": "0011_strange_madripoor",
+      "breakpoints": true
     }
   ]
 }

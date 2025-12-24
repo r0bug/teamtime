@@ -6,6 +6,8 @@ import {
 	processRulesForTrigger,
 	isFirstClockInAtLocation
 } from '$lib/server/services/task-rules';
+import { awardClockInPoints } from '$lib/server/services/points-service';
+import { checkAndAwardAchievements } from '$lib/server/services/achievements-service';
 
 export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!locals.user) {
@@ -107,5 +109,23 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		}
 	}
 
-	return json({ success: true, entry });
+	// Award points for clock-in
+	let pointsAwarded = { points: 0, action: 'clock_in' };
+	let achievementsEarned: { code: string; name: string }[] = [];
+	try {
+		pointsAwarded = await awardClockInPoints(locals.user.id, entry.id, now);
+
+		// Check for new achievements
+		const newAchievements = await checkAndAwardAchievements(locals.user.id);
+		achievementsEarned = newAchievements.map((a) => ({ code: a.code, name: a.name }));
+	} catch (err) {
+		console.error('Error awarding clock-in points:', err);
+	}
+
+	return json({
+		success: true,
+		entry,
+		points: pointsAwarded,
+		achievements: achievementsEarned
+	});
 };

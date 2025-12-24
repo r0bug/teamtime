@@ -2,6 +2,8 @@ import type { PageServerLoad } from './$types';
 import { db, shifts, timeEntries, tasks, conversationParticipants, messages, inventoryDrops, inventoryDropItems } from '$lib/server/db';
 import { eq, and, isNull, gt, gte, lt, sql } from 'drizzle-orm';
 import { isPurchaser } from '$lib/server/auth/roles';
+import { getOrCreateUserStats, getTodayPoints, getLeaderboard, getUserLeaderboardPosition, LEVEL_THRESHOLDS } from '$lib/server/services/points-service';
+import { getRecentAchievements, getAchievementStats } from '$lib/server/services/achievements-service';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -88,12 +90,54 @@ export const load: PageServerLoad = async ({ locals }) => {
 		};
 	}
 
+	// Load gamification data
+	let gamification = null;
+	try {
+		const userStats = await getOrCreateUserStats(user.id);
+		const todayPoints = await getTodayPoints(user.id);
+		const leaderboard = await getLeaderboard('weekly', 5);
+		const position = await getUserLeaderboardPosition(user.id, 'weekly');
+		const recentAchievements = await getRecentAchievements(user.id, 3);
+		const achievementStats = await getAchievementStats(user.id);
+
+		// Get level name
+		const levelInfo = LEVEL_THRESHOLDS.find((l) => l.level === userStats.level) || LEVEL_THRESHOLDS[0];
+		const nextLevelInfo = LEVEL_THRESHOLDS.find((l) => l.level === userStats.level + 1);
+
+		gamification = {
+			totalPoints: userStats.totalPoints,
+			weeklyPoints: userStats.weeklyPoints,
+			todayPoints,
+			level: userStats.level,
+			levelName: levelInfo.name,
+			levelProgress: userStats.levelProgress,
+			nextLevelPoints: nextLevelInfo?.minPoints || levelInfo.minPoints,
+			currentStreak: userStats.currentStreak,
+			longestStreak: userStats.longestStreak,
+			leaderboard,
+			position: position?.position || 0,
+			recentAchievements: recentAchievements.map((a) => ({
+				code: a.code,
+				name: a.name,
+				icon: a.icon,
+				tier: a.tier
+			})),
+			achievementStats: {
+				earned: achievementStats.earned,
+				total: achievementStats.total
+			}
+		};
+	} catch (err) {
+		console.error('Error loading gamification data:', err);
+	}
+
 	return {
 		nextShift,
 		activeTimeEntry,
 		pendingTasks: pendingTasks || 0,
 		unreadMessages,
 		dropStats,
-		userIsPurchaser: isPurchaser(user)
+		userIsPurchaser: isPurchaser(user),
+		gamification
 	};
 };

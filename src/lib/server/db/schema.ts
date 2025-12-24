@@ -76,6 +76,11 @@ export const visibilityLevelEnum = pgEnum('visibility_level', ['none', 'own', 's
 export const visibilityCategoryEnum = pgEnum('visibility_category', ['tasks', 'messages', 'schedule', 'attendance', 'users', 'pricing', 'expenses']);
 export const visibilityGrantTypeEnum = pgEnum('visibility_grant_type', ['view', 'view_summary', 'none']);
 
+// Gamification Enums
+export const pointCategoryEnum = pgEnum('point_category', ['attendance', 'task', 'pricing', 'sales', 'bonus', 'achievement']);
+export const achievementTierEnum = pgEnum('achievement_tier', ['bronze', 'silver', 'gold', 'platinum']);
+export const leaderboardPeriodEnum = pgEnum('leaderboard_period', ['daily', 'weekly', 'monthly']);
+
 // ============================================
 // ACCESS CONTROL TABLES (User Types & Permissions)
 // ============================================
@@ -1868,4 +1873,217 @@ export const salesSnapshots = pgTable('sales_snapshots', {
 // Sales Snapshot Types
 export type SalesSnapshot = typeof salesSnapshots.$inferSelect;
 export type NewSalesSnapshot = typeof salesSnapshots.$inferInsert;
+
+// ============================================================================
+// GAMIFICATION SYSTEM
+// ============================================================================
+
+// Point Transactions - Immutable ledger of all point changes
+export const pointTransactions = pgTable('point_transactions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+	points: integer('points').notNull(), // Can be negative for penalties
+	category: pointCategoryEnum('category').notNull(),
+	action: text('action').notNull(), // 'clock_in_on_time', 'task_completed', etc.
+	description: text('description'),
+	multiplier: decimal('multiplier', { precision: 3, scale: 2 }).default('1.00'),
+	basePoints: integer('base_points').notNull(), // Points before multiplier
+	sourceType: text('source_type'), // 'time_entry', 'task', 'pricing_decision', 'sales_snapshot'
+	sourceId: uuid('source_id'), // ID of the source record
+	metadata: jsonb('metadata'), // Additional context (streak count, grade details, etc.)
+	earnedAt: timestamp('earned_at', { withTimezone: true }).notNull().defaultNow(),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// User Stats - Aggregated performance metrics per user
+export const userStats = pgTable('user_stats', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
+
+	// Points
+	totalPoints: integer('total_points').notNull().default(0),
+	weeklyPoints: integer('weekly_points').notNull().default(0),
+	monthlyPoints: integer('monthly_points').notNull().default(0),
+
+	// Level
+	level: integer('level').notNull().default(1),
+	levelProgress: integer('level_progress').notNull().default(0), // Points toward next level
+
+	// Streaks
+	currentStreak: integer('current_streak').notNull().default(0), // Days
+	longestStreak: integer('longest_streak').notNull().default(0),
+	lastStreakDate: date('last_streak_date'), // Last day streak was maintained
+
+	// Category totals (lifetime)
+	attendancePoints: integer('attendance_points').notNull().default(0),
+	taskPoints: integer('task_points').notNull().default(0),
+	pricingPoints: integer('pricing_points').notNull().default(0),
+	salesPoints: integer('sales_points').notNull().default(0),
+
+	// Performance metrics
+	tasksCompleted: integer('tasks_completed').notNull().default(0),
+	tasksOnTime: integer('tasks_on_time').notNull().default(0),
+	pricingDecisions: integer('pricing_decisions').notNull().default(0),
+	avgPricingGrade: decimal('avg_pricing_grade', { precision: 3, scale: 2 }),
+	onTimeRate: decimal('on_time_rate', { precision: 5, scale: 2 }), // Percentage
+
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Achievement criteria type for JSONB storage
+export interface AchievementCriteria {
+	type: 'streak' | 'count' | 'threshold' | 'cumulative';
+	field?: string; // Field in userStats to check
+	value: number; // Target value
+	comparison?: 'gte' | 'eq' | 'lte'; // Default: gte
+}
+
+// Achievements - Badge/achievement definitions
+export const achievements = pgTable('achievements', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	code: text('code').notNull().unique(), // 'FIRST_CLOCK_IN', 'STREAK_7', 'PRICING_MASTER'
+	name: text('name').notNull(),
+	description: text('description').notNull(),
+	category: pointCategoryEnum('category').notNull(),
+	tier: achievementTierEnum('tier').notNull(),
+	icon: text('icon'), // Icon name or emoji
+	pointReward: integer('point_reward').notNull().default(0),
+	criteria: jsonb('criteria').$type<AchievementCriteria>().notNull(),
+	isSecret: boolean('is_secret').notNull().default(false), // Hidden until earned
+	isActive: boolean('is_active').notNull().default(true),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// User Achievements - Earned achievements per user
+export const userAchievements = pgTable('user_achievements', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+	achievementId: uuid('achievement_id').notNull().references(() => achievements.id, { onDelete: 'cascade' }),
+	earnedAt: timestamp('earned_at', { withTimezone: true }).notNull().defaultNow(),
+	notifiedAt: timestamp('notified_at', { withTimezone: true }) // When user was notified
+}, (table) => ({
+	uniqueUserAchievement: unique().on(table.userId, table.achievementId)
+}));
+
+// Pricing Grades - Admin grading for pricing decisions
+export const pricingGrades = pgTable('pricing_grades', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	pricingDecisionId: uuid('pricing_decision_id').notNull().unique().references(() => pricingDecisions.id, { onDelete: 'cascade' }),
+	gradedBy: uuid('graded_by').notNull().references(() => users.id, { onDelete: 'set null' }),
+
+	// Grade components (1-5 scale)
+	priceAccuracy: integer('price_accuracy').notNull(),
+	justificationQuality: integer('justification_quality').notNull(),
+	photoQuality: integer('photo_quality').notNull(),
+	overallGrade: decimal('overall_grade', { precision: 3, scale: 2 }).notNull(), // Weighted average
+
+	feedback: text('feedback'), // Optional admin notes
+	pointsAwarded: integer('points_awarded').notNull(), // Points given based on grade
+
+	gradedAt: timestamp('graded_at', { withTimezone: true }).notNull().defaultNow(),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Leaderboard ranking entry type for JSONB storage
+export interface LeaderboardRanking {
+	rank: number;
+	userId: string;
+	userName: string;
+	points: number;
+	breakdown: {
+		attendance: number;
+		tasks: number;
+		pricing: number;
+		sales: number;
+	};
+}
+
+// Leaderboard Snapshots - Historical leaderboard data
+export const leaderboardSnapshots = pgTable('leaderboard_snapshots', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	period: leaderboardPeriodEnum('period').notNull(),
+	periodStart: date('period_start').notNull(),
+	periodEnd: date('period_end').notNull(),
+	rankings: jsonb('rankings').$type<LeaderboardRanking[]>().notNull(),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	uniquePeriod: unique().on(table.period, table.periodStart)
+}));
+
+// Team Goals - Collective team objectives
+export const teamGoals = pgTable('team_goals', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),
+	description: text('description'),
+	targetValue: integer('target_value').notNull(),
+	currentValue: integer('current_value').notNull().default(0),
+	metricType: text('metric_type').notNull(), // 'total_sales', 'tasks_completed', 'pricing_decisions'
+	bonusPoints: integer('bonus_points').notNull(), // Points each member gets if goal met
+	startDate: date('start_date').notNull(),
+	endDate: date('end_date').notNull(),
+	isActive: boolean('is_active').notNull().default(true),
+	completedAt: timestamp('completed_at', { withTimezone: true }),
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Gamification Relations
+export const pointTransactionsRelations = relations(pointTransactions, ({ one }) => ({
+	user: one(users, {
+		fields: [pointTransactions.userId],
+		references: [users.id]
+	})
+}));
+
+export const userStatsRelations = relations(userStats, ({ one }) => ({
+	user: one(users, {
+		fields: [userStats.userId],
+		references: [users.id]
+	})
+}));
+
+export const userAchievementsRelations = relations(userAchievements, ({ one }) => ({
+	user: one(users, {
+		fields: [userAchievements.userId],
+		references: [users.id]
+	}),
+	achievement: one(achievements, {
+		fields: [userAchievements.achievementId],
+		references: [achievements.id]
+	})
+}));
+
+export const pricingGradesRelations = relations(pricingGrades, ({ one }) => ({
+	pricingDecision: one(pricingDecisions, {
+		fields: [pricingGrades.pricingDecisionId],
+		references: [pricingDecisions.id]
+	}),
+	grader: one(users, {
+		fields: [pricingGrades.gradedBy],
+		references: [users.id]
+	})
+}));
+
+export const teamGoalsRelations = relations(teamGoals, ({ one }) => ({
+	creator: one(users, {
+		fields: [teamGoals.createdBy],
+		references: [users.id]
+	})
+}));
+
+// Gamification Types
+export type PointTransaction = typeof pointTransactions.$inferSelect;
+export type NewPointTransaction = typeof pointTransactions.$inferInsert;
+export type UserStats = typeof userStats.$inferSelect;
+export type NewUserStats = typeof userStats.$inferInsert;
+export type Achievement = typeof achievements.$inferSelect;
+export type NewAchievement = typeof achievements.$inferInsert;
+export type UserAchievement = typeof userAchievements.$inferSelect;
+export type NewUserAchievement = typeof userAchievements.$inferInsert;
+export type PricingGrade = typeof pricingGrades.$inferSelect;
+export type NewPricingGrade = typeof pricingGrades.$inferInsert;
+export type LeaderboardSnapshot = typeof leaderboardSnapshots.$inferSelect;
+export type NewLeaderboardSnapshot = typeof leaderboardSnapshots.$inferInsert;
+export type TeamGoal = typeof teamGoals.$inferSelect;
+export type NewTeamGoal = typeof teamGoals.$inferInsert;
 

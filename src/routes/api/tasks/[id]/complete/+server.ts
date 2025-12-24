@@ -4,6 +4,8 @@ import { db, tasks, taskCompletions, taskPhotos, auditLogs } from '$lib/server/d
 import { eq } from 'drizzle-orm';
 import { isManager, isAdmin } from '$lib/server/auth/roles';
 import { processRulesForTrigger } from '$lib/server/services/task-rules';
+import { awardTaskPoints } from '$lib/server/services/points-service';
+import { checkAndAwardAchievements } from '$lib/server/services/achievements-service';
 
 export const POST: RequestHandler = async ({ locals, params, request, getClientAddress }) => {
 	if (!locals.user) {
@@ -116,5 +118,36 @@ export const POST: RequestHandler = async ({ locals, params, request, getClientA
 		});
 	}
 
-	return json({ success: true, completion });
+	// Award points for task completion
+	let pointsAwarded = { points: 0, breakdown: {} as Record<string, number> };
+	let achievementsEarned: { code: string; name: string }[] = [];
+	try {
+		// Award points to the person assigned to the task (not necessarily the completer)
+		const pointsUserId = task.assignedTo || locals.user.id;
+		pointsAwarded = await awardTaskPoints({
+			userId: pointsUserId,
+			taskId: params.id,
+			dueAt: task.dueAt,
+			completedAt: completion.completedAt,
+			photoRequired: task.photoRequired,
+			notesRequired: task.notesRequired,
+			hasPhotos: photos && photos.length > 0,
+			hasNotes: !!notes,
+			wasCancelled: isCancellation,
+			countsAsMissed: countsAsMissed === true
+		});
+
+		// Check for new achievements
+		const newAchievements = await checkAndAwardAchievements(pointsUserId);
+		achievementsEarned = newAchievements.map((a) => ({ code: a.code, name: a.name }));
+	} catch (err) {
+		console.error('Error awarding task points:', err);
+	}
+
+	return json({
+		success: true,
+		completion,
+		points: pointsAwarded,
+		achievements: achievementsEarned
+	});
 };

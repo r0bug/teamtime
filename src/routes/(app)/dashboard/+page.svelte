@@ -11,8 +11,19 @@
 	$: unreadMessages = data.unreadMessages;
 	$: dropStats = data.dropStats;
 	$: userIsPurchaser = data.userIsPurchaser;
+	$: gamification = data.gamification;
 
 	let clockLoading = false;
+
+	function getTierColor(tier: string): string {
+		switch (tier) {
+			case 'bronze': return 'text-amber-600 bg-amber-100';
+			case 'silver': return 'text-gray-500 bg-gray-100';
+			case 'gold': return 'text-yellow-600 bg-yellow-100';
+			case 'platinum': return 'text-purple-600 bg-purple-100';
+			default: return 'text-gray-500 bg-gray-100';
+		}
+	}
 </script>
 
 <svelte:head>
@@ -27,6 +38,107 @@
 			{new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'long', month: 'long', day: 'numeric' })}
 		</p>
 	</div>
+
+	<!-- Gamification Card -->
+	{#if gamification}
+		<div class="card mb-6 bg-gradient-to-br from-primary-50 to-blue-50 border-primary-200">
+			<div class="card-body">
+				<!-- Level & Points -->
+				<div class="flex items-center justify-between mb-4">
+					<div>
+						<div class="flex items-center gap-2">
+							<span class="text-2xl font-bold text-primary-700">Level {gamification.level}</span>
+							<span class="text-sm font-medium text-primary-600">{gamification.levelName}</span>
+						</div>
+						<p class="text-sm text-gray-600">{gamification.totalPoints.toLocaleString()} total points</p>
+					</div>
+					<div class="text-right">
+						{#if gamification.currentStreak > 0}
+							<div class="flex items-center gap-1 text-orange-600">
+								<span class="text-2xl">🔥</span>
+								<span class="font-bold">{gamification.currentStreak}</span>
+							</div>
+							<p class="text-xs text-gray-500">day streak</p>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Level Progress Bar -->
+				<div class="mb-4">
+					<div class="flex justify-between text-xs text-gray-600 mb-1">
+						<span>Progress to Level {gamification.level + 1}</span>
+						<span>{gamification.levelProgress}%</span>
+					</div>
+					<div class="h-2 bg-white rounded-full overflow-hidden shadow-inner">
+						<div
+							class="h-full bg-gradient-to-r from-primary-500 to-blue-500 transition-all duration-500"
+							style="width: {gamification.levelProgress}%"
+						></div>
+					</div>
+				</div>
+
+				<!-- Today's Stats -->
+				<div class="grid grid-cols-3 gap-2 text-center">
+					<div class="bg-white/60 rounded-lg p-2">
+						<p class="text-xl font-bold text-green-600">+{gamification.todayPoints}</p>
+						<p class="text-xs text-gray-600">Today</p>
+					</div>
+					<div class="bg-white/60 rounded-lg p-2">
+						<p class="text-xl font-bold text-primary-600">{gamification.weeklyPoints}</p>
+						<p class="text-xs text-gray-600">This Week</p>
+					</div>
+					<a href="/leaderboard" class="bg-white/60 rounded-lg p-2 hover:bg-white/80 transition-colors">
+						<p class="text-xl font-bold text-amber-600">#{gamification.position || '-'}</p>
+						<p class="text-xs text-gray-600">Rank</p>
+					</a>
+				</div>
+
+				<!-- Recent Achievements -->
+				{#if gamification.recentAchievements && gamification.recentAchievements.length > 0}
+					<div class="mt-4 pt-4 border-t border-primary-200">
+						<div class="flex items-center justify-between mb-2">
+							<p class="text-sm font-medium text-gray-700">Recent Achievements</p>
+							<a href="/achievements" class="text-xs text-primary-600 hover:underline">
+								{gamification.achievementStats.earned}/{gamification.achievementStats.total}
+							</a>
+						</div>
+						<div class="flex gap-2 flex-wrap">
+							{#each gamification.recentAchievements as achievement}
+								<span
+									class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm {getTierColor(achievement.tier)}"
+									title={achievement.name}
+								>
+									<span>{achievement.icon || '⭐'}</span>
+									<span class="font-medium">{achievement.name}</span>
+								</span>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				<!-- Mini Leaderboard -->
+				{#if gamification.leaderboard && gamification.leaderboard.length > 0}
+					<div class="mt-4 pt-4 border-t border-primary-200">
+						<div class="flex items-center justify-between mb-2">
+							<p class="text-sm font-medium text-gray-700">Weekly Leaders</p>
+							<a href="/leaderboard" class="text-xs text-primary-600 hover:underline">View All</a>
+						</div>
+						<div class="space-y-1">
+							{#each gamification.leaderboard.slice(0, 3) as leader, i}
+								<div class="flex items-center gap-2 text-sm {leader.userId === user?.id ? 'font-bold text-primary-700' : 'text-gray-700'}">
+									<span class="w-5 text-center">
+										{#if i === 0}🥇{:else if i === 1}🥈{:else if i === 2}🥉{:else}{i + 1}.{/if}
+									</span>
+									<span class="flex-1 truncate">{leader.userName}</span>
+									<span class="text-gray-500">{leader.points} pts</span>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
 
 	<!-- Clock In/Out Card -->
 	<div class="card mb-6">

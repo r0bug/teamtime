@@ -14,7 +14,8 @@ This document provides detailed information about TeamTime features, their imple
 8. [Timezone Handling](#timezone-handling)
 9. [Task Assignment Rules](#task-assignment-rules-automated-triggers)
 10. [Privacy Policy & Terms of Service](#privacy-policy--terms-of-service)
-11. [Sales Dashboard](#sales-dashboard)
+11. [Gamification System](#gamification-system)
+12. [Sales Dashboard](#sales-dashboard)
 
 ---
 
@@ -797,6 +798,186 @@ The Privacy Policy includes required disclosures for SMS messaging:
 - `src/routes/privacy/+page.server.ts` — Server config
 - `src/routes/terms/+page.svelte` — Terms of Service page
 - `src/routes/terms/+page.server.ts` — Server config
+
+---
+
+## Gamification System
+
+### Overview
+
+TeamTime includes a comprehensive gamification system designed to motivate employee performance through game theory principles. The system awards points for positive behaviors (on-time attendance, task completion, quality pricing) and applies penalties for negative behaviors (lateness, missed tasks, poor quality).
+
+### Design Principles
+
+1. **Variable Rewards**: Points vary by action quality, not just completion
+2. **Loss Aversion**: Streaks create fear of losing progress
+3. **Social Proof**: Leaderboards show peer achievements
+4. **Progress Visualization**: Levels and progress bars show advancement
+5. **Achievement Unlocks**: Badges provide recognition milestones
+6. **Multipliers**: Consistency is rewarded exponentially
+
+### Points Economy
+
+#### Attendance Points
+
+| Action | Points | Notes |
+|--------|--------|-------|
+| Clock in on time | +10 | Within 5 min of scheduled shift |
+| Clock in early | +15 | 5-30 min before shift |
+| Clock in late | -5 per 5min | Max -20 points |
+| Clock out properly | +5 | No forgotten clock-out |
+| Forgotten clock-out | -15 | Required admin fix |
+
+#### Task Points
+
+| Action | Points | Notes |
+|--------|--------|-------|
+| Complete task | +20 | Base completion |
+| Complete before due | +10 | Bonus for early |
+| Complete on time | +5 | By due date |
+| Complete late | -10 | After due date |
+| Add required photos | +5 | When required |
+| Add required notes | +5 | When required |
+| Task cancelled (your fault) | -20 | countsAsMissed = true |
+
+#### Pricing Points (Admin Graded)
+
+| Grade | Points | Criteria |
+|-------|--------|----------|
+| Excellent (4.5-5.0) | +25 | Price spot-on, thorough justification, professional photos |
+| Good (3.5-4.4) | +15 | Price reasonable, adequate justification, clear photos |
+| Acceptable (2.5-3.4) | +5 | Price defensible, basic justification, usable photos |
+| Poor (1.0-2.4) | -10 | Price questionable, weak justification, poor photos |
+
+#### Sales Points
+
+| Action | Points | Notes |
+|--------|--------|-------|
+| Per $100 retained during shift | +5 | Proportional to hours worked |
+| Top seller of day | +50 | Bonus for #1 by sales/hour |
+
+### Streak System
+
+Consecutive work days with on-time clock-in and no task failures build a streak:
+
+| Streak Length | Daily Multiplier | Bonus |
+|---------------|------------------|-------|
+| 1-2 days | 1.0x | None |
+| 3-4 days | 1.1x | +10 on day 3 |
+| 5-6 days | 1.2x | +25 on day 5 |
+| 7+ days | 1.3x | +50 on day 7 |
+| 14+ days | 1.4x | +100 on day 14 |
+| 30+ days | 1.5x | +250 on day 30 |
+
+**Streak Breaks**: Late clock-in (>15 min), missed task, or no-show
+**Streak Preservation**: Days off don't break streak (only scheduled work days count)
+
+### Level Progression
+
+| Level | Points Required | Title |
+|-------|-----------------|-------|
+| 1 | 0 | Newcomer |
+| 2 | 500 | Trainee |
+| 3 | 1,500 | Team Member |
+| 4 | 3,500 | Reliable |
+| 5 | 7,000 | Veteran |
+| 6 | 12,000 | Expert |
+| 7 | 20,000 | Master |
+| 8 | 35,000 | Elite |
+| 9 | 60,000 | Legend |
+| 10 | 100,000 | Champion |
+
+### Achievements
+
+17 achievements across 5 categories:
+
+#### Attendance Achievements
+| Code | Name | Tier | Criteria |
+|------|------|------|----------|
+| FIRST_CLOCK | First Day | Bronze | First clock-in ever |
+| STREAK_7 | Week Warrior | Bronze | 7-day streak |
+| STREAK_30 | Monthly Master | Silver | 30-day streak |
+| EARLY_BIRD | Early Bird | Bronze | 10 early arrivals |
+
+#### Task Achievements
+| Code | Name | Tier | Criteria |
+|------|------|------|----------|
+| TASK_10 | Getting Started | Bronze | 10 tasks completed |
+| TASK_50 | Task Tackler | Silver | 50 tasks completed |
+| TASK_100 | Century Club | Gold | 100 tasks completed |
+
+#### Pricing Achievements
+| Code | Name | Tier | Criteria |
+|------|------|------|----------|
+| FIRST_PRICE | Price Tagger | Bronze | First pricing decision |
+| PRICE_50 | Pricing Pro | Silver | 50 pricing decisions |
+| PRICING_MASTER | Pricing Master | Platinum | Avg grade > 4.5 with 100+ decisions |
+
+### User-Facing Pages
+
+#### Dashboard Gamification Widget
+- Level and title display with progress bar
+- Current streak with flame icon
+- Today's points, weekly points, and rank
+- Mini-leaderboard showing top 3
+- Recent achievements badges
+
+#### Leaderboard (`/leaderboard`)
+- Weekly and monthly toggle
+- User's current position card
+- Full rankings with points, level, and streak
+- "How to earn points" reference card
+
+#### Achievements (`/achievements`)
+- Progress summary (earned/total with percentage)
+- Achievements grouped by category
+- Tier badges (Bronze, Silver, Gold, Platinum)
+- Earned date and lock status
+
+### Admin Features
+
+#### Pricing Grading (`/admin/pricing/grading`)
+- Queue of ungraded pricing decisions
+- Stats showing graded/ungraded counts
+- Detail view with photos and justification
+- Slider-based grading (1-5) for:
+  - Price Accuracy (40% weight)
+  - Justification Quality (30% weight)
+  - Photo Quality (30% weight)
+- Optional feedback field
+- Points auto-calculated and awarded
+
+### Cron Jobs
+
+**Points Cron** (`/api/points/cron`):
+- Runs daily at 3 AM Pacific
+- Processes yesterday's sales attribution
+- Resets weekly points on Sunday
+- Resets monthly points on 1st
+
+**Setup**:
+```bash
+0 11 * * * curl -s -H "Authorization: Bearer $CRON_SECRET" https://yourapp.com/api/points/cron
+```
+
+### Database Schema
+
+| Table | Purpose |
+|-------|---------|
+| `point_transactions` | Immutable ledger of all point changes |
+| `user_stats` | Aggregated stats (totals, streaks, levels) |
+| `achievements` | Achievement definitions |
+| `user_achievements` | Earned achievements per user |
+| `pricing_grades` | Admin grades for pricing decisions |
+| `leaderboard_snapshots` | Historical rankings (optional) |
+| `team_goals` | Collective team goals (optional) |
+
+### Files
+
+- **Services**: `src/lib/server/services/points-service.ts`, `achievements-service.ts`, `sales-attribution-service.ts`
+- **Pages**: `src/routes/(app)/leaderboard/`, `achievements/`, `admin/pricing/grading/`
+- **Cron**: `src/routes/api/points/cron/+server.ts`
+- **Schema**: `src/lib/server/db/schema.ts` (gamification tables)
 
 ---
 
