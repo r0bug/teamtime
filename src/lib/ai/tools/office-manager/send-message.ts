@@ -8,9 +8,10 @@ import { validateUserId } from '../utils/validation';
 const log = createLogger('ai:tools:send-message');
 
 interface SendMessageParams {
-	toUserId: string;
+	toUserId?: string;
 	content: string;
 	isAdminMessage?: boolean;
+	toAllStaff?: boolean;
 }
 
 interface SendMessageResult {
@@ -94,14 +95,14 @@ async function getOrCreateAIConversation(userId: string): Promise<string> {
 
 export const sendMessageTool: AITool<SendMessageParams, SendMessageResult> = {
 	name: 'send_message',
-	description: 'Send a direct message to a staff member. Use this for reminders, check-ins, workflow tips, or any communication with individual users.',
+	description: 'Send a direct message to staff. Can send to a specific user, all admins, or all staff members. Use this for reminders, check-ins, workflow tips, announcements, or any communication.',
 	agent: 'office_manager',
 	parameters: {
 		type: 'object',
 		properties: {
 			toUserId: {
 				type: 'string',
-				description: 'The user ID to send the message to'
+				description: 'The user ID to send the message to (for individual messages)'
 			},
 			content: {
 				type: 'string',
@@ -109,7 +110,11 @@ export const sendMessageTool: AITool<SendMessageParams, SendMessageResult> = {
 			},
 			isAdminMessage: {
 				type: 'boolean',
-				description: 'If true, sends to all admin users instead of the specified user'
+				description: 'If true, sends to all admin users'
+			},
+			toAllStaff: {
+				type: 'boolean',
+				description: 'If true, sends to all active staff members (use for announcements or team-wide messages)'
 			}
 		},
 		required: ['content']
@@ -131,11 +136,16 @@ export const sendMessageTool: AITool<SendMessageParams, SendMessageResult> = {
 		if (params.content.length > 1000) {
 			return { valid: false, error: 'Message too long (max 1000 chars)' };
 		}
-		if (!params.toUserId && !params.isAdminMessage) {
-			return { valid: false, error: 'Either toUserId or isAdminMessage is required' };
+		if (!params.toUserId && !params.isAdminMessage && !params.toAllStaff) {
+			return { valid: false, error: 'Either toUserId, isAdminMessage, or toAllStaff is required' };
 		}
-		// Validate user ID format if provided (not required when isAdminMessage is true)
-		if (params.toUserId && !params.isAdminMessage) {
+		// Check for conflicting parameters
+		const targetCount = [params.toUserId, params.isAdminMessage, params.toAllStaff].filter(Boolean).length;
+		if (targetCount > 1) {
+			return { valid: false, error: 'Only one of toUserId, isAdminMessage, or toAllStaff can be specified' };
+		}
+		// Validate user ID format if provided
+		if (params.toUserId) {
 			const userIdValidation = validateUserId(params.toUserId, 'toUserId');
 			if (!userIdValidation.valid) {
 				return userIdValidation;
@@ -156,7 +166,22 @@ export const sendMessageTool: AITool<SendMessageParams, SendMessageResult> = {
 			let targetUserIds: string[] = [];
 			let recipientName = '';
 
-			if (params.isAdminMessage) {
+			if (params.toAllStaff) {
+				// Send to all active users (staff, managers, purchasers - excluding admins)
+				const allStaff = await db
+					.select({ id: users.id, name: users.name, role: users.role })
+					.from(users)
+					.where(eq(users.isActive, true));
+
+				// Exclude admin users from "all staff" broadcast
+				const nonAdminStaff = allStaff.filter(u => u.role !== 'admin');
+
+				if (nonAdminStaff.length === 0) {
+					return { success: false, error: 'No active staff members found' };
+				}
+				targetUserIds = nonAdminStaff.map(u => u.id);
+				recipientName = `all staff (${nonAdminStaff.length} members)`;
+			} else if (params.isAdminMessage) {
 				// Send to all admins
 				const admins = await db
 					.select({ id: users.id, name: users.name })
@@ -164,7 +189,7 @@ export const sendMessageTool: AITool<SendMessageParams, SendMessageResult> = {
 					.where(eq(users.role, 'admin'));
 				targetUserIds = admins.map(a => a.id);
 				recipientName = `${admins.length} admin(s)`;
-			} else {
+			} else if (params.toUserId) {
 				// Send to specific user
 				const user = await db
 					.select({ id: users.id, name: users.name })

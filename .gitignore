@@ -50,3 +50,8 @@ scraper-imports/nrscreds.secret
 scraper-imports/*.log
 scraper-imports/venv/
 scraper-imports/*.tar.gz
+scraper-imports/__pycache__/
+
+# Test files with API calls
+test-*.cjs
+test-*.js

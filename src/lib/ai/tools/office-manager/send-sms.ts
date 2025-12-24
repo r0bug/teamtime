@@ -12,6 +12,7 @@ interface SendSMSParams {
 	toUserId?: string;
 	toPhone?: string; // Direct phone number (E.164 format)
 	message: string;
+	toAllStaff?: boolean; // Send to all active staff with phone numbers
 }
 
 interface SendSMSResult {
@@ -19,12 +20,13 @@ interface SendSMSResult {
 	recipientName?: string;
 	recipientPhone?: string;
 	messageSid?: string;
+	recipientCount?: number;
 	error?: string;
 }
 
 export const sendSMSTool: AITool<SendSMSParams, SendSMSResult> = {
 	name: 'send_sms',
-	description: 'Send an SMS text message to a staff member. Use for urgent notifications that need immediate attention. Messages should be concise (160 chars or less for best delivery).',
+	description: 'Send an SMS text message to staff. Can send to a specific user, a phone number, or all staff members. Use for urgent notifications that need immediate attention. Messages should be concise (160 chars or less for best delivery).',
 	agent: 'office_manager',
 	parameters: {
 		type: 'object',
@@ -40,6 +42,10 @@ export const sendSMSTool: AITool<SendSMSParams, SendSMSResult> = {
 			message: {
 				type: 'string',
 				description: 'The SMS message content (keep under 160 chars for best delivery)'
+			},
+			toAllStaff: {
+				type: 'boolean',
+				description: 'If true, sends SMS to all active staff members who have phone numbers on file (use for urgent team-wide alerts)'
 			}
 		},
 		required: ['message']
@@ -57,6 +63,9 @@ export const sendSMSTool: AITool<SendSMSParams, SendSMSResult> = {
 	},
 
 	getConfirmationMessage(params: SendSMSParams): string {
+		if (params.toAllStaff) {
+			return `Send SMS to ALL STAFF?\n\nMessage: "${params.message}"\n\nThis will send to all active staff members with phone numbers on file.`;
+		}
 		if (params.toUserId) {
 			return `Send SMS to user?\n\nMessage: "${params.message}"`;
 		}
@@ -70,8 +79,13 @@ export const sendSMSTool: AITool<SendSMSParams, SendSMSResult> = {
 		if (params.message.length > 1600) {
 			return { valid: false, error: 'SMS message too long (max 1600 chars, but 160 is recommended)' };
 		}
-		if (!params.toUserId && !params.toPhone) {
-			return { valid: false, error: 'Either toUserId or toPhone is required' };
+		if (!params.toUserId && !params.toPhone && !params.toAllStaff) {
+			return { valid: false, error: 'Either toUserId, toPhone, or toAllStaff is required' };
+		}
+		// Check for conflicting parameters
+		const targetCount = [params.toUserId, params.toPhone, params.toAllStaff].filter(Boolean).length;
+		if (targetCount > 1) {
+			return { valid: false, error: 'Only one of toUserId, toPhone, or toAllStaff can be specified' };
 		}
 		// Validate user ID format if provided
 		if (params.toUserId) {
@@ -99,6 +113,56 @@ export const sendSMSTool: AITool<SendSMSParams, SendSMSResult> = {
 		}
 
 		try {
+			// Handle sending to all staff
+			if (params.toAllStaff) {
+				const allStaff = await db
+					.select({ id: users.id, name: users.name, phone: users.phone, role: users.role })
+					.from(users)
+					.where(eq(users.isActive, true));
+
+				// Filter to non-admin users with valid phone numbers
+				const staffWithPhones = allStaff.filter(u => {
+					if (u.role === 'admin') return false; // Exclude admins from "all staff" broadcast
+					if (!u.phone) return false;
+					const formatted = formatPhoneToE164(u.phone);
+					return formatted !== null;
+				});
+
+				if (staffWithPhones.length === 0) {
+					return { success: false, error: 'No active staff members with valid phone numbers found' };
+				}
+
+				let successCount = 0;
+				let failCount = 0;
+				const errors: string[] = [];
+
+				for (const user of staffWithPhones) {
+					const formatted = formatPhoneToE164(user.phone!);
+					if (!formatted) continue;
+
+					const result = await sendSMS(formatted, params.message);
+					if (result.success) {
+						successCount++;
+					} else {
+						failCount++;
+						errors.push(`${user.name}: ${result.error}`);
+					}
+				}
+
+				if (successCount === 0) {
+					return {
+						success: false,
+						error: `Failed to send SMS to any staff. Errors: ${errors.join(', ')}`
+					};
+				}
+
+				return {
+					success: true,
+					recipientName: `all staff (${successCount} sent${failCount > 0 ? `, ${failCount} failed` : ''})`,
+					recipientCount: successCount
+				};
+			}
+
 			let phoneNumber: string;
 			let recipientName: string | undefined;
 
@@ -167,6 +231,9 @@ export const sendSMSTool: AITool<SendSMSParams, SendSMSResult> = {
 
 	formatResult(result: SendSMSResult): string {
 		if (result.success) {
+			if (result.recipientCount && result.recipientCount > 1) {
+				return `SMS sent to ${result.recipientName}`;
+			}
 			const recipient = result.recipientName || result.recipientPhone || 'recipient';
 			return `SMS sent to ${recipient}`;
 		}

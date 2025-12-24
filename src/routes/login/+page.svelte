@@ -130,5 +130,11 @@
 		<p class="text-center text-sm text-gray-500">
 			Need help? Contact your administrator.
 		</p>
+
+		<p class="text-center text-xs text-gray-400 mt-4">
+			<a href="/privacy" class="hover:text-gray-600 underline">Privacy Policy</a>
+			<span class="mx-2">|</span>
+			<a href="/terms" class="hover:text-gray-600 underline">Terms of Service</a>
+		</p>
 	</div>
 </div>

@@ -29,6 +29,7 @@ export const architectureCategoryEnum = pgEnum('architecture_category', [
 export const taskStatusEnum = pgEnum('task_status', ['not_started', 'in_progress', 'completed', 'cancelled']);
 export const taskPriorityEnum = pgEnum('task_priority', ['low', 'medium', 'high', 'urgent']);
 export const taskSourceEnum = pgEnum('task_source', ['manual', 'recurring', 'event_triggered', 'purchase_approval', 'ebay_listing', 'inventory_drop']);
+export const taskAssignmentTypeEnum = pgEnum('task_assignment_type', ['individual', 'all_staff']);
 export const inventoryDropStatusEnum = pgEnum('inventory_drop_status', ['pending', 'processing', 'completed', 'failed']);
 export const inventoryDropUploadStatusEnum = pgEnum('inventory_drop_upload_status', ['pending', 'uploading', 'completed', 'failed']);
 export const jobStatusEnum = pgEnum('job_status', ['pending', 'running', 'completed', 'failed', 'cancelled']);
@@ -41,7 +42,8 @@ export const ruleTriggerTypeEnum = pgEnum('rule_trigger_type', [
 	'last_clock_out',
 	'time_into_shift',
 	'task_completed',
-	'schedule'
+	'schedule',
+	'closing_shift'
 ]);
 export const assignmentTypeEnum = pgEnum('assignment_type', [
 	'specific_user',
@@ -67,6 +69,12 @@ export const notificationTypeEnum = pgEnum('notification_type', [
 // Office Manager Chat Enums
 export const pendingActionStatusEnum = pgEnum('pending_action_status', ['pending', 'approved', 'rejected', 'expired']);
 export const cashCountTriggerEnum = pgEnum('cash_count_trigger', ['shift_start', 'shift_end', 'manual']);
+
+// Data Visibility Enums
+export const visibilityGroupTypeEnum = pgEnum('visibility_group_type', ['team', 'store', 'department', 'custom']);
+export const visibilityLevelEnum = pgEnum('visibility_level', ['none', 'own', 'same_group', 'same_role', 'lower_roles', 'all']);
+export const visibilityCategoryEnum = pgEnum('visibility_category', ['tasks', 'messages', 'schedule', 'attendance', 'users', 'pricing', 'expenses']);
+export const visibilityGrantTypeEnum = pgEnum('visibility_grant_type', ['view', 'view_summary', 'none']);
 
 // ============================================
 // ACCESS CONTROL TABLES (User Types & Permissions)
@@ -165,6 +173,98 @@ export const permissionChangeNotifications = pgTable('permission_change_notifica
 	sentAt: timestamp('sent_at', { withTimezone: true }),
 	readAt: timestamp('read_at', { withTimezone: true }),
 	deliveryMethod: text('delivery_method').notNull().default('in_app'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// ============================================
+// DATA VISIBILITY TABLES (What data users can see)
+// ============================================
+
+// Visibility Groups - custom groups like teams, stores, departments
+export const visibilityGroups = pgTable('visibility_groups', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull().unique(),
+	description: text('description'),
+	groupType: visibilityGroupTypeEnum('group_type').notNull().default('team'),
+	locationId: uuid('location_id'), // Optional: tie group to a location (forward reference, will be resolved)
+	isActive: boolean('is_active').notNull().default(true),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Visibility Group Members - who belongs to which groups
+export const visibilityGroupMembers = pgTable('visibility_group_members', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	groupId: uuid('group_id').notNull().references(() => visibilityGroups.id, { onDelete: 'cascade' }),
+	userId: uuid('user_id'), // Forward reference to users (will be resolved after users table)
+	isLeader: boolean('is_leader').notNull().default(false), // Leaders may have expanded visibility
+	joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	uniqueGroupUser: unique().on(table.groupId, table.userId)
+}));
+
+// Visibility Rules - system-wide visibility rules (scenario toggles)
+export const visibilityRules = pgTable('visibility_rules', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	ruleKey: text('rule_key').notNull().unique(), // e.g., 'staff_see_manager_tasks', 'peer_schedule_visibility'
+	name: text('name').notNull(),
+	description: text('description'),
+	category: visibilityCategoryEnum('category').notNull(),
+
+	// Who this rule applies to (viewer)
+	viewerRole: userRoleEnum('viewer_role'), // 'staff', 'manager', 'admin', NULL=all
+	viewerGroupId: uuid('viewer_group_id').references(() => visibilityGroups.id, { onDelete: 'set null' }),
+
+	// What they can see (target)
+	targetRole: userRoleEnum('target_role'), // 'staff', 'manager', 'admin', NULL=all
+	targetGroupId: uuid('target_group_id').references(() => visibilityGroups.id, { onDelete: 'set null' }),
+
+	// The visibility setting
+	visibilityLevel: visibilityLevelEnum('visibility_level').notNull().default('none'),
+
+	isEnabled: boolean('is_enabled').notNull().default(false),
+	priority: integer('priority').notNull().default(50), // Higher = checked first
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// User Visibility Grants - explicit user-level visibility overrides
+export const userVisibilityGrants = pgTable('user_visibility_grants', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id').notNull(), // The viewer (forward reference to users)
+
+	// What category of data
+	dataCategory: visibilityCategoryEnum('data_category').notNull(),
+
+	// Target specification (one of these)
+	targetUserId: uuid('target_user_id'), // See specific user's data
+	targetGroupId: uuid('target_group_id').references(() => visibilityGroups.id, { onDelete: 'cascade' }), // See group's data
+	targetRole: userRoleEnum('target_role'), // See all of a role's data
+
+	// Grant type
+	grantType: visibilityGrantTypeEnum('grant_type').notNull().default('view'),
+
+	// Temporal
+	grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+	expiresAt: timestamp('expires_at', { withTimezone: true }), // NULL = permanent
+	grantedByUserId: uuid('granted_by_user_id'), // Forward reference to users
+	reason: text('reason'),
+
+	isActive: boolean('is_active').notNull().default(true),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Visibility Presets - predefined scenario configurations
+export const visibilityPresets = pgTable('visibility_presets', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(), // 'Strict Privacy', 'Team Collaborative', 'Open Organization'
+	description: text('description'),
+	rules: jsonb('rules').$type<{
+		ruleKey: string;
+		isEnabled: boolean;
+		visibilityLevel?: string;
+	}[]>().notNull(),
+	isSystem: boolean('is_system').notNull().default(false), // System presets can't be deleted
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
@@ -297,6 +397,7 @@ export const tasks = pgTable('tasks', {
 	title: text('title').notNull(),
 	description: text('description'),
 	assignedTo: uuid('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+	assignmentType: taskAssignmentTypeEnum('assignment_type').notNull().default('individual'),
 	priority: taskPriorityEnum('priority').notNull().default('medium'),
 	dueAt: timestamp('due_at', { withTimezone: true }),
 	status: taskStatusEnum('status').notNull().default('not_started'),
@@ -348,9 +449,11 @@ export const taskPhotos = pgTable('task_photos', {
 // Task assignment rules table - configures automatic task creation and assignment
 export const taskAssignmentRules = pgTable('task_assignment_rules', {
 	id: uuid('id').primaryKey().defaultRandom(),
+	// Either templateId OR cashCountConfigId should be set (one is required)
 	templateId: uuid('template_id')
-		.notNull()
 		.references(() => taskTemplates.id, { onDelete: 'cascade' }),
+	cashCountConfigId: uuid('cash_count_config_id')
+		.references(() => cashCountConfigs.id, { onDelete: 'cascade' }),
 	name: text('name').notNull(),
 	description: text('description'),
 
@@ -1101,6 +1204,89 @@ export const cashCounts = pgTable('cash_counts', {
 	submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow()
 });
 
+// Cash Count Task Links (connects tasks to cash count configs)
+export const cashCountTaskLinks = pgTable('cash_count_task_links', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	taskId: uuid('task_id')
+		.notNull()
+		.references(() => tasks.id, { onDelete: 'cascade' }),
+	configId: uuid('config_id')
+		.notNull()
+		.references(() => cashCountConfigs.id, { onDelete: 'cascade' }),
+	locationId: uuid('location_id')
+		.notNull()
+		.references(() => locations.id, { onDelete: 'cascade' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type CashCountTaskLink = typeof cashCountTaskLinks.$inferSelect;
+export type NewCashCountTaskLink = typeof cashCountTaskLinks.$inferInsert;
+
+// ============================================
+// SOCIAL MEDIA METRICS SYSTEM
+// ============================================
+
+export const socialMediaPlatformEnum = pgEnum('social_media_platform', ['instagram', 'facebook', 'tiktok', 'youtube', 'twitter', 'other']);
+
+// Social Media Field Type
+export interface SocialMediaField {
+	name: string;
+	label: string;
+	type: 'integer' | 'decimal' | 'percentage' | 'currency';
+	required?: boolean;
+	order: number;
+}
+
+// Social Media Configurations
+export const socialMediaConfigs = pgTable('social_media_configs', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),
+	platform: socialMediaPlatformEnum('platform').notNull(),
+	fields: jsonb('fields').$type<SocialMediaField[]>().notNull(),
+	requireUrl: boolean('require_url').notNull().default(true),
+	requireScreenshot: boolean('require_screenshot').notNull().default(false),
+	isActive: boolean('is_active').notNull().default(true),
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Social Media Task Links (connects tasks to social media configs)
+export const socialMediaTaskLinks = pgTable('social_media_task_links', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	taskId: uuid('task_id')
+		.notNull()
+		.references(() => tasks.id, { onDelete: 'cascade' }),
+	configId: uuid('config_id')
+		.notNull()
+		.references(() => socialMediaConfigs.id, { onDelete: 'cascade' }),
+	postUrl: text('post_url'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Social Media Submissions
+export const socialMediaSubmissions = pgTable('social_media_submissions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	taskId: uuid('task_id')
+		.notNull()
+		.references(() => tasks.id, { onDelete: 'cascade' }),
+	configId: uuid('config_id')
+		.notNull()
+		.references(() => socialMediaConfigs.id, { onDelete: 'cascade' }),
+	userId: uuid('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	postUrl: text('post_url').notNull(),
+	values: jsonb('values').$type<Record<string, number>>().notNull(),
+	notes: text('notes'),
+	submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type SocialMediaConfig = typeof socialMediaConfigs.$inferSelect;
+export type NewSocialMediaConfig = typeof socialMediaConfigs.$inferInsert;
+export type SocialMediaTaskLink = typeof socialMediaTaskLinks.$inferSelect;
+export type SocialMediaSubmission = typeof socialMediaSubmissions.$inferSelect;
+
 // ============================================
 // JOB QUEUE TABLE (Database-backed job queue for background processing)
 // ============================================
@@ -1220,6 +1406,10 @@ export const taskAssignmentRulesRelations = relations(taskAssignmentRules, ({ on
 	template: one(taskTemplates, {
 		fields: [taskAssignmentRules.templateId],
 		references: [taskTemplates.id]
+	}),
+	cashCountConfig: one(cashCountConfigs, {
+		fields: [taskAssignmentRules.cashCountConfigId],
+		references: [cashCountConfigs.id]
 	}),
 	createdByUser: one(users, {
 		fields: [taskAssignmentRules.createdBy],
@@ -1476,6 +1666,64 @@ export const cashCountsRelations = relations(cashCounts, ({ one }) => ({
 	})
 }));
 
+// Data Visibility Relations
+export const visibilityGroupsRelations = relations(visibilityGroups, ({ one, many }) => ({
+	location: one(locations, {
+		fields: [visibilityGroups.locationId],
+		references: [locations.id]
+	}),
+	members: many(visibilityGroupMembers),
+	rulesAsViewer: many(visibilityRules, { relationName: 'viewerGroup' }),
+	rulesAsTarget: many(visibilityRules, { relationName: 'targetGroup' }),
+	grants: many(userVisibilityGrants)
+}));
+
+export const visibilityGroupMembersRelations = relations(visibilityGroupMembers, ({ one }) => ({
+	group: one(visibilityGroups, {
+		fields: [visibilityGroupMembers.groupId],
+		references: [visibilityGroups.id]
+	}),
+	user: one(users, {
+		fields: [visibilityGroupMembers.userId],
+		references: [users.id]
+	})
+}));
+
+export const visibilityRulesRelations = relations(visibilityRules, ({ one }) => ({
+	viewerGroup: one(visibilityGroups, {
+		fields: [visibilityRules.viewerGroupId],
+		references: [visibilityGroups.id],
+		relationName: 'viewerGroup'
+	}),
+	targetGroup: one(visibilityGroups, {
+		fields: [visibilityRules.targetGroupId],
+		references: [visibilityGroups.id],
+		relationName: 'targetGroup'
+	})
+}));
+
+export const userVisibilityGrantsRelations = relations(userVisibilityGrants, ({ one }) => ({
+	user: one(users, {
+		fields: [userVisibilityGrants.userId],
+		references: [users.id],
+		relationName: 'grantsAsViewer'
+	}),
+	targetUser: one(users, {
+		fields: [userVisibilityGrants.targetUserId],
+		references: [users.id],
+		relationName: 'grantsAsTarget'
+	}),
+	targetGroup: one(visibilityGroups, {
+		fields: [userVisibilityGrants.targetGroupId],
+		references: [visibilityGroups.id]
+	}),
+	grantedByUser: one(users, {
+		fields: [userVisibilityGrants.grantedByUserId],
+		references: [users.id],
+		relationName: 'grantsMade'
+	})
+}));
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -1559,6 +1807,18 @@ export type NewAIContextConfig = typeof aiContextConfig.$inferInsert;
 export type AIContextKeyword = typeof aiContextKeywords.$inferSelect;
 export type NewAIContextKeyword = typeof aiContextKeywords.$inferInsert;
 
+// Data Visibility Types
+export type VisibilityGroup = typeof visibilityGroups.$inferSelect;
+export type NewVisibilityGroup = typeof visibilityGroups.$inferInsert;
+export type VisibilityGroupMember = typeof visibilityGroupMembers.$inferSelect;
+export type NewVisibilityGroupMember = typeof visibilityGroupMembers.$inferInsert;
+export type VisibilityRule = typeof visibilityRules.$inferSelect;
+export type NewVisibilityRule = typeof visibilityRules.$inferInsert;
+export type UserVisibilityGrant = typeof userVisibilityGrants.$inferSelect;
+export type NewUserVisibilityGrant = typeof userVisibilityGrants.$inferInsert;
+export type VisibilityPreset = typeof visibilityPresets.$inferSelect;
+export type NewVisibilityPreset = typeof visibilityPresets.$inferInsert;
+
 // ============================================================================
 // SALES METRICS
 // ============================================================================
@@ -1608,3 +1868,4 @@ export const salesSnapshots = pgTable('sales_snapshots', {
 // Sales Snapshot Types
 export type SalesSnapshot = typeof salesSnapshots.$inferSelect;
 export type NewSalesSnapshot = typeof salesSnapshots.$inferInsert;
+

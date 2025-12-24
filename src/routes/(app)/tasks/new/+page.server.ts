@@ -34,7 +34,8 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const title = formData.get('title')?.toString().trim();
 		const description = formData.get('description')?.toString().trim() || null;
-		const assignedTo = formData.get('assignedTo')?.toString() || null;
+		const assignmentType = formData.get('assignmentType')?.toString() as 'individual' | 'all_staff';
+		const assignedTo = assignmentType === 'all_staff' ? null : (formData.get('assignedTo')?.toString() || null);
 		const priority = formData.get('priority')?.toString() as 'low' | 'medium' | 'high' | 'urgent';
 		const dueAt = formData.get('dueAt')?.toString();
 		const photoRequired = formData.get('photoRequired') === 'on';
@@ -48,6 +49,7 @@ export const actions: Actions = {
 			title,
 			description,
 			assignedTo,
+			assignmentType: assignmentType || 'individual',
 			priority: priority || 'medium',
 			dueAt: dueAt ? parsePacificDatetime(dueAt) : null,
 			photoRequired,

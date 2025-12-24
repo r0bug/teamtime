@@ -12,7 +12,9 @@ This document provides detailed information about TeamTime features, their imple
 6. [AI Operations Assistants](#ai-operations-assistants)
 7. [AI Control Panel](#ai-control-panel)
 8. [Timezone Handling](#timezone-handling)
-9. [Sales Dashboard](#sales-dashboard)
+9. [Task Assignment Rules](#task-assignment-rules-automated-triggers)
+10. [Privacy Policy & Terms of Service](#privacy-policy--terms-of-service)
+11. [Sales Dashboard](#sales-dashboard)
 
 ---
 
@@ -391,18 +393,25 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 **Triggers**: Runs on a 15-minute cron schedule during business hours (7 AM - 7 PM).
 
 **Available Tools**:
-- `send_message` — Send direct messages to users (with cooldowns)
+- `send_message` — Send direct messages to users or all staff (with cooldowns)
 - `create_task` — Create follow-up tasks (with cooldowns)
 - `cancel_task` — Cancel tasks with accountability tracking and user notification
 - `view_schedule` — View work schedule by date and location
 - `get_available_staff` — Query staff availability and clock-in status
-- `send_sms` — Send SMS messages to users
+- `send_sms` — Send SMS messages to users or all staff
 - `trade_shifts` — Facilitate shift trades between users
 - `create_schedule` — Create new schedule entries
+- `delete_schedule` — Delete scheduled shifts
+- `delete_duplicate_schedules` — Batch delete duplicate shifts
 - `create_recurring_task` — Create recurring task templates
 - `create_cash_count_task` — Create cash count tasks
 - `process_inventory_photos` — Process inventory batch photos
 - Permission management tools (view, grant, change user types)
+
+**Broadcast Messaging**:
+- `send_message` and `send_sms` support `toAllStaff: true` parameter
+- Sends to all active non-admin staff members
+- Useful for team-wide announcements and urgent notifications
 
 **Cooldowns** (prevent spam):
 - Messages: 30 min per user, 5 min global, 10/hour max
@@ -425,6 +434,7 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 - **Attendance Context**: Shows ALL currently clocked-in users regardless of when they clocked in. Users clocked in >16 hours are flagged as "likely forgot to clock out"
 - **Tool Parameter Validation**: User ID parameters require valid UUIDs. AI receives helpful error messages directing it to use `get_available_staff` to look up IDs by name
 - **Streaming**: Tools with no required parameters (like `get_my_permissions`) are handled correctly with empty JSON defaulting to `{}`
+- **AI Continuation**: After user confirms an action, the AI automatically continues processing remaining tasks instead of stopping. This enables multi-step workflows like "delete all duplicate schedules" to proceed without manual intervention after each confirmation
 
 ### Revenue Optimizer
 
@@ -675,6 +685,118 @@ TeamTime was built for Yakima Finds, a business operating in Washington State (P
 2. **API Responses**: Dates returned as ISO strings (UTC)
 3. **Form Inputs**: `datetime-local` inputs interpreted as Pacific
 4. **First Clock-In**: "First clock-in of the day" triggers at Pacific midnight, not UTC midnight
+
+---
+
+## Task Assignment Rules (Automated Triggers)
+
+### Overview
+
+Task Assignment Rules enable automatic task creation based on real-time events like clock-in/out, time worked, or scheduled times. This automates routine task assignments like opening/closing cash counts.
+
+### Trigger Types
+
+| Trigger | Description | When Fires |
+|---------|-------------|------------|
+| `clock_in` | When any user clocks in | Inline with clock-in API |
+| `clock_out` | When any user clocks out | Inline with clock-out API |
+| `first_clock_in` | First person at location today | Inline with clock-in API |
+| `last_clock_out` | Last person leaving location | Inline with clock-out API |
+| `time_into_shift` | After X hours worked | Cron (every 15 min) |
+| `task_completed` | When a specific task template is completed | Inline with task completion API |
+| `schedule` | Cron-based scheduled time | Cron (every 15 min) |
+| `closing_shift` | At specific time for clocked-in users | Cron (every 15 min) |
+
+### Assignment Types
+
+| Type | Description |
+|------|-------------|
+| `clocked_in_user` | Assign to the user who triggered the event |
+| `specific_user` | Assign to a fixed user |
+| `role_rotation` | Rotate through eligible users by role |
+| `location_staff` | Assign to someone clocked in at location |
+| `least_tasks` | Assign to user with fewest active tasks |
+
+### Conditions
+
+Rules can have optional conditions:
+- **Location**: Only trigger at specific location
+- **Days of Week**: Only trigger on certain days (0=Sunday, 6=Saturday)
+- **Time Window**: Only trigger within time range (Pacific timezone)
+- **Roles**: Only apply to users with certain roles
+
+### Configuration
+
+**URL**: Admin → Tasks → Rules (`/admin/tasks/rules`)
+
+**Create a Rule**:
+1. Go to Admin → Tasks → Rules
+2. Click "New Rule"
+3. Select trigger type
+4. Configure trigger-specific settings (e.g., time into shift hours)
+5. Set conditions (location, days, time window)
+6. Choose assignment type
+7. Select task template OR cash count config
+8. Save and enable
+
+### Cron Setup
+
+Rules with `schedule`, `time_into_shift`, or `closing_shift` triggers require an external cron job:
+
+```bash
+# Every 15 minutes during business hours (Pacific)
+*/15 18-23 * * 1-6 curl -s "http://localhost:3000/api/tasks/cron?secret=YOUR_CRON_SECRET"
+*/15 0-5 * * 0,2-6 curl -s "http://localhost:3000/api/tasks/cron?secret=YOUR_CRON_SECRET"
+```
+
+### Technical Implementation
+
+**Files**:
+- `src/lib/server/services/task-rules.ts` — Rule processing logic
+- `src/routes/api/tasks/cron/+server.ts` — Cron endpoint
+- `src/routes/api/clock/in/+server.ts` — Clock-in trigger integration
+- `src/routes/api/clock/out/+server.ts` — Clock-out trigger integration
+- `src/routes/(app)/admin/tasks/rules/` — Admin UI
+
+**Time Window Logic**:
+- All times evaluated in Pacific timezone
+- `"00:00"` as end time is treated as `"23:59"` (end of day)
+- Wrap-around ranges supported (e.g., `"22:00"` to `"02:00"`)
+
+**Deduplication**:
+- Scheduled tasks: Checks last 14 minutes to prevent duplicates
+- Time-into-shift: One per user per rule per day
+- Closing-shift: One per user per rule per day
+
+---
+
+## Privacy Policy & Terms of Service
+
+### Overview
+
+TeamTime includes built-in Privacy Policy and Terms of Service pages for A2P 10DLC SMS compliance and general legal requirements.
+
+### Access
+
+- **Privacy Policy**: `/privacy` (linked from login page)
+- **Terms of Service**: `/terms` (linked from login page)
+
+### A2P 10DLC Compliance
+
+The Privacy Policy includes required disclosures for SMS messaging:
+- How mobile numbers are collected (employee record)
+- How mobile numbers are used (work-related notifications only)
+- Statement that numbers are not shared for marketing
+- Message frequency disclosure ("Message frequency varies")
+- Data rate disclosure ("Message and data rates may apply")
+- Opt-out instructions ("Reply STOP to unsubscribe")
+
+### Files
+
+- `src/routes/privacy/+page.svelte` — Privacy Policy page
+- `src/routes/privacy/+page.server.ts` — Server config
+- `src/routes/terms/+page.svelte` — Terms of Service page
+- `src/routes/terms/+page.server.ts` — Server config
 
 ---
 

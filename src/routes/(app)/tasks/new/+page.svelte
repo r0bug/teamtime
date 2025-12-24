@@ -6,6 +6,7 @@
 	export let form: ActionData;
 
 	let loading = false;
+	let assignmentType: 'individual' | 'all_staff' = 'individual';
 </script>
 
 <svelte:head>
@@ -66,16 +67,49 @@
 						></textarea>
 					</div>
 
-					<div class="grid gap-6 lg:grid-cols-2">
-						<div>
-							<label for="assignedTo" class="label">Assign To</label>
-							<select id="assignedTo" name="assignedTo" class="input">
-								<option value="">Unassigned</option>
-								{#each data.users as user}
-									<option value={user.id}>{user.name} ({user.role})</option>
-								{/each}
-							</select>
+						<!-- Assignment Type -->
+					<div>
+						<label class="label">Assignment Type</label>
+						<input type="hidden" name="assignmentType" value={assignmentType} />
+						<div class="flex gap-4 mt-2">
+							<label class="flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg border transition-colors {assignmentType === 'individual' ? 'bg-primary-50 border-primary-500' : 'bg-white border-gray-300 hover:bg-gray-50'}">
+								<input
+									type="radio"
+									name="assignmentTypeRadio"
+									value="individual"
+									bind:group={assignmentType}
+									class="w-4 h-4 text-primary-600"
+								/>
+								<span class="text-sm font-medium">Specific User</span>
+							</label>
+							<label class="flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg border transition-colors {assignmentType === 'all_staff' ? 'bg-primary-50 border-primary-500' : 'bg-white border-gray-300 hover:bg-gray-50'}">
+								<input
+									type="radio"
+									name="assignmentTypeRadio"
+									value="all_staff"
+									bind:group={assignmentType}
+									class="w-4 h-4 text-primary-600"
+								/>
+								<span class="text-sm font-medium">All Staff</span>
+							</label>
 						</div>
+						{#if assignmentType === 'all_staff'}
+							<p class="text-xs text-gray-500 mt-2">Task will appear on all staff members' task lists until completed</p>
+						{/if}
+					</div>
+
+					<div class="grid gap-6 lg:grid-cols-2">
+						{#if assignmentType === 'individual'}
+							<div>
+								<label for="assignedTo" class="label">Assign To</label>
+								<select id="assignedTo" name="assignedTo" class="input">
+									<option value="">Unassigned</option>
+									{#each data.users as user}
+										<option value={user.id}>{user.name} ({user.role})</option>
+									{/each}
+								</select>
+							</div>
+						{/if}
 
 						<div>
 							<label for="priority" class="label">Priority</label>

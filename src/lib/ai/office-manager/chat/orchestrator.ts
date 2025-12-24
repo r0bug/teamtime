@@ -466,6 +466,347 @@ export async function executeConfirmedAction(
 }
 
 /**
+ * Continue the conversation after a confirmed action is executed
+ * This allows the AI to continue with remaining tasks after user approves an action
+ * @param chatId - The chat session ID
+ * @param executedAction - Details about the action that was just executed
+ * @param requestingUserId - The ID of the user who confirmed the action
+ * @param model - The LLM model to use
+ */
+export async function* continueAfterConfirmation(
+	chatId: string,
+	executedAction: { toolName: string; toolArgs: Record<string, unknown>; result: unknown },
+	requestingUserId: string,
+	model = 'claude-sonnet-4-20250514'
+): AsyncGenerator<StreamEvent> {
+	log.info({ chatId, toolName: executedAction.toolName, requestingUserId }, 'CONTINUATION: Starting post-confirmation continuation');
+
+	try {
+		// Get the chat session
+		const session = await getChatSession(chatId);
+		if (!session) {
+			log.error({ chatId }, 'CONTINUATION ERROR: Chat session not found');
+			yield { type: 'error', error: `Chat session ${chatId} not found` };
+			return;
+		}
+
+		const userId = requestingUserId || session.userId;
+		const runId = randomUUID();
+
+		// Assemble context with user permissions
+		const context = await assembleOfficeManagerContext(3000, userId);
+
+		// Build conversation history
+		const conversationHistory = buildConversationHistory(session.messages);
+
+		// Build continuation prompt - the AI should know the action was just completed
+		const tool = officeManagerTools.find(t => t.name === executedAction.toolName);
+		const formattedResult = tool?.formatResult
+			? tool.formatResult(executedAction.result)
+			: JSON.stringify(executedAction.result);
+
+		const continuationPrompt = `${conversationHistory}
+
+## Current Context
+${context}
+
+## Action Just Completed
+The user approved and the following action was just executed:
+- Tool: ${executedAction.toolName}
+- Result: ${formattedResult}
+
+Continue with any remaining tasks from the original request. If there are more items to process (like deleting more duplicate schedules), proceed with the next one. If all tasks are complete, summarize what was accomplished.`;
+
+		// Get tools with permission filtering
+		const tools = await getToolsForUser(userId);
+
+		// Build LLM request
+		const request: LLMRequest = {
+			model,
+			systemPrompt: OFFICE_MANAGER_SYSTEM_PROMPT,
+			userPrompt: continuationPrompt,
+			tools: tools.map(t => ({
+				name: t.name,
+				description: t.description,
+				parameters: t.parameters
+			})),
+			maxTokens: 4096,
+			temperature: 0.7
+		};
+
+		// Stream the LLM response
+		let fullContent = '';
+		let tokensUsed = 0;
+		const allToolCalls: ExecutedToolCall[] = [];
+		const pendingActions: PendingAction[] = [];
+		let needsContinuation = false;
+		let continuationTurn = 0;
+		const MAX_CONTINUATION_TURNS = 5;
+
+		// Initial LLM call
+		let currentTurnToolCalls: ExecutedToolCall[] = [];
+		let currentTurnContent = '';
+
+		for await (const chunk of anthropicProvider.streamRequest(request)) {
+			if (chunk.type === 'text' && chunk.content) {
+				fullContent += chunk.content;
+				currentTurnContent += chunk.content;
+				yield { type: 'text', content: chunk.content };
+			} else if (chunk.type === 'tool_use' && chunk.toolCall) {
+				const { id, name, params } = chunk.toolCall;
+				const toolId = id || `tool_${randomUUID().slice(0, 8)}`;
+
+				yield { type: 'tool_start', toolName: name, toolParams: params };
+
+				const calledTool = tools.find(t => t.name === name);
+				if (!calledTool) {
+					const result = { error: `Unknown tool: ${name}` };
+					currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+					yield { type: 'tool_result', toolName: name, result };
+					needsContinuation = true;
+					continue;
+				}
+
+				// Handle confirmation-required tools
+				if (calledTool.requiresConfirmation) {
+					const confirmationMessage = calledTool.getConfirmationMessage
+						? calledTool.getConfirmationMessage(params)
+						: `Confirm action: ${name}?`;
+
+					const pendingAction = await createPendingAction(chatId, name, params, confirmationMessage);
+					pendingActions.push(pendingAction);
+					currentTurnToolCalls.push({
+						id: toolId,
+						name,
+						params,
+						result: { pending: true, confirmationMessage },
+						requiresConfirmation: true,
+						pendingActionId: pendingAction.id
+					});
+
+					yield {
+						type: 'pending_action',
+						toolName: name,
+						pendingActionId: pendingAction.id,
+						confirmationMessage
+					};
+				} else {
+					// Execute non-confirmation tools immediately
+					const executionContext: ToolExecutionContext = {
+						runId,
+						agent: 'office_manager',
+						dryRun: false,
+						config: { provider: 'anthropic', model },
+						chatId,
+						userId
+					};
+
+					const validation = calledTool.validate(params);
+					if (!validation.valid) {
+						const result = { error: validation.error };
+						currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+						yield { type: 'tool_result', toolName: name, result };
+						needsContinuation = true;
+						continue;
+					}
+
+					try {
+						const result = await calledTool.execute(params, executionContext);
+						currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+
+						const formatted = calledTool.formatResult ? calledTool.formatResult(result) : undefined;
+						yield { type: 'tool_result', toolName: name, result, formattedResult: formatted };
+
+						await logAIAction({
+							runId,
+							provider: 'anthropic',
+							model,
+							toolName: name,
+							toolParams: params,
+							executed: true,
+							executionResult: result as Record<string, unknown>
+						});
+
+						needsContinuation = true;
+					} catch (error) {
+						const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+						const result = { error: errorMessage };
+						currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+						yield { type: 'tool_result', toolName: name, result };
+						needsContinuation = true;
+					}
+				}
+			} else if (chunk.type === 'done' && chunk.usage) {
+				tokensUsed += chunk.usage.inputTokens + chunk.usage.outputTokens;
+			}
+		}
+
+		allToolCalls.push(...currentTurnToolCalls);
+
+		// Multi-turn continuation (same logic as processUserMessageStream)
+		const messages: Array<{role: string; content: unknown}> = [];
+		while (needsContinuation && continuationTurn < MAX_CONTINUATION_TURNS) {
+			continuationTurn++;
+			needsContinuation = false;
+
+			const assistantContent: Array<{type: string; [key: string]: unknown}> = [];
+			if (currentTurnContent) {
+				assistantContent.push({ type: 'text', text: currentTurnContent });
+			}
+			for (const tc of currentTurnToolCalls) {
+				assistantContent.push({
+					type: 'tool_use',
+					id: tc.id,
+					name: tc.name,
+					input: tc.params
+				});
+			}
+
+			messages.push({ role: 'assistant', content: assistantContent });
+
+			const toolResults: ToolResult[] = currentTurnToolCalls.map(tc => ({
+				toolUseId: tc.id,
+				toolName: tc.name,
+				result: tc.result,
+				isError: !!(tc.result && typeof tc.result === 'object' && 'error' in tc.result)
+			}));
+
+			currentTurnToolCalls = [];
+			currentTurnContent = '';
+
+			const toolResultContentForHistory: Array<{type: string; [key: string]: unknown}> = toolResults.map(tr => ({
+				type: 'tool_result' as const,
+				tool_use_id: tr.toolUseId,
+				content: typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result),
+				is_error: tr.isError === true ? true : undefined
+			}));
+
+			for await (const chunk of streamWithToolResults(request, messages, toolResults)) {
+				if (chunk.type === 'text' && chunk.content) {
+					fullContent += chunk.content;
+					currentTurnContent += chunk.content;
+					yield { type: 'text', content: chunk.content };
+				} else if (chunk.type === 'tool_use' && chunk.toolCall) {
+					const { id, name, params } = chunk.toolCall;
+					const toolId = id || `tool_${randomUUID().slice(0, 8)}`;
+					yield { type: 'tool_start', toolName: name, toolParams: params };
+
+					const calledTool = tools.find(t => t.name === name);
+					if (!calledTool) {
+						const result = { error: `Unknown tool: ${name}` };
+						currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+						yield { type: 'tool_result', toolName: name, result };
+						needsContinuation = true;
+						continue;
+					}
+
+					if (calledTool.requiresConfirmation) {
+						const confirmationMessage = calledTool.getConfirmationMessage
+							? calledTool.getConfirmationMessage(params)
+							: `Confirm action: ${name}?`;
+
+						const pendingAction = await createPendingAction(chatId, name, params, confirmationMessage);
+						pendingActions.push(pendingAction);
+						currentTurnToolCalls.push({
+							id: toolId,
+							name,
+							params,
+							result: { pending: true, confirmationMessage },
+							requiresConfirmation: true,
+							pendingActionId: pendingAction.id
+						});
+
+						yield {
+							type: 'pending_action',
+							toolName: name,
+							pendingActionId: pendingAction.id,
+							confirmationMessage
+						};
+					} else {
+						const executionContext: ToolExecutionContext = {
+							runId,
+							agent: 'office_manager',
+							dryRun: false,
+							config: { provider: 'anthropic', model },
+							chatId,
+							userId
+						};
+
+						const validation = calledTool.validate(params);
+						if (!validation.valid) {
+							const result = { error: validation.error };
+							currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+							yield { type: 'tool_result', toolName: name, result };
+							needsContinuation = true;
+							continue;
+						}
+
+						try {
+							const result = await calledTool.execute(params, executionContext);
+							currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+
+							const formatted = calledTool.formatResult ? calledTool.formatResult(result) : undefined;
+							yield { type: 'tool_result', toolName: name, result, formattedResult: formatted };
+
+							await logAIAction({
+								runId,
+								provider: 'anthropic',
+								model,
+								toolName: name,
+								toolParams: params,
+								executed: true,
+								executionResult: result as Record<string, unknown>
+							});
+
+							needsContinuation = true;
+						} catch (error) {
+							const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+							const result = { error: errorMessage };
+							currentTurnToolCalls.push({ id: toolId, name, params, result, requiresConfirmation: false });
+							yield { type: 'tool_result', toolName: name, result };
+							needsContinuation = true;
+						}
+					}
+				} else if (chunk.type === 'done' && chunk.usage) {
+					tokensUsed += chunk.usage.inputTokens + chunk.usage.outputTokens;
+				}
+			}
+
+			allToolCalls.push(...currentTurnToolCalls);
+			messages.push({ role: 'user', content: toolResultContentForHistory });
+		}
+
+		// Build final response content
+		let responseContent = fullContent;
+		if (pendingActions.length > 0) {
+			responseContent += '\n\n**Actions pending confirmation:**\n';
+			for (const action of pendingActions) {
+				responseContent += `\n- ${action.confirmationMessage}`;
+			}
+		}
+
+		// Save assistant message
+		const messageToolCalls = allToolCalls.length > 0
+			? allToolCalls.map(tc => ({
+				name: tc.name,
+				params: tc.params,
+				result: tc.result,
+				pendingActionId: tc.pendingActionId
+			}))
+			: undefined;
+
+		await addAssistantMessage(chatId, responseContent, messageToolCalls);
+
+		log.info({ chatId, totalToolCalls: allToolCalls.length, tokensUsed, pendingActionCount: pendingActions.length }, 'CONTINUATION COMPLETE');
+		yield { type: 'done', tokensUsed };
+	} catch (error) {
+		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+		log.error({ chatId, error: errorMessage }, 'CONTINUATION ERROR');
+		yield { type: 'error', error: errorMessage };
+	}
+}
+
+/**
  * Stream event types for real-time updates
  */
 export interface StreamEvent {

@@ -248,25 +248,137 @@
 		}
 	}
 
-	// Confirm a pending action
+	// Confirm a pending action and handle AI continuation
 	async function confirmAction(actionId: string) {
 		const response = await fetch(`/api/office-manager/actions/${actionId}/confirm`, {
 			method: 'POST'
 		});
-		const result = await response.json();
 
-		if (result.success) {
+		// Check if response is streaming (success) or JSON (failure)
+		const contentType = response.headers.get('Content-Type') || '';
+
+		if (contentType.includes('text/event-stream')) {
 			// Remove from pending actions
 			pendingActions = pendingActions.filter(a => a.id !== actionId);
-			// Add result message
-			const confirmMsg: ChatMessage = {
-				id: `confirm-${Date.now()}`,
+
+			// Create a streaming message for AI continuation
+			const assistantMsgId = `assistant-${Date.now()}`;
+			const continuationMsg: ChatMessage = {
+				id: assistantMsgId,
 				role: 'assistant',
-				content: result.message,
-				timestamp: new Date().toISOString()
+				content: '',
+				timestamp: new Date().toISOString(),
+				toolCalls: []
 			};
-			currentMessages = [...currentMessages, confirmMsg];
+			currentMessages = [...currentMessages, continuationMsg];
+			isLoading = true;
+
+			try {
+				const reader = response.body?.getReader();
+				const decoder = new TextDecoder();
+
+				if (reader) {
+					while (true) {
+						const { done, value } = await reader.read();
+						if (done) break;
+
+						const chunk = decoder.decode(value);
+						const lines = chunk.split('\n');
+
+						for (const line of lines) {
+							if (!line.startsWith('data: ')) continue;
+							const data = line.slice(6).trim();
+							if (data === '[DONE]') continue;
+
+							try {
+								const event = JSON.parse(data);
+
+								if (event.type === 'action_confirmed') {
+									// Action was confirmed - add brief confirmation
+									const msgIndex = currentMessages.findIndex(m => m.id === assistantMsgId);
+									if (msgIndex !== -1) {
+										currentMessages[msgIndex].content = `✓ ${event.toolName} completed. `;
+										currentMessages = [...currentMessages];
+									}
+								} else if (event.type === 'text' && event.content) {
+									// Update the streaming message content
+									const msgIndex = currentMessages.findIndex(m => m.id === assistantMsgId);
+									if (msgIndex !== -1) {
+										currentMessages[msgIndex].content += event.content;
+										currentMessages = [...currentMessages];
+									}
+								} else if (event.type === 'tool_start') {
+									// Add tool call to message
+									const msgIndex = currentMessages.findIndex(m => m.id === assistantMsgId);
+									if (msgIndex !== -1 && currentMessages[msgIndex].toolCalls) {
+										currentMessages[msgIndex].toolCalls!.push({
+											name: event.toolName,
+											params: event.toolParams || {},
+											result: undefined,
+											pendingActionId: undefined
+										});
+										currentMessages = [...currentMessages];
+									}
+								} else if (event.type === 'tool_result') {
+									// Update tool call result
+									const msgIndex = currentMessages.findIndex(m => m.id === assistantMsgId);
+									if (msgIndex !== -1 && currentMessages[msgIndex].toolCalls) {
+										const toolIndex = currentMessages[msgIndex].toolCalls!.findIndex(
+											tc => tc.name === event.toolName && tc.result === undefined
+										);
+										if (toolIndex !== -1) {
+											currentMessages[msgIndex].toolCalls![toolIndex].result = event.result;
+											currentMessages[msgIndex].toolCalls![toolIndex].formattedResult = event.formattedResult;
+											currentMessages = [...currentMessages];
+										}
+									}
+								} else if (event.type === 'pending_action') {
+									// Add pending action
+									pendingActions = [...pendingActions, {
+										id: event.pendingActionId,
+										toolName: event.toolName,
+										confirmationMessage: event.confirmationMessage,
+										createdAt: new Date().toISOString(),
+										expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString()
+									}];
+
+									// Update tool call with pending action ID
+									const msgIndex = currentMessages.findIndex(m => m.id === assistantMsgId);
+									if (msgIndex !== -1 && currentMessages[msgIndex].toolCalls) {
+										const toolIndex = currentMessages[msgIndex].toolCalls!.findIndex(
+											tc => tc.name === event.toolName && !tc.pendingActionId
+										);
+										if (toolIndex !== -1) {
+											currentMessages[msgIndex].toolCalls![toolIndex].pendingActionId = event.pendingActionId;
+											currentMessages = [...currentMessages];
+										}
+									}
+								} else if (event.type === 'error') {
+									const msgIndex = currentMessages.findIndex(m => m.id === assistantMsgId);
+									if (msgIndex !== -1) {
+										currentMessages[msgIndex].content += `\n\nError: ${event.error}`;
+										currentMessages = [...currentMessages];
+									}
+								}
+							} catch {
+								// Invalid JSON, skip
+							}
+						}
+					}
+				}
+			} catch (error) {
+				const msgIndex = currentMessages.findIndex(m => m.id === assistantMsgId);
+				if (msgIndex !== -1) {
+					currentMessages[msgIndex].content += `\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`;
+					currentMessages = [...currentMessages];
+				}
+			} finally {
+				isLoading = false;
+				invalidateAll();
+			}
 		} else {
+			// JSON response (failure case)
+			const result = await response.json();
 			// Show error - use message field (contains formatted error) or error field
 			alert(`Failed to confirm action: ${result.message || result.error || 'Unknown error'}`);
 		}

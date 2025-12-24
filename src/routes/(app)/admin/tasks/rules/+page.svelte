@@ -13,6 +13,7 @@
 		clock_out: 'Clock Out',
 		first_clock_in: 'First Clock-In',
 		last_clock_out: 'Last Clock-Out',
+		closing_shift: 'Closing Shift',
 		time_into_shift: 'Time Into Shift',
 		task_completed: 'Task Completed',
 		schedule: 'Scheduled'
@@ -125,7 +126,7 @@
 						<tr>
 							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rule</th>
 							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trigger</th>
-							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Template</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Task Type</th>
 							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assignment</th>
 							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stats</th>
 							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -156,11 +157,25 @@
 											{rule.triggerConfig.cronExpression}
 										</div>
 									{/if}
+									{#if rule.triggerType === 'closing_shift' && rule.triggerConfig?.triggerTime}
+										<div class="text-xs text-gray-500 mt-1">
+											@ {rule.triggerConfig.triggerTime}
+										</div>
+									{/if}
 								</td>
 								<td class="px-4 py-3">
-									<a href="/admin/tasks/templates/{rule.templateId}" class="text-primary-600 hover:text-primary-700">
-										{rule.templateName}
-									</a>
+									{#if rule.cashCountConfigId}
+										<div class="flex items-center gap-1">
+											<span class="px-2 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-800">Cash Count</span>
+											<span class="text-sm text-gray-900">{rule.cashCountConfigName || 'Unknown'}</span>
+										</div>
+									{:else if rule.templateId}
+										<a href="/admin/tasks/templates/{rule.templateId}" class="text-primary-600 hover:text-primary-700">
+											{rule.templateName}
+										</a>
+									{:else}
+										<span class="text-gray-400">—</span>
+									{/if}
 								</td>
 								<td class="px-4 py-3">
 									<span class="text-sm text-gray-600">
@@ -314,8 +329,8 @@
 					<p class="text-gray-600">Fires for the first person to clock in at a location</p>
 				</div>
 				<div>
-					<h4 class="font-medium text-gray-900">Last Clock-Out</h4>
-					<p class="text-gray-600">Fires for the last person to clock out at a location</p>
+					<h4 class="font-medium text-gray-900">Closing Shift</h4>
+					<p class="text-gray-600">Fires at a specific time for all clocked-in users (e.g., closing tasks)</p>
 				</div>
 				<div>
 					<h4 class="font-medium text-gray-900">Time Into Shift</h4>
@@ -326,7 +341,7 @@
 					<p class="text-gray-600">Fires when a specific task template is completed</p>
 				</div>
 				<div>
-					<h4 class="font-medium text-gray-900">Scheduled</h4>
+					<h4 class="font-medium text-gray-900">Scheduled (cron)</h4>
 					<p class="text-gray-600">Fires at specific times using cron expressions</p>
 				</div>
 			</div>

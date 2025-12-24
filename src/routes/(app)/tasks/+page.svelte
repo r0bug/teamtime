@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { browser } from '$app/environment';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 
 	export let data: PageData;
+	export let form: ActionData;
 
 	$: tasks = data.tasks;
 	$: user = data.user;
@@ -123,10 +124,10 @@
 	<!-- Task List -->
 	<div class="space-y-3">
 		{#each filteredTasks as task}
-			<a href="/tasks/{task.id}" class="card block hover:shadow-md transition-shadow">
+			<div class="card hover:shadow-md transition-shadow">
 				<div class="card-body">
 					<div class="flex items-start justify-between">
-						<div class="flex-1">
+						<a href="/tasks/{task.id}" class="flex-1 min-w-0">
 							<div class="flex items-center gap-2 mb-1">
 								<span class={getPriorityColor(task.priority)}>{task.priority}</span>
 								<span class={getStatusColor(task.status)}>{task.status.replace('_', ' ')}</span>
@@ -136,6 +137,26 @@
 								<p class="text-gray-600 text-sm mt-1 line-clamp-2">{task.description}</p>
 							{/if}
 							<div class="flex items-center gap-4 mt-2 text-sm text-gray-500">
+								{#if task.assignmentType === 'all_staff'}
+									<span class="flex items-center text-primary-600 font-medium">
+										<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+										</svg>
+										All Staff
+										{#if task.totalStaff}
+											<span class="ml-1 text-xs bg-primary-100 text-primary-700 px-1.5 py-0.5 rounded-full">
+												{task.completionCount}/{task.totalStaff}
+											</span>
+										{/if}
+									</span>
+								{:else if task.assignee}
+									<span class="flex items-center">
+										<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+										</svg>
+										{task.assignee.name}
+									</span>
+								{/if}
 								{#if task.dueAt}
 									<span class="flex items-center">
 										<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -154,13 +175,38 @@
 									</span>
 								{/if}
 							</div>
+						</a>
+						<div class="flex items-center gap-1 ml-2 flex-shrink-0">
+							{#if isManager}
+								<!-- Edit button -->
+								<a href="/tasks/{task.id}" class="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit task">
+									<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+									</svg>
+								</a>
+								<!-- Delete button -->
+								<form method="POST" action="?/delete" use:enhance class="inline">
+									<input type="hidden" name="taskId" value={task.id} />
+									<button
+										type="submit"
+										class="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+										title="Delete task"
+										onclick="return confirm('Delete this task?')"
+									>
+										<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+										</svg>
+									</button>
+								</form>
+							{:else}
+								<svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+								</svg>
+							{/if}
 						</div>
-						<svg class="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-						</svg>
 					</div>
 				</div>
-			</a>
+			</div>
 		{:else}
 			<div class="text-center py-12">
 				<svg class="mx-auto w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

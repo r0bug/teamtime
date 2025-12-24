@@ -7,6 +7,8 @@
 
 	let loading = false;
 	let showDeleteConfirm = false;
+	// Determine task type based on whether the rule has a cash count config
+	let taskType = data.rule.cashCountConfigId ? 'cash_count' : 'template';
 	let triggerType = data.rule.triggerType;
 	let assignmentType = data.rule.assignmentType;
 
@@ -125,19 +127,67 @@
 					>{data.rule.description || ''}</textarea>
 				</div>
 
+				<!-- Task Type Selection -->
 				<div>
-					<label for="templateId" class="block text-sm font-medium text-gray-700 mb-1">
-						Task Template <span class="text-red-500">*</span>
+					<label class="block text-sm font-medium text-gray-700 mb-2">
+						Task Type <span class="text-red-500">*</span>
 					</label>
-					<select id="templateId" name="templateId" required class="input">
-						<option value="">Select a template...</option>
-						{#each data.templates as template}
-							<option value={template.id} selected={data.rule.templateId === template.id}>
-								{template.name}
-							</option>
-						{/each}
-					</select>
+					<input type="hidden" name="taskType" value={taskType} />
+					<div class="flex gap-4">
+						<label class="flex items-center px-4 py-2 rounded-lg border cursor-pointer transition-colors {taskType === 'template' ? 'bg-primary-50 border-primary-500 text-primary-700' : 'bg-white border-gray-300 hover:bg-gray-50'}">
+							<input
+								type="radio"
+								name="taskTypeRadio"
+								value="template"
+								bind:group={taskType}
+								class="w-4 h-4 text-primary-600 border-gray-300 focus:ring-primary-500"
+							/>
+							<span class="ml-2 text-sm font-medium">Task Template</span>
+						</label>
+						<label class="flex items-center px-4 py-2 rounded-lg border cursor-pointer transition-colors {taskType === 'cash_count' ? 'bg-primary-50 border-primary-500 text-primary-700' : 'bg-white border-gray-300 hover:bg-gray-50'}">
+							<input
+								type="radio"
+								name="taskTypeRadio"
+								value="cash_count"
+								bind:group={taskType}
+								class="w-4 h-4 text-primary-600 border-gray-300 focus:ring-primary-500"
+							/>
+							<span class="ml-2 text-sm font-medium">Cash Count</span>
+						</label>
+					</div>
 				</div>
+
+				{#if taskType === 'template'}
+					<div>
+						<label for="templateId" class="block text-sm font-medium text-gray-700 mb-1">
+							Task Template <span class="text-red-500">*</span>
+						</label>
+						<select id="templateId" name="templateId" required class="input">
+							<option value="">Select a template...</option>
+							{#each data.templates as template}
+								<option value={template.id} selected={data.rule.templateId === template.id}>
+									{template.name}
+								</option>
+							{/each}
+						</select>
+						<p class="text-xs text-gray-500 mt-1">Task will be created from this template</p>
+					</div>
+				{:else}
+					<div>
+						<label for="cashCountConfigId" class="block text-sm font-medium text-gray-700 mb-1">
+							Cash Count Config <span class="text-red-500">*</span>
+						</label>
+						<select id="cashCountConfigId" name="cashCountConfigId" required class="input">
+							<option value="">Select a cash count config...</option>
+							{#each data.cashCountConfigs as config}
+								<option value={config.id} selected={data.rule.cashCountConfigId === config.id}>
+									{config.name}{config.locationName ? ` - ${config.locationName}` : ''}
+								</option>
+							{/each}
+						</select>
+						<p class="text-xs text-gray-500 mt-1">Creates a cash count task linked to this config</p>
+					</div>
+				{/if}
 
 				<div>
 					<label for="priority" class="block text-sm font-medium text-gray-700 mb-1">
@@ -178,10 +228,10 @@
 						<option value="clock_in">Clock In</option>
 						<option value="clock_out">Clock Out</option>
 						<option value="first_clock_in">First Clock-In of Day</option>
-						<option value="last_clock_out">Last Clock-Out of Day</option>
+						<option value="closing_shift">Closing Shift (time-based)</option>
 						<option value="time_into_shift">Time Into Shift</option>
 						<option value="task_completed">Task Completed</option>
-						<option value="schedule">Scheduled</option>
+						<option value="schedule">Scheduled (cron)</option>
 					</select>
 				</div>
 
@@ -243,6 +293,25 @@
 						/>
 						<p class="text-xs text-gray-500 mt-1">
 							Format: minute hour day month weekday (e.g., "0 9 * * 1-5" for 9am Mon-Fri)
+						</p>
+					</div>
+				{/if}
+
+				{#if triggerType === 'closing_shift'}
+					<div>
+						<label for="triggerTime" class="block text-sm font-medium text-gray-700 mb-1">
+							Trigger Time <span class="text-red-500">*</span>
+						</label>
+						<input
+							type="time"
+							id="triggerTime"
+							name="triggerTime"
+							required
+							value={data.rule.triggerConfig?.triggerTime || ''}
+							class="input"
+						/>
+						<p class="text-xs text-gray-500 mt-1">
+							Task will be assigned to all clocked-in users at this time (Pacific timezone)
 						</p>
 					</div>
 				{/if}

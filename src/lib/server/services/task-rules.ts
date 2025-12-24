@@ -6,9 +6,12 @@
  * time into shift, task completion, and scheduled events.
  */
 
-import { db, taskAssignmentRules, taskTemplates, tasks, users, timeEntries } from '$lib/server/db';
-import { eq, and, sql, desc, isNull, gte, ne } from 'drizzle-orm';
-import type { TaskAssignmentRule, TaskTemplate, User } from '$lib/server/db/schema';
+import { db, taskAssignmentRules, taskTemplates, tasks, users, timeEntries, cashCountConfigs, cashCountTaskLinks, locations } from '$lib/server/db';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('services:task-rules');
+import { eq, and, sql, desc, isNull, gte, ne, or } from 'drizzle-orm';
+import type { TaskAssignmentRule, TaskTemplate, CashCountConfig } from '$lib/server/db/schema';
 import { getPacificDateParts, getPacificStartOfDay, getPacificEndOfDay } from '$lib/server/utils/timezone';
 
 export type TriggerEvent =
@@ -18,7 +21,8 @@ export type TriggerEvent =
 	| 'last_clock_out'
 	| 'time_into_shift'
 	| 'task_completed'
-	| 'schedule';
+	| 'schedule'
+	| 'closing_shift';
 
 export interface TriggerContext {
 	userId: string;
@@ -28,7 +32,9 @@ export interface TriggerContext {
 }
 
 interface RuleWithTemplate extends TaskAssignmentRule {
-	template: TaskTemplate;
+	template: TaskTemplate | null;
+	cashCountConfig: CashCountConfig | null;
+	locationName: string | null;
 }
 
 /**
@@ -40,30 +46,52 @@ export async function processRulesForTrigger(
 ): Promise<{ tasksCreated: number; errors: string[] }> {
 	const results = { tasksCreated: 0, errors: [] as string[] };
 
+	log.info({ triggerEvent, userId: context.userId, locationId: context.locationId }, 'Processing rules for trigger');
+
 	try {
 		// Get all active rules for this trigger type
+		// Rules can have either a templateId OR a cashCountConfigId
 		const rules = await db
 			.select({
 				rule: taskAssignmentRules,
-				template: taskTemplates
+				template: taskTemplates,
+				cashCountConfig: cashCountConfigs,
+				locationName: locations.name
 			})
 			.from(taskAssignmentRules)
-			.innerJoin(taskTemplates, eq(taskAssignmentRules.templateId, taskTemplates.id))
+			.leftJoin(taskTemplates, eq(taskAssignmentRules.templateId, taskTemplates.id))
+			.leftJoin(cashCountConfigs, eq(taskAssignmentRules.cashCountConfigId, cashCountConfigs.id))
+			.leftJoin(locations, eq(cashCountConfigs.locationId, locations.id))
 			.where(
 				and(
 					eq(taskAssignmentRules.triggerType, triggerEvent),
 					eq(taskAssignmentRules.isActive, true),
-					eq(taskTemplates.isActive, true)
+					// Either template is active OR we're using cash count config
+					or(
+						and(
+							isNull(taskAssignmentRules.cashCountConfigId),
+							eq(taskTemplates.isActive, true)
+						),
+						and(
+							isNull(taskAssignmentRules.templateId),
+							eq(cashCountConfigs.isActive, true)
+						)
+					)
 				)
 			)
 			.orderBy(desc(taskAssignmentRules.priority));
 
-		for (const { rule, template } of rules) {
+		log.info({ rulesFound: rules.length, triggerEvent }, 'Found rules for trigger');
+
+		for (const { rule, template, cashCountConfig, locationName } of rules) {
 			try {
 				// Check if rule conditions are met
 				if (!evaluateConditions(rule, context)) {
+					log.debug({ ruleName: rule.name, ruleId: rule.id, conditions: rule.conditions }, 'Rule conditions not met');
 					continue;
 				}
+
+				log.info({ ruleName: rule.name, ruleId: rule.id }, 'Rule conditions met, processing');
 
 				// For task_completed trigger, check if template matches
 				if (
@@ -80,8 +108,15 @@ export async function processRulesForTrigger(
 					continue;
 				}
 
-				// Create the task
-				await createTaskFromRule(rule, template, assigneeId, context);
+				// Create the task (either from template or cash count config)
+				if (cashCountConfig) {
+					await createCashCountTaskFromRule(rule, cashCountConfig, locationName, assigneeId, context);
+				} else if (template) {
+					await createTaskFromRule(rule, template, assigneeId, context);
+				} else {
+					results.errors.push(`Rule ${rule.name} has neither template nor cash count config`);
+					continue;
+				}
 
 				// Update rule stats
 				await db
@@ -94,16 +129,20 @@ export async function processRulesForTrigger(
 					.where(eq(taskAssignmentRules.id, rule.id));
 
 				results.tasksCreated++;
+				log.info({ ruleName: rule.name, ruleId: rule.id, assigneeId }, 'Task created from rule');
 			} catch (error) {
 				const errMsg = error instanceof Error ? error.message : 'Unknown error';
+				log.error({ error, ruleName: rule.name, ruleId: rule.id }, 'Error processing rule');
 				results.errors.push(`Error processing rule ${rule.name}: ${errMsg}`);
 			}
 		}
 	} catch (error) {
 		const errMsg = error instanceof Error ? error.message : 'Unknown error';
+		log.error({ error }, 'Error fetching rules');
 		results.errors.push(`Error fetching rules: ${errMsg}`);
 	}
 
+	log.info({ tasksCreated: results.tasksCreated, errors: results.errors.length }, 'Finished processing trigger');
 	return results;
 }
 
@@ -133,12 +172,25 @@ function evaluateConditions(rule: TaskAssignmentRule, context: TriggerContext): 
 	// Time window check (Pacific timezone)
 	if (conditions.timeWindowStart || conditions.timeWindowEnd) {
 		const currentTime = `${String(pacificNow.hour).padStart(2, '0')}:${String(pacificNow.minute).padStart(2, '0')}`;
+		const startTime = conditions.timeWindowStart || '00:00';
+		let endTime = conditions.timeWindowEnd || '23:59';
 
-		if (conditions.timeWindowStart && currentTime < conditions.timeWindowStart) {
-			return false;
+		// Treat "00:00" as end of day (23:59) - common user intent
+		if (endTime === '00:00') {
+			endTime = '23:59';
 		}
-		if (conditions.timeWindowEnd && currentTime > conditions.timeWindowEnd) {
-			return false;
+
+		// Handle wrap-around (end < start means overnight range, e.g., "22:00" to "02:00")
+		if (endTime < startTime) {
+			// For wrap-around: current time must be >= start OR <= end
+			if (currentTime < startTime && currentTime > endTime) {
+				return false;
+			}
+		} else {
+			// Normal range: current time must be within [start, end]
+			if (currentTime < startTime || currentTime > endTime) {
+				return false;
+			}
 		}
 	}
 
@@ -296,6 +348,42 @@ async function createTaskFromRule(
 }
 
 /**
+ * Create a cash count task from a rule and cash count config
+ */
+async function createCashCountTaskFromRule(
+	rule: TaskAssignmentRule,
+	config: CashCountConfig,
+	locationName: string | null,
+	assigneeId: string,
+	context: TriggerContext
+): Promise<void> {
+	// Calculate due date as end of day in Pacific timezone
+	const dueAt = getPacificEndOfDay();
+
+	// Create the task
+	const [task] = await db.insert(tasks).values({
+		title: `${config.name}${locationName ? ` - ${locationName}` : ''}`,
+		description: `Complete the ${config.name.toLowerCase()}. Ensure all denominations are counted accurately.`,
+		assignedTo: assigneeId,
+		priority: 'high', // Cash counts are high priority
+		dueAt,
+		status: 'not_started',
+		photoRequired: false,
+		notesRequired: true,
+		source: 'event_triggered',
+		linkedEventId: rule.id, // Link to the rule that created it
+		createdBy: context.userId
+	}).returning({ id: tasks.id });
+
+	// Create the cash count task link so the UI shows the cash count form
+	await db.insert(cashCountTaskLinks).values({
+		taskId: task.id,
+		configId: config.id,
+		locationId: config.locationId
+	});
+}
+
+/**
  * Check if user is first to clock in at location today (Pacific timezone)
  */
 export async function isFirstClockInAtLocation(
@@ -438,6 +526,152 @@ export async function processTimeIntoShiftRules(): Promise<{
 	} catch (error) {
 		const errMsg = error instanceof Error ? error.message : 'Unknown error';
 		results.errors.push(`Error processing time-into-shift rules: ${errMsg}`);
+	}
+
+	return results;
+}
+
+/**
+ * Process closing_shift rules for users currently clocked in
+ * This should be called periodically (e.g., every 15 minutes)
+ *
+ * The closing_shift trigger creates tasks for users who are clocked in
+ * when the configured trigger time is reached (e.g., 8:30 PM closing tasks)
+ */
+export async function processClosingShiftRules(): Promise<{
+	tasksCreated: number;
+	errors: string[];
+}> {
+	const results = { tasksCreated: 0, errors: [] as string[] };
+
+	try {
+		// Get current time in Pacific timezone
+		const now = new Date();
+		const pacificNow = getPacificDateParts(now);
+		const startOfDay = getPacificStartOfDay();
+
+		// Get all closing_shift rules
+		const rules = await db
+			.select({
+				rule: taskAssignmentRules,
+				template: taskTemplates,
+				cashCountConfig: cashCountConfigs,
+				locationName: locations.name
+			})
+			.from(taskAssignmentRules)
+			.leftJoin(taskTemplates, eq(taskAssignmentRules.templateId, taskTemplates.id))
+			.leftJoin(cashCountConfigs, eq(taskAssignmentRules.cashCountConfigId, cashCountConfigs.id))
+			.leftJoin(locations, eq(cashCountConfigs.locationId, locations.id))
+			.where(
+				and(
+					eq(taskAssignmentRules.triggerType, 'closing_shift'),
+					eq(taskAssignmentRules.isActive, true),
+					or(
+						and(
+							isNull(taskAssignmentRules.cashCountConfigId),
+							eq(taskTemplates.isActive, true)
+						),
+						and(
+							isNull(taskAssignmentRules.templateId),
+							eq(cashCountConfigs.isActive, true)
+						)
+					)
+				)
+			);
+
+		if (rules.length === 0) return results;
+
+		for (const { rule, template, cashCountConfig, locationName } of rules) {
+			try {
+				// Get the trigger time from config (e.g., "20:30" for 8:30 PM)
+				const triggerTime = rule.triggerConfig?.triggerTime as string;
+				if (!triggerTime) continue;
+
+				// Check if we're within 15 minutes after the trigger time
+				// This allows some flexibility for the cron job timing
+				const [triggerHour, triggerMinute] = triggerTime.split(':').map(Number);
+				const triggerMinutes = triggerHour * 60 + triggerMinute;
+				const currentMinutes = pacificNow.hour * 60 + pacificNow.minute;
+
+				// Only process if current time is between trigger time and trigger time + 15 minutes
+				if (currentMinutes < triggerMinutes || currentMinutes > triggerMinutes + 15) {
+					continue;
+				}
+
+				// Check conditions (days of week, location, etc.)
+				const context: TriggerContext = {
+					userId: '', // Will be set per user
+					locationId: rule.conditions?.locationId as string | undefined,
+					timestamp: now
+				};
+
+				if (!evaluateConditions(rule, context)) continue;
+
+				// Get all users currently clocked in at the location (if specified)
+				const locationCondition = rule.conditions?.locationId
+					? eq(timeEntries.locationId, rule.conditions.locationId as string)
+					: sql`true`;
+
+				const clockedInUsers = await db
+					.select({
+						userId: timeEntries.userId,
+						locationId: timeEntries.locationId
+					})
+					.from(timeEntries)
+					.where(and(isNull(timeEntries.clockOut), locationCondition));
+
+				if (clockedInUsers.length === 0) continue;
+
+				for (const entry of clockedInUsers) {
+					// Check if we already created a task for this user and rule today
+					const existingTask = await db
+						.select({ count: sql<number>`count(*)` })
+						.from(tasks)
+						.where(
+							and(
+								eq(tasks.assignedTo, entry.userId),
+								eq(tasks.linkedEventId, rule.id),
+								gte(tasks.createdAt, startOfDay)
+							)
+						);
+
+					if ((existingTask[0]?.count || 0) > 0) continue;
+
+					// Create the task
+					const userContext: TriggerContext = {
+						userId: entry.userId,
+						locationId: entry.locationId || undefined,
+						timestamp: now
+					};
+
+					if (cashCountConfig) {
+						await createCashCountTaskFromRule(rule, cashCountConfig, locationName, entry.userId, userContext);
+					} else if (template) {
+						await createTaskFromRule(rule, template, entry.userId, userContext);
+					} else {
+						continue;
+					}
+
+					// Update rule stats
+					await db
+						.update(taskAssignmentRules)
+						.set({
+							lastTriggeredAt: now,
+							triggerCount: sql`${taskAssignmentRules.triggerCount} + 1`,
+							updatedAt: now
+						})
+						.where(eq(taskAssignmentRules.id, rule.id));
+
+					results.tasksCreated++;
+				}
+			} catch (error) {
+				const errMsg = error instanceof Error ? error.message : 'Unknown error';
+				results.errors.push(`Error processing closing-shift rule ${rule.name}: ${errMsg}`);
+			}
+		}
+	} catch (error) {
+		const errMsg = error instanceof Error ? error.message : 'Unknown error';
+		results.errors.push(`Error processing closing-shift rules: ${errMsg}`);
 	}
 
 	return results;

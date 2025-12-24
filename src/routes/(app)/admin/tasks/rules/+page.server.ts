@@ -1,6 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import { redirect, fail } from '@sveltejs/kit';
-import { db, taskAssignmentRules, taskTemplates, locations } from '$lib/server/db';
+import { db, taskAssignmentRules, taskTemplates, locations, cashCountConfigs } from '$lib/server/db';
 import { eq, desc, sql } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
 import { createLogger } from '$lib/server/logger';
@@ -14,7 +14,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const templateIdFilter = url.searchParams.get('templateId');
 
-	// Build the query
+	// Build the query - LEFT JOIN both templates and cash count configs
 	let query = db
 		.select({
 			id: taskAssignmentRules.id,
@@ -30,10 +30,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			lastTriggeredAt: taskAssignmentRules.lastTriggeredAt,
 			templateId: taskAssignmentRules.templateId,
 			templateName: taskTemplates.name,
+			cashCountConfigId: taskAssignmentRules.cashCountConfigId,
+			cashCountConfigName: cashCountConfigs.name,
 			createdAt: taskAssignmentRules.createdAt
 		})
 		.from(taskAssignmentRules)
-		.innerJoin(taskTemplates, eq(taskAssignmentRules.templateId, taskTemplates.id))
+		.leftJoin(taskTemplates, eq(taskAssignmentRules.templateId, taskTemplates.id))
+		.leftJoin(cashCountConfigs, eq(taskAssignmentRules.cashCountConfigId, cashCountConfigs.id))
 		.orderBy(desc(taskAssignmentRules.priority), desc(taskAssignmentRules.createdAt));
 
 	// Apply filter if provided

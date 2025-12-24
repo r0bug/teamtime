@@ -9,9 +9,9 @@ LOG_FILE="$SCRIPT_DIR/sales_import.log"
 # Load TeamTime env for CRON_SECRET and DATABASE_URL
 source "$TEAMTIME_DIR/.env"
 
-# Today's date in MM/DD/YYYY format for the scraper
-TODAY=$(date +"%m/%d/%Y")
-TODAY_DISPLAY=$(date +"%Y-%m-%d %H:%M")
+# Today's date in MM/DD/YYYY format for the scraper (use Pacific time for business day)
+TODAY=$(TZ='America/Los_Angeles' date +"%m/%d/%Y")
+TODAY_DISPLAY=$(TZ='America/Los_Angeles' date +"%Y-%m-%d %H:%M")
 
 API_URL="http://localhost:3000/api/sales/import"
 
@@ -36,6 +36,13 @@ cd "$SCRIPT_DIR"
 
 # Run scraper for today
 OUTPUT=$(python3 nrs_daily_vendor_sales.py --date "$TODAY" --format json 2>&1)
+SCRAPE_EXIT=$?
+
+# Check if scraper succeeded
+if [ $SCRAPE_EXIT -ne 0 ]; then
+    log "SCRAPER EXIT CODE: $SCRAPE_EXIT - $OUTPUT"
+    exit 1
+fi
 
 # Check if it's valid JSON
 if echo "$OUTPUT" | python3 -c "import sys, json; json.load(sys.stdin)" 2>/dev/null; then
@@ -50,7 +57,11 @@ if echo "$OUTPUT" | python3 -c "import sys, json; json.load(sys.stdin)" 2>/dev/n
         RETAINED=$(echo "$OUTPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(f\"\${d['totals']['total_retained']:.2f}\")")
         SALES=$(echo "$OUTPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(f\"\${d['totals']['total_sales']:.2f}\")")
         VENDORS=$(echo "$OUTPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['totals']['vendor_count'])")
-        log "OK - Sales: $SALES, Retained: $RETAINED, Vendors: $VENDORS"
+        if [ "$VENDORS" = "0" ]; then
+            log "NO DATA - NRS returned 0 vendors for today (sales may not be entered yet)"
+        else
+            log "OK - Sales: $SALES, Retained: $RETAINED, Vendors: $VENDORS"
+        fi
     else
         log "IMPORT FAILED: $RESPONSE"
     fi

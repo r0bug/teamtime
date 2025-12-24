@@ -127,37 +127,42 @@
 		return hour >= openHour && hour < closeHour;
 	}
 
-	// Get shifts for a specific date (comparing UTC dates)
-	function getShiftsForDate(date: Date) {
-		// Get the UTC date string for the column date
-		const year = date.getUTCFullYear();
-		const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-		const day = String(date.getUTCDate()).padStart(2, '0');
-		const dateStr = `${year}-${month}-${day}`;
+	// Helper to get Pacific date string (YYYY-MM-DD)
+	function getPacificDateString(date: Date): string {
+		return date.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }); // en-CA gives YYYY-MM-DD
+	}
 
+	// Get shifts for a specific date (comparing in Pacific time)
+	function getShiftsForDate(date: Date) {
+		const dateStr = getPacificDateString(date);
 		return data.shifts.filter(s => {
-			const shiftDate = new Date(s.startTime).toISOString().split('T')[0];
-			return shiftDate === dateStr;
+			const shiftDateStr = getPacificDateString(new Date(s.startTime));
+			return shiftDateStr === dateStr;
 		});
 	}
 
-	// Get shifts that overlap a specific hour
+	// Get shifts that overlap a specific hour (in Pacific time)
 	function getShiftsAtHour(date: Date, hour: number) {
 		const shifts = getShiftsForDate(date);
 		return shifts.filter(s => {
-			const startHour = new Date(s.startTime).getHours();
-			const endHour = new Date(s.endTime).getHours();
+			const startHour = getPacificHours(new Date(s.startTime));
+			const endHour = getPacificHours(new Date(s.endTime));
 			return hour >= startHour && hour < endHour;
 		});
 	}
 
-	// Calculate shift position and height in grid (using UTC to match server storage)
+	// Helper to get hours in Pacific time
+	function getPacificHours(date: Date): number {
+		const pacificTime = new Date(date.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+		return pacificTime.getHours() + pacificTime.getMinutes() / 60;
+	}
+
+	// Calculate shift position and height in grid (using Pacific time for display)
 	function getShiftStyle(shift: typeof data.shifts[0]) {
 		const start = new Date(shift.startTime);
 		const end = new Date(shift.endTime);
-		// Use UTC hours since shifts are stored in UTC
-		const startHour = start.getUTCHours() + start.getUTCMinutes() / 60;
-		const endHour = end.getUTCHours() + end.getUTCMinutes() / 60;
+		const startHour = getPacificHours(start);
+		const endHour = getPacificHours(end);
 		const top = (startHour - 6) * 48; // 48px per hour
 		const height = (endHour - startHour) * 48;
 		return `top: ${top}px; height: ${height}px;`;
@@ -180,21 +185,20 @@
 	}
 
 	function formatTime(date: Date | string) {
-		// Use UTC time since shifts are stored in UTC
 		const d = new Date(date);
-		const hours = d.getUTCHours();
-		const minutes = d.getUTCMinutes();
-		const ampm = hours >= 12 ? 'PM' : 'AM';
-		const hour12 = hours % 12 || 12;
-		const minStr = minutes.toString().padStart(2, '0');
-		return `${hour12}:${minStr} ${ampm}`;
+		return d.toLocaleTimeString('en-US', {
+			hour: 'numeric',
+			minute: '2-digit',
+			timeZone: 'America/Los_Angeles'
+		});
 	}
 
 	function formatDate(date: Date | string) {
 		return new Date(date).toLocaleDateString('en-US', {
 			weekday: 'short',
 			month: 'short',
-			day: 'numeric'
+			day: 'numeric',
+			timeZone: 'America/Los_Angeles'
 		});
 	}
 
@@ -202,6 +206,24 @@
 		if (hour === 0) return '12 AM';
 		if (hour === 12) return '12 PM';
 		return hour > 12 ? `${hour - 12} PM` : `${hour} AM`;
+	}
+
+	// Convert UTC date to Pacific datetime-local string (YYYY-MM-DDTHH:MM)
+	function toPacificDatetimeLocal(date: Date | string): string {
+		const d = new Date(date);
+		// Format in Pacific timezone
+		const options: Intl.DateTimeFormatOptions = {
+			timeZone: 'America/Los_Angeles',
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit',
+			hour12: false
+		};
+		const parts = new Intl.DateTimeFormat('en-US', options).formatToParts(d);
+		const get = (type: string) => parts.find(p => p.type === type)?.value || '00';
+		return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
 	}
 
 	function printSchedule() {
@@ -868,7 +890,7 @@
 							name="startTime"
 							required
 							class="input"
-							value={new Date(editingShift.startTime).toISOString().slice(0, 16)}
+							value={toPacificDatetimeLocal(editingShift.startTime)}
 						/>
 					</div>
 					<div>
@@ -879,7 +901,7 @@
 							name="endTime"
 							required
 							class="input"
-							value={new Date(editingShift.endTime).toISOString().slice(0, 16)}
+							value={toPacificDatetimeLocal(editingShift.endTime)}
 						/>
 					</div>
 					<div>

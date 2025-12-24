@@ -11,7 +11,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, taskAssignmentRules, taskTemplates, tasks } from '$lib/server/db';
 import { eq, and, sql, gte } from 'drizzle-orm';
-import { processTimeIntoShiftRules } from '$lib/server/services/task-rules';
+import { processTimeIntoShiftRules, processClosingShiftRules } from '$lib/server/services/task-rules';
 import { CRON_SECRET } from '$env/static/private';
 import { createLogger } from '$lib/server/logger';
 import { getPacificDateParts, getPacificEndOfDay } from '$lib/server/utils/timezone';
@@ -99,6 +99,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	const results = {
 		scheduledTasks: { created: 0, errors: [] as string[] },
 		timeIntoShift: { created: 0, errors: [] as string[] },
+		closingShift: { created: 0, errors: [] as string[] },
 		timestamp: now.toISOString()
 	};
 
@@ -216,9 +217,15 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		results.timeIntoShift.created = timeIntoShiftResult.tasksCreated;
 		results.timeIntoShift.errors = timeIntoShiftResult.errors;
 
+		// Process closing-shift rules
+		const closingShiftResult = await processClosingShiftRules();
+		results.closingShift.created = closingShiftResult.tasksCreated;
+		results.closingShift.errors = closingShiftResult.errors;
+
 		log.info({
 			scheduledCreated: results.scheduledTasks.created,
-			timeIntoShiftCreated: results.timeIntoShift.created
+			timeIntoShiftCreated: results.timeIntoShift.created,
+			closingShiftCreated: results.closingShift.created
 		}, 'Task cron job completed');
 
 		return json({

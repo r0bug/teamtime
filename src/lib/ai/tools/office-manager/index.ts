@@ -6,9 +6,12 @@ export { sendSMSTool } from './send-sms';
 export { getAvailableStaffTool } from './get-available-staff';
 export { viewScheduleTool } from './view-schedule';
 export { tradeShiftsTool } from './trade-shifts';
+export { deleteScheduleTool } from './delete-schedule';
+export { deleteDuplicateSchedulesTool } from './delete-duplicate-schedules';
 export { createRecurringTaskTool } from './create-recurring-task';
 export { createScheduleTool } from './create-schedule';
 export { createCashCountTaskTool } from './create-cash-count-task';
+export { createSocialMediaTaskTool } from './create-social-media-task';
 export { processInventoryPhotosTool } from './process-inventory-photos';
 export { continueWorkTool } from './continue-work';
 export { reviewPastChatsTool } from './review-past-chats';
@@ -33,9 +36,12 @@ import { sendSMSTool } from './send-sms';
 import { getAvailableStaffTool } from './get-available-staff';
 import { viewScheduleTool } from './view-schedule';
 import { tradeShiftsTool } from './trade-shifts';
+import { deleteScheduleTool } from './delete-schedule';
+import { deleteDuplicateSchedulesTool } from './delete-duplicate-schedules';
 import { createRecurringTaskTool } from './create-recurring-task';
 import { createScheduleTool } from './create-schedule';
 import { createCashCountTaskTool } from './create-cash-count-task';
+import { createSocialMediaTaskTool } from './create-social-media-task';
 import { processInventoryPhotosTool } from './process-inventory-photos';
 import { continueWorkTool } from './continue-work';
 import { reviewPastChatsTool } from './review-past-chats';
@@ -62,9 +68,12 @@ export const officeManagerTools: AITool<any, any>[] = [
 	cancelTaskTool,
 	sendSMSTool,
 	tradeShiftsTool,
+	deleteScheduleTool,
+	deleteDuplicateSchedulesTool,
 	createRecurringTaskTool,
 	createScheduleTool,
 	createCashCountTaskTool,
+	createSocialMediaTaskTool,
 	processInventoryPhotosTool,
 	continueWorkTool,
 	// Permission management tools

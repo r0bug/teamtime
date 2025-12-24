@@ -1,6 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import { redirect, fail, error } from '@sveltejs/kit';
-import { db, taskAssignmentRules, taskTemplates, locations, users } from '$lib/server/db';
+import { db, taskAssignmentRules, taskTemplates, locations, users, cashCountConfigs } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
 import { createLogger } from '$lib/server/logger';
@@ -14,7 +14,8 @@ type RuleTriggerType =
 	| 'last_clock_out'
 	| 'time_into_shift'
 	| 'task_completed'
-	| 'schedule';
+	| 'schedule'
+	| 'closing_shift';
 type AssignmentType =
 	| 'specific_user'
 	| 'clocked_in_user'
@@ -68,11 +69,25 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		.where(eq(users.isActive, true))
 		.orderBy(users.name);
 
+	// Get active cash count configs
+	const cashCountConfigList = await db
+		.select({
+			id: cashCountConfigs.id,
+			name: cashCountConfigs.name,
+			locationId: cashCountConfigs.locationId,
+			locationName: locations.name
+		})
+		.from(cashCountConfigs)
+		.leftJoin(locations, eq(cashCountConfigs.locationId, locations.id))
+		.where(eq(cashCountConfigs.isActive, true))
+		.orderBy(cashCountConfigs.name);
+
 	return {
 		rule: rule[0],
 		templates,
 		locations: allLocations,
-		users: allUsers
+		users: allUsers,
+		cashCountConfigs: cashCountConfigList
 	};
 };
 
@@ -86,7 +101,9 @@ export const actions: Actions = {
 
 		const name = formData.get('name') as string;
 		const description = formData.get('description') as string;
+		const taskType = formData.get('taskType') as string;
 		const templateId = formData.get('templateId') as string;
+		const cashCountConfigId = formData.get('cashCountConfigId') as string;
 		const triggerType = formData.get('triggerType') as string;
 		const assignmentType = formData.get('assignmentType') as string;
 		const priority = parseInt(formData.get('priority') as string, 10) || 0;
@@ -95,9 +112,18 @@ export const actions: Actions = {
 		if (!name?.trim()) {
 			return fail(400, { error: 'Rule name is required' });
 		}
-		if (!templateId) {
-			return fail(400, { error: 'Task template is required' });
+
+		// Validate task type - either template or cash count config must be provided
+		if (taskType === 'cash_count') {
+			if (!cashCountConfigId) {
+				return fail(400, { error: 'Cash count config is required' });
+			}
+		} else {
+			if (!templateId) {
+				return fail(400, { error: 'Task template is required' });
+			}
 		}
+
 		if (!triggerType) {
 			return fail(400, { error: 'Trigger type is required' });
 		}
@@ -125,6 +151,12 @@ export const actions: Actions = {
 				return fail(400, { error: 'Cron expression is required for scheduled triggers' });
 			}
 			triggerConfig.cronExpression = cronExpression.trim();
+		} else if (triggerType === 'closing_shift') {
+			const triggerTime = formData.get('triggerTime') as string;
+			if (!triggerTime?.trim()) {
+				return fail(400, { error: 'Trigger time is required for closing shift triggers' });
+			}
+			triggerConfig.triggerTime = triggerTime.trim();
 		}
 
 		// Build conditions
@@ -164,7 +196,8 @@ export const actions: Actions = {
 				.set({
 					name: name.trim(),
 					description: description?.trim() || null,
-					templateId,
+					templateId: taskType === 'cash_count' ? null : templateId,
+					cashCountConfigId: taskType === 'cash_count' ? cashCountConfigId : null,
 					triggerType: triggerType as RuleTriggerType,
 					triggerConfig,
 					conditions: Object.keys(conditions).length > 0 ? conditions : null,
@@ -178,7 +211,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Rule updated successfully' };
 		} catch (error) {
-			log.error('Error updating rule', { error, ruleId: params.id, name });
+			log.error('Error updating rule', { error, ruleId: params.id, name, templateId, cashCountConfigId });
 			return fail(500, { error: 'Failed to update rule' });
 		}
 	},
@@ -193,6 +226,7 @@ export const actions: Actions = {
 			throw redirect(302, '/admin/tasks/rules');
 		} catch (error) {
 			if (error instanceof Response) throw error;
+			if (error && typeof error === 'object' && 'status' in error && 'location' in error) throw error;
 			log.error('Error deleting rule', { error, ruleId: params.id });
 			return fail(500, { error: 'Failed to delete rule' });
 		}
