@@ -1,5 +1,24 @@
-// Office Manager Chat Orchestrator
-// Single-model approach with confirmation workflow for dangerous actions
+/**
+ * @module AI/OfficeManager/ChatOrchestrator
+ * @description Interactive chat orchestrator for Office Manager AI.
+ *
+ * This module handles real-time user interactions with the Office Manager AI,
+ * including streaming responses, tool execution with confirmations, and
+ * multi-turn conversations.
+ *
+ * Key Features:
+ * - Streaming LLM responses via Anthropic API
+ * - Tool confirmation workflow for destructive actions
+ * - Context assembly with attendance, tasks, and staff data
+ * - Multi-turn conversation support with iteration limits
+ * - Automatic chat summarization for long conversations
+ *
+ * @example
+ * // Process user message with streaming
+ * for await (const event of processUserMessageStream(chatId, message, userId)) {
+ *   if (event.type === 'text') console.log(event.content);
+ * }
+ */
 import { randomUUID } from 'crypto';
 import { anthropicProvider, streamWithToolResults, type ToolResult } from '../../providers/anthropic';
 import { officeManagerTools } from '../../tools/office-manager';
@@ -517,8 +536,8 @@ The user approved and the following action was just executed:
 
 Continue with any remaining tasks from the original request. If there are more items to process (like deleting more duplicate schedules), proceed with the next one. If all tasks are complete, summarize what was accomplished.`;
 
-		// Get tools with permission filtering
-		const tools = await getToolsForUser(userId);
+		// Get tools
+		const tools = officeManagerTools;
 
 		// Build LLM request
 		const request: LLMRequest = {
@@ -547,7 +566,7 @@ Continue with any remaining tasks from the original request. If there are more i
 		let currentTurnToolCalls: ExecutedToolCall[] = [];
 		let currentTurnContent = '';
 
-		for await (const chunk of anthropicProvider.streamRequest(request)) {
+		for await (const chunk of anthropicProvider.stream(request)) {
 			if (chunk.type === 'text' && chunk.content) {
 				fullContent += chunk.content;
 				currentTurnContent += chunk.content;

@@ -1,4 +1,18 @@
-// View Schedule Tool - Read-only query for viewing the schedule
+/**
+ * @module AI/Tools/ViewSchedule
+ * @description AI tool for viewing scheduled shifts for staff members.
+ *
+ * Returns a comprehensive view of the schedule including:
+ * - Shifts organized by date
+ * - Current clock-in status for each staff member
+ * - Location information
+ * - Multi-day range support via endDate parameter
+ *
+ * Timezone: Uses Pacific timezone (America/Los_Angeles) for all date operations.
+ * Date strings (YYYY-MM-DD) are parsed at noon Pacific to avoid boundary issues.
+ *
+ * @see {@link $lib/server/utils/timezone} for timezone utilities
+ */
 import { db, users, shifts, locations, timeEntries } from '$lib/server/db';
 import { eq, and, gte, lte, isNull } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
@@ -156,7 +170,7 @@ export const viewScheduleTool: AITool<ViewScheduleParams, ViewScheduleResult> = 
 			// Determine if this is a range query
 			const isRange = !!params.endDate;
 			const endDateStr = params.endDate || startDateStr;
-			const endDate = new Date(endDateStr);
+			const endDate = new Date(endDateStr + 'T12:00:00'); // Use noon to match startDate
 
 			// Get all locations
 			const allLocations = await db

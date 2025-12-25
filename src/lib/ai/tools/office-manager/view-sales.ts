@@ -1,8 +1,25 @@
-// View Sales Tool - Query sales data and calculate profitability
+/**
+ * @module AI/Tools/ViewSales
+ * @description AI tool for querying sales data and calculating profitability.
+ *
+ * Retrieves sales snapshots for a given date, optionally calculating labor costs
+ * based on staff time entries to determine net profitability.
+ *
+ * Features:
+ * - Sales totals by vendor
+ * - Retained amount calculations
+ * - Labor cost analysis when includeLabor=true
+ * - Net profit/loss calculation
+ *
+ * Timezone: Uses Pacific timezone (America/Los_Angeles) for day boundaries.
+ *
+ * @see {@link $lib/server/utils/timezone} for timezone utilities
+ */
 import { db, salesSnapshots, timeEntries, users } from '$lib/server/db';
 import { eq, desc, gte, lte, and, isNull } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { getPacificDayBounds } from '$lib/server/utils/timezone';
 
 const log = createLogger('ai:tools:view-sales');
 
@@ -62,11 +79,8 @@ interface ViewSalesResult {
 
 // Calculate hours from time entries for a date
 async function calculateLaborForDate(date: string): Promise<{ hours: number; cost: number; workers: LaborSummary[] }> {
-	// Get start and end of the day
-	const dayStart = new Date(date);
-	dayStart.setHours(0, 0, 0, 0);
-	const dayEnd = new Date(date);
-	dayEnd.setHours(23, 59, 59, 999);
+	// Get start and end of the day in Pacific timezone
+	const { start: dayStart, end: dayEnd } = getPacificDayBounds(new Date(date + 'T12:00:00'));
 
 	// Get time entries for the day
 	const entries = await db

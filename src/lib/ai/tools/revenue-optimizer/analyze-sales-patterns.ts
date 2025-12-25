@@ -1,8 +1,26 @@
-// Analyze Sales Patterns Tool - Revenue Optimizer tool for sales and staffing analysis
+/**
+ * @module AI/Tools/AnalyzeSalesPatterns
+ * @description Revenue Optimizer AI tool for analyzing sales and staffing patterns.
+ *
+ * Provides multiple analysis types:
+ * - daily_summary: Daily totals, labor costs, and profit margins
+ * - hourly_velocity: Sales patterns by hour (best selling times)
+ * - labor_efficiency: Staff productivity and cost analysis
+ * - vendor_performance: Sales breakdown by vendor
+ * - weekly_trends: Week-over-week comparison
+ *
+ * Used by Revenue Optimizer agent during nightly analysis runs to identify
+ * opportunities and generate operational recommendations.
+ *
+ * Timezone: Uses Pacific timezone (America/Los_Angeles) for date calculations.
+ *
+ * @see {@link $lib/server/utils/timezone} for timezone utilities
+ */
 import { db, salesSnapshots, timeEntries, users } from '$lib/server/db';
 import { eq, gte, lte, and, desc, sql } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { parsePacificDate, parsePacificEndOfDay } from '$lib/server/utils/timezone';
 
 const log = createLogger('ai:tools:analyze-sales-patterns');
 
@@ -266,9 +284,9 @@ async function analyzeDailySummary(startDate: string, endDate: string, baseResul
 	const dailySummaries: DailySummary[] = [];
 
 	for (const [dateKey, snapshot] of dailySnapshots) {
-		// Calculate labor for this day
-		const dayStart = new Date(dateKey + 'T00:00:00');
-		const dayEnd = new Date(dateKey + 'T23:59:59');
+		// Calculate labor for this day (using Pacific timezone)
+		const dayStart = parsePacificDate(dateKey);
+		const dayEnd = parsePacificEndOfDay(dateKey);
 
 		let laborHours = 0;
 		let laborCost = 0;

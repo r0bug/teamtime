@@ -1,14 +1,32 @@
 /**
- * Sales Attribution Service
+ * @module Services/SalesAttribution
+ * @description Distributes daily sales to staff based on hours worked.
  *
- * Attributes daily sales to staff based on who was working.
- * Sales are distributed proportionally based on hours worked during shifts.
+ * This service runs daily (typically via cron) to:
+ * 1. Query the day's sales snapshot
+ * 2. Calculate each staff member's hours worked
+ * 3. Distribute retained sales proportionally by hours
+ * 4. Award gamification points based on sales attribution
+ * 5. Check for sales-related achievements
+ *
+ * Point Awards:
+ * - Base: floor(attributedRetained / 100) * 5 points
+ * - Top seller bonus: 50 points for highest sales
+ * - Beat average bonus: 20 points for above-average performance
+ *
+ * Timezone: Uses Pacific timezone (America/Los_Angeles) for day boundaries.
+ * All date calculations use getPacificDayBounds() to ensure correct attribution.
+ *
+ * @see {@link $lib/server/utils/timezone} for timezone utilities
+ * @see {@link ./points-service} for point calculation details
+ * @see {@link ./achievements-service} for achievement checking
  */
 
 import { db, timeEntries, salesSnapshots, userStats, users } from '$lib/server/db';
 import { eq, and, gte, lt, sql, isNotNull } from 'drizzle-orm';
 import { awardPoints, POINT_VALUES } from './points-service';
 import { checkAndAwardAchievements } from './achievements-service';
+import { getPacificDayBounds } from '$lib/server/utils/timezone';
 
 interface StaffAttribution {
 	userId: string;
@@ -52,10 +70,7 @@ export async function processDailySalesPoints(date: Date): Promise<DailySalesAtt
 	const totalRetained = parseFloat(snapshot.totalRetained);
 
 	// Get start and end of day in Pacific time
-	const dayStart = new Date(date);
-	dayStart.setHours(0, 0, 0, 0);
-	const dayEnd = new Date(date);
-	dayEnd.setHours(23, 59, 59, 999);
+	const { start: dayStart, end: dayEnd } = getPacificDayBounds(date);
 
 	// Get all time entries for this date (staff who worked)
 	const entries = await db

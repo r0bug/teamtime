@@ -1,8 +1,21 @@
-// Delete Duplicate Schedules Tool - Batch delete duplicate shifts
+/**
+ * @module AI/Tools/DeleteDuplicateSchedules
+ * @description AI tool for identifying and removing duplicate shift entries.
+ *
+ * This tool scans for shifts with identical user/date/time combinations and
+ * removes duplicates while preserving the first entry. Supports dry-run mode
+ * to preview deletions before executing.
+ *
+ * Timezone: Uses Pacific timezone (America/Los_Angeles) for date boundary calculations.
+ * Date inputs (startDate, endDate) are parsed as Pacific time.
+ *
+ * @see {@link $lib/server/utils/timezone} for timezone utilities
+ */
 import { db, shifts, users } from '$lib/server/db';
 import { eq, sql, and, gte, lte, inArray } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { parsePacificDate, parsePacificEndOfDay } from '$lib/server/utils/timezone';
 
 const log = createLogger('ai:tools:delete-duplicate-schedules');
 
@@ -88,8 +101,8 @@ export const deleteDuplicateSchedulesTool: AITool<DeleteDuplicateSchedulesParams
 			const defaultEnd = new Date(now);
 			defaultEnd.setDate(defaultEnd.getDate() + 30);
 
-			const startDate = params.startDate ? new Date(params.startDate) : defaultStart;
-			const endDate = params.endDate ? new Date(params.endDate + 'T23:59:59') : defaultEnd;
+			const startDate = params.startDate ? parsePacificDate(params.startDate) : defaultStart;
+			const endDate = params.endDate ? parsePacificEndOfDay(params.endDate) : defaultEnd;
 
 			// Find all shifts in date range with user info
 			const allShifts = await db

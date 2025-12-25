@@ -1,8 +1,21 @@
-// Get Available Staff Tool - Read-only query for staff availability
+/**
+ * @module AI/Tools/GetAvailableStaff
+ * @description AI tool for querying staff availability on a specific date.
+ *
+ * Returns a comprehensive view of staff members including their scheduled shifts,
+ * current clock-in status, and contact information. Used by Office Manager AI
+ * to look up user IDs when creating schedules or tasks.
+ *
+ * Timezone: Uses Pacific timezone (America/Los_Angeles) for day boundaries.
+ * The date input is parsed at noon Pacific to avoid timezone boundary issues.
+ *
+ * @see {@link $lib/server/utils/timezone} for timezone utilities
+ */
 import { db, users, shifts, timeEntries } from '$lib/server/db';
 import { eq, and, gte, lte, isNull, or } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { getPacificDayBounds } from '$lib/server/utils/timezone';
 
 const log = createLogger('ai:tools:get-available-staff');
 
@@ -77,11 +90,8 @@ export const getAvailableStaffTool: AITool<GetAvailableStaffParams, GetAvailable
 
 	async execute(params: GetAvailableStaffParams, context: ToolExecutionContext): Promise<GetAvailableStaffResult> {
 		try {
-			const targetDate = new Date(params.date);
-			const dayStart = new Date(targetDate);
-			dayStart.setHours(0, 0, 0, 0);
-			const dayEnd = new Date(targetDate);
-			dayEnd.setHours(23, 59, 59, 999);
+			const targetDate = new Date(params.date + 'T12:00:00'); // Use noon to avoid timezone boundary issues
+			const { start: dayStart, end: dayEnd } = getPacificDayBounds(targetDate);
 
 			// Get all active users, optionally filtered by role
 			let usersQuery = db
