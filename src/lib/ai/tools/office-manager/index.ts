@@ -18,6 +18,9 @@ export { reviewPastChatsTool } from './review-past-chats';
 export { getChatDetailsTool } from './get-chat-details';
 export { getMyPermissionsTool } from './get-my-permissions';
 export { viewSalesTool } from './view-sales';
+export { viewPointsTool } from './view-points';
+export { awardPointsTool } from './award-points';
+export { giveShoutoutTool } from './give-shoutout';
 export {
 	viewUserPermissionsTool,
 	grantTemporaryPermissionTool,
@@ -48,6 +51,9 @@ import { reviewPastChatsTool } from './review-past-chats';
 import { getChatDetailsTool } from './get-chat-details';
 import { getMyPermissionsTool } from './get-my-permissions';
 import { viewSalesTool } from './view-sales';
+import { viewPointsTool } from './view-points';
+import { awardPointsTool } from './award-points';
+import { giveShoutoutTool } from './give-shoutout';
 import { permissionTools } from './permission-tools';
 import type { AITool } from '../../types';
 
@@ -62,6 +68,7 @@ export const officeManagerTools: AITool<any, any>[] = [
 	reviewPastChatsTool,
 	getChatDetailsTool,
 	viewSalesTool,
+	viewPointsTool,
 	// Action tools
 	sendMessageTool,
 	createTaskTool,
@@ -76,6 +83,9 @@ export const officeManagerTools: AITool<any, any>[] = [
 	createSocialMediaTaskTool,
 	processInventoryPhotosTool,
 	continueWorkTool,
+	// Gamification & recognition tools
+	awardPointsTool,
+	giveShoutoutTool,
 	// Permission management tools
 	...permissionTools
 ];

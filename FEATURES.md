@@ -17,6 +17,7 @@ This document provides detailed information about TeamTime features, their imple
 11. [Gamification System](#gamification-system)
 12. [Sales Dashboard](#sales-dashboard)
 13. [Group Chat & Threads](#group-chat--threads)
+14. [Shoutouts & Recognition](#shoutouts--recognition)
 
 ---
 
@@ -1197,6 +1198,144 @@ When a user's user type changes:
 
 **Migration**:
 - `migrations/add_groups_and_threads.sql` — SQL migration file
+
+---
+
+## Shoutouts & Recognition
+
+### Overview
+
+The Shoutouts & Recognition system enables peer recognition and manager awards, integrated directly into existing workflows. Points are awarded through the gamification system when shoutouts are approved.
+
+### Recognition Types
+
+#### Peer Shoutouts (Require Manager Approval)
+- Any staff member can nominate a coworker for recognition
+- Nominations go to a manager approval queue
+- Points are awarded only after manager approval
+- Prevents abuse while encouraging team recognition
+
+#### Manager Awards (Auto-Approved)
+- Managers can directly award recognition
+- Points are awarded immediately
+- Available award types are configurable
+
+#### AI-Generated Recognition (Auto-Approved)
+- The Office Manager AI can proactively recognize patterns
+- Auto-approved since AI is trusted
+- Examples: streak milestones, consistent performance, going above and beyond
+
+### Award Types
+
+8 configurable award types with varying point values:
+
+| Award | Category | Points | Icon | Manager Only |
+|-------|----------|--------|------|--------------|
+| Above & Beyond | Initiative | 100 | 🌟 | Yes |
+| Customer Hero | Customer | 75 | 🦸 | Yes |
+| Quality Champion | Quality | 75 | 💎 | Yes |
+| Great Idea | Innovation | 100 | 💡 | Yes |
+| Team Player | Teamwork | 50 | 🤝 | No |
+| Helpful Mentor | Mentoring | 50 | 📚 | No |
+| Reliable Rock | Reliability | 50 | 🏔️ | No |
+| Quick Shoutout | General | 25 | 👏 | No |
+
+### Workflow Integration
+
+Recognition is embedded into existing workflows rather than a standalone page:
+
+1. **After Task Completion** — Option to recognize the person who completed a task
+2. **Pricing Grading** — Suggest shoutout when grading excellent work (5.0)
+3. **Messages** — Quick shoutout button in conversation headers
+4. **User Lists** — Shoutout icon next to each user in admin views
+5. **Dashboard** — "Recent Recognition" widget shows public shoutouts
+
+### Manager Approval Queue
+
+Managers access pending nominations at `/admin/shoutouts`:
+
+- View pending peer nominations
+- See nominator, recipient, award type, and reason
+- Approve (awards points) or Reject (with optional reason)
+- Recent approved shoutouts display below
+- Award types reference panel
+
+### Office Manager AI Tools
+
+The Office Manager AI has full access to the points system:
+
+**`view_points`** — Query user points, level, streak, and leaderboard position
+- Parameters: `userId` (optional), `period` (today/week/month/all)
+- Read-only, no cooldowns
+
+**`award_points`** — Award 1-500 bonus points with reason
+- Parameters: `userId`, `points`, `reason`, `category`
+- Rate limited: 10 per hour, 60s cooldown per user
+
+**`give_shoutout`** — Create public recognition (auto-approved)
+- Parameters: `userId`, `title`, `category`, `description`, `awardTypeId`
+- Rate limited: 5 per hour, 120s cooldown per user
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/shoutouts` | GET | List shoutouts (with status filter) |
+| `/api/shoutouts` | POST | Create shoutout/nomination |
+| `/api/shoutouts/[id]` | GET | Get shoutout details |
+| `/api/shoutouts/[id]/approve` | POST | Manager approves (awards points) |
+| `/api/shoutouts/[id]/reject` | POST | Manager rejects |
+| `/api/shoutouts/pending` | GET | Get pending approval queue |
+| `/api/award-types` | GET | List available award types |
+
+### Components
+
+**`ShoutoutButton.svelte`** — Compact trigger button
+- Props: `userId`, `userName`, `variant` (icon/text/full)
+- Opens ShoutoutModal on click
+
+**`ShoutoutModal.svelte`** — Recognition creation form
+- Award type selector with point preview
+- Title and optional description
+- Shows approval requirement for peer nominations
+
+**`RecentShoutouts.svelte`** — Recognition feed widget
+- Props: `limit`, `compact`
+- Displays recent public shoutouts with relative timestamps
+- Shows award icon, recipient, title, nominator, and points
+
+### Points Integration
+
+Shoutout points use the existing gamification system:
+- Category: `bonus`
+- Action: `shoutout_received`
+- SourceType: `shoutout`
+- Streak multiplier: Not applied (bonus points are fixed)
+
+### Database Schema
+
+**`shoutouts` table**:
+- `id`, `recipient_id`, `nominator_id`, `approved_by_id`
+- `award_type_id`, `title`, `description`, `category`
+- `status` (pending/approved/rejected), `is_manager_award`, `is_ai_generated`
+- `points_awarded`, `is_public`, `approved_at`, `created_at`
+
+**`award_types` table**:
+- `id`, `name`, `description`, `category`
+- `points`, `icon`, `color`
+- `is_active`, `manager_only`, `created_at`
+
+### Key Files
+
+**Service**: `src/lib/server/services/shoutout-service.ts`
+
+**API Routes**: `src/routes/api/shoutouts/`, `src/routes/api/award-types/`
+
+**Components**: `src/lib/components/ShoutoutButton.svelte`, `ShoutoutModal.svelte`, `RecentShoutouts.svelte`
+
+**Admin**: `src/routes/(app)/admin/shoutouts/`
+
+**AI Tools**: `src/lib/ai/tools/office-manager/view-points.ts`, `award-points.ts`, `give-shoutout.ts`
 
 ---
 

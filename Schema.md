@@ -126,4 +126,67 @@ The `conversation_type` enum now includes: `direct`, `broadcast`, `group`
 
 ---
 
+## Shoutouts & Recognition Schema
+
+### Shoutout Category Enum
+
+```sql
+CREATE TYPE shoutout_category AS ENUM (
+  'teamwork', 'quality', 'initiative', 'customer',
+  'mentoring', 'innovation', 'reliability', 'general'
+);
+```
+
+### Shoutout Status Enum
+
+```sql
+CREATE TYPE shoutout_status AS ENUM ('pending', 'approved', 'rejected');
+```
+
+### Award Types Table
+
+```sql
+CREATE TABLE award_types (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT,
+  category shoutout_category NOT NULL,
+  points INTEGER NOT NULL,
+  icon TEXT DEFAULT '⭐',
+  color TEXT DEFAULT '#F59E0B',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  manager_only BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+### Shoutouts Table
+
+```sql
+CREATE TABLE shoutouts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  recipient_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  nominator_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  approved_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  award_type_id UUID REFERENCES award_types(id) ON DELETE SET NULL,
+  category shoutout_category NOT NULL DEFAULT 'general',
+  title TEXT NOT NULL,
+  description TEXT,
+  status shoutout_status NOT NULL DEFAULT 'pending',
+  is_manager_award BOOLEAN NOT NULL DEFAULT false,
+  is_ai_generated BOOLEAN NOT NULL DEFAULT false,
+  points_awarded INTEGER NOT NULL DEFAULT 0,
+  is_public BOOLEAN NOT NULL DEFAULT true,
+  approved_at TIMESTAMPTZ,
+  rejected_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_shoutouts_recipient ON shoutouts(recipient_id);
+CREATE INDEX idx_shoutouts_status ON shoutouts(status);
+CREATE INDEX idx_shoutouts_created ON shoutouts(created_at DESC);
+```
+
+---
+
 *Last updated: December 2024*

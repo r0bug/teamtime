@@ -81,6 +81,19 @@ export const pointCategoryEnum = pgEnum('point_category', ['attendance', 'task',
 export const achievementTierEnum = pgEnum('achievement_tier', ['bronze', 'silver', 'gold', 'platinum']);
 export const leaderboardPeriodEnum = pgEnum('leaderboard_period', ['daily', 'weekly', 'monthly']);
 
+// Shoutout & Recognition Enums
+export const shoutoutCategoryEnum = pgEnum('shoutout_category', [
+	'teamwork',      // Collaboration & helping others
+	'quality',       // Attention to detail, excellent work
+	'initiative',    // Going above and beyond
+	'customer',      // Great customer service
+	'mentoring',     // Teaching & onboarding help
+	'innovation',    // New ideas, process improvements
+	'reliability',   // Consistent dependable performance
+	'general'        // Generic recognition
+]);
+export const shoutoutStatusEnum = pgEnum('shoutout_status', ['pending', 'approved', 'rejected']);
+
 // ============================================
 // ACCESS CONTROL TABLES (User Types & Permissions)
 // ============================================
@@ -2150,6 +2163,53 @@ export const teamGoals = pgTable('team_goals', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
+// ============================================
+// SHOUTOUTS & RECOGNITION
+// ============================================
+
+// Award Types - Configurable recognition award templates
+export const awardTypes = pgTable('award_types', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),                      // "Above & Beyond"
+	description: text('description'),                   // When to use this award
+	category: shoutoutCategoryEnum('category').notNull(),
+	points: integer('points').notNull(),                // 50, 100, etc.
+	icon: text('icon').default('⭐'),                   // Emoji for display
+	color: text('color').default('#F59E0B'),           // Amber
+	isActive: boolean('is_active').notNull().default(true),
+	managerOnly: boolean('manager_only').notNull().default(false), // Only managers can give
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Shoutouts - Peer recognition and manager awards
+export const shoutouts = pgTable('shoutouts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	recipientId: uuid('recipient_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+	nominatorId: uuid('nominator_id').references(() => users.id, { onDelete: 'set null' }), // null = system/AI
+	approvedById: uuid('approved_by_id').references(() => users.id, { onDelete: 'set null' }),
+	awardTypeId: uuid('award_type_id').references(() => awardTypes.id, { onDelete: 'set null' }),
+
+	category: shoutoutCategoryEnum('category').notNull().default('general'),
+	title: text('title').notNull(),                     // "Great teamwork on estate sale!"
+	description: text('description'),                   // Longer explanation (optional)
+
+	isManagerAward: boolean('is_manager_award').notNull().default(false),
+	isAiGenerated: boolean('is_ai_generated').notNull().default(false),
+	requiresApproval: boolean('requires_approval').notNull().default(true),
+	status: shoutoutStatusEnum('status').notNull().default('pending'),
+
+	pointsAwarded: integer('points_awarded').notNull().default(0),
+	isPublic: boolean('is_public').notNull().default(true),
+
+	// Source tracking (what triggered this shoutout)
+	sourceType: text('source_type'),                    // 'task', 'pricing', 'message', 'manual', 'ai'
+	sourceId: uuid('source_id'),                        // ID of related entity
+
+	rejectionReason: text('rejection_reason'),          // If rejected
+	approvedAt: timestamp('approved_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
 // Gamification Relations
 export const pointTransactionsRelations = relations(pointTransactions, ({ one }) => ({
 	user: one(users, {
@@ -2194,6 +2254,33 @@ export const teamGoalsRelations = relations(teamGoals, ({ one }) => ({
 	})
 }));
 
+// Shoutout Relations
+export const awardTypesRelations = relations(awardTypes, ({ many }) => ({
+	shoutouts: many(shoutouts)
+}));
+
+export const shoutoutsRelations = relations(shoutouts, ({ one }) => ({
+	recipient: one(users, {
+		fields: [shoutouts.recipientId],
+		references: [users.id],
+		relationName: 'shoutoutRecipient'
+	}),
+	nominator: one(users, {
+		fields: [shoutouts.nominatorId],
+		references: [users.id],
+		relationName: 'shoutoutNominator'
+	}),
+	approvedBy: one(users, {
+		fields: [shoutouts.approvedById],
+		references: [users.id],
+		relationName: 'shoutoutApprover'
+	}),
+	awardType: one(awardTypes, {
+		fields: [shoutouts.awardTypeId],
+		references: [awardTypes.id]
+	})
+}));
+
 // Gamification Types
 export type PointTransaction = typeof pointTransactions.$inferSelect;
 export type NewPointTransaction = typeof pointTransactions.$inferInsert;
@@ -2209,4 +2296,8 @@ export type LeaderboardSnapshot = typeof leaderboardSnapshots.$inferSelect;
 export type NewLeaderboardSnapshot = typeof leaderboardSnapshots.$inferInsert;
 export type TeamGoal = typeof teamGoals.$inferSelect;
 export type NewTeamGoal = typeof teamGoals.$inferInsert;
+export type AwardType = typeof awardTypes.$inferSelect;
+export type NewAwardType = typeof awardTypes.$inferInsert;
+export type Shoutout = typeof shoutouts.$inferSelect;
+export type NewShoutout = typeof shoutouts.$inferInsert;
 

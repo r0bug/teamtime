@@ -67,13 +67,15 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - **Public leaderboards** (weekly/monthly) for team competition
 - **Admin pricing grading** with slider-based scoring (1-5) affecting points
 - **Daily sales attribution** based on shift hours worked
+- **Shoutouts & Recognition** — Peer nominations (with manager approval) and manager awards
+- **8 award types** with configurable point values (25-100 pts)
 - Loss aversion mechanics and social proof to drive engagement
 
 ### AI Operations Assistants ("Shackled Mentats")
 
 Three specialized AI agents run in the background:
 
-**Office Manager** — Monitors attendance, flags missing staff, creates/cancels tasks, sends proactive messages, views schedules, and manages permissions. 22+ tools available. Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours.
+**Office Manager** — Monitors attendance, flags missing staff, creates/cancels tasks, sends proactive messages, views schedules, manages permissions, and awards recognition. 25 tools available including points management (view_points, award_points, give_shoutout). Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours.
 
 **Revenue Optimizer** — Analyzes patterns across scheduling, task completion, and expenses. Writes long-term observations and creates policies for the Office Manager to follow. 4 specialized tools. Runs nightly.
 
@@ -227,7 +229,7 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-51 tables organized across domains:
+53 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries
 - **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules
@@ -235,7 +237,7 @@ All endpoints require authentication except static files. Role-based authorizati
 - **Inventory**: inventory_drops, inventory_drop_photos, inventory_drop_items
 - **Expenses**: atm_withdrawals, withdrawal_allocations, purchase_requests
 - **Messaging**: conversations, messages, message_photos, groups, group_members, thread_participants
-- **Gamification**: point_transactions, user_stats, achievements, user_achievements, leaderboard_snapshots, team_goals
+- **Gamification**: point_transactions, user_stats, achievements, user_achievements, leaderboard_snapshots, team_goals, shoutouts, award_types
 - **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes, ai_tool_config, ai_tool_keywords, ai_context_config, ai_context_keywords
 - **Admin**: app_settings, audit_logs, info_posts
 

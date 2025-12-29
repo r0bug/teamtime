@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import type { PageData } from './$types';
+	import RecentShoutouts from '$lib/components/RecentShoutouts.svelte';
 
 	export let data: PageData;
 
@@ -139,6 +140,11 @@
 			</div>
 		</div>
 	{/if}
+
+	<!-- Recent Recognition -->
+	<div class="mb-6">
+		<RecentShoutouts limit={5} compact={true} />
+	</div>
 
 	<!-- Clock In/Out Card -->
 	<div class="card mb-6">
