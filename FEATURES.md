@@ -16,6 +16,7 @@ This document provides detailed information about TeamTime features, their imple
 10. [Privacy Policy & Terms of Service](#privacy-policy--terms-of-service)
 11. [Gamification System](#gamification-system)
 12. [Sales Dashboard](#sales-dashboard)
+13. [Group Chat & Threads](#group-chat--threads)
 
 ---
 
@@ -1053,3 +1054,150 @@ The Office Manager has access to the `view_sales` tool:
 - `src/routes/api/sales/import/+server.ts` — Import API
 - `src/lib/ai/tools/office-manager/view-sales.ts` — Office Manager tool
 - `scraper-imports/` — NRS scraper scripts and configuration
+
+---
+
+## Group Chat & Threads
+
+### Overview
+
+TeamTime includes a comprehensive group chat system with Slack-style threaded replies. Groups can be auto-synced with user types (employee categories) or created as custom groups by administrators.
+
+### Key Features
+
+1. **Auto-Synced Groups**: Each user type automatically gets a group chat. Membership syncs when users' types change.
+2. **Custom Groups**: Admins can create arbitrary groups with manual membership control.
+3. **Threaded Replies**: Click any message to open a slide-out thread panel for focused discussions.
+4. **Group Conversations**: Each group has one persistent conversation that never ends.
+
+### User Experience
+
+#### Viewing Groups
+
+1. Navigate to **Messages** from the main navigation
+2. Groups appear in a dedicated "Group Chats" section at the top
+3. Each group shows:
+   - Colored avatar with first letter of group name
+   - Member count
+   - Last message preview
+   - Unread indicator
+
+#### Using Threads
+
+1. In any conversation, messages with replies show a thread indicator
+2. Click "View thread" or the reply count to open the thread panel
+3. Thread panel slides in from the right
+4. Reply within the thread to keep discussions organized
+5. Thread replies don't clutter the main conversation
+
+#### Group Management (Admin)
+
+1. Navigate to **Admin → User Management → Groups**
+2. View all groups with member counts and type indicators
+3. Click **Sync User Types** to create/update groups for all user types
+4. Click **+ Create Group** for custom groups
+5. Manage individual group settings:
+   - Edit name (custom groups only), description, and color
+   - Add/remove members
+   - Activate/deactivate groups
+   - View the group chat directly
+
+### Group Types
+
+| Type | Description | Membership |
+|------|-------------|------------|
+| **Auto-Synced** | Linked to a user type | Automatic based on user's type |
+| **Custom** | Created by admin | Manual add/remove |
+
+### Auto-Sync Behavior
+
+When a user's user type changes:
+1. They are removed from their old type's group (if auto-assigned)
+2. They are added to their new type's group (if one exists)
+3. Manually-added members are not affected by sync
+
+### Permissions
+
+| Action | Who Can Do It |
+|--------|---------------|
+| View groups | Members only |
+| Send messages | Members only |
+| Create custom group | Admin |
+| Sync user type groups | Admin |
+| Add/remove members | Admin |
+| Edit group settings | Admin |
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/groups` | GET | List groups (user's groups or all for admin) |
+| `/api/groups` | POST | Create custom group |
+| `/api/groups/[id]` | GET | Get group details |
+| `/api/groups/[id]` | PATCH | Update group |
+| `/api/groups/[id]` | DELETE | Delete group |
+| `/api/groups/[id]/members` | GET | List group members |
+| `/api/groups/[id]/members` | POST | Add member |
+| `/api/groups/[id]/members/[userId]` | DELETE | Remove member |
+| `/api/groups/sync` | POST | Sync all user type groups |
+| `/api/conversations/[id]/messages/[messageId]/thread` | GET | Get thread replies |
+| `/api/conversations/[id]/messages/[messageId]/thread` | POST | Reply to thread |
+
+### Database Schema
+
+**New Tables**:
+
+| Table | Purpose |
+|-------|---------|
+| `groups` | Group metadata with conversation link |
+| `group_members` | Membership with role and auto-assign tracking |
+| `thread_participants` | Thread read tracking |
+
+**Modified Tables**:
+
+| Table | Changes |
+|-------|---------|
+| `messages` | Added `parent_message_id`, `thread_reply_count`, `last_thread_reply_at` |
+| `conversations` | Added `group` to type enum |
+
+**Key Columns in `groups`**:
+- `conversation_id` — Links to the group's conversation (unique)
+- `linked_user_type_id` — Links to user type for auto-sync (unique, nullable)
+- `is_auto_synced` — Whether membership syncs with user type
+- `color` — Display color for the group avatar
+
+**Key Columns in `group_members`**:
+- `role` — 'admin' or 'member'
+- `is_auto_assigned` — Whether added by sync (vs manually)
+- `added_by` — Who added this member (null for auto)
+
+### Files
+
+**Service Layer**:
+- `src/lib/server/services/group-sync.ts` — All group operations
+
+**API Routes**:
+- `src/routes/api/groups/+server.ts` — List and create
+- `src/routes/api/groups/[id]/+server.ts` — CRUD operations
+- `src/routes/api/groups/[id]/members/+server.ts` — Member management
+- `src/routes/api/groups/[id]/members/[userId]/+server.ts` — Remove member
+- `src/routes/api/groups/sync/+server.ts` — Sync trigger
+- `src/routes/api/conversations/[id]/messages/[messageId]/thread/+server.ts` — Thread API
+
+**Admin UI**:
+- `src/routes/(app)/admin/groups/+page.svelte` — Group management page
+- `src/routes/(app)/admin/groups/+page.server.ts` — Server actions
+
+**User UI**:
+- `src/routes/(app)/messages/+page.svelte` — Updated with Groups section
+- `src/routes/(app)/messages/[id]/+page.svelte` — Thread panel integration
+
+**Schema**:
+- `src/lib/server/db/schema.ts` — `groups`, `groupMembers`, `threadParticipants` tables
+
+**Migration**:
+- `migrations/add_groups_and_threads.sql` — SQL migration file
+
+---
+
+*Last updated: December 2024*

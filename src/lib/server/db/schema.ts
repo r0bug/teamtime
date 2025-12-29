@@ -54,7 +54,7 @@ export const assignmentTypeEnum = pgEnum('assignment_type', [
 ]);
 export const purchaseStatusEnum = pgEnum('purchase_status', ['pending', 'approved', 'denied']);
 export const withdrawalStatusEnum = pgEnum('withdrawal_status', ['unassigned', 'partially_assigned', 'fully_spent']);
-export const conversationTypeEnum = pgEnum('conversation_type', ['direct', 'broadcast']);
+export const conversationTypeEnum = pgEnum('conversation_type', ['direct', 'broadcast', 'group']);
 export const notificationTypeEnum = pgEnum('notification_type', [
 	'task_assigned',
 	'task_due',
@@ -697,6 +697,10 @@ export const messages = pgTable('messages', {
 	senderId: uuid('sender_id').references(() => users.id, { onDelete: 'set null' }),
 	content: text('content').notNull(),
 	isSystemMessage: boolean('is_system_message').notNull().default(false),
+	// Thread support
+	parentMessageId: uuid('parent_message_id'),
+	threadReplyCount: integer('thread_reply_count').notNull().default(0),
+	lastThreadReplyAt: timestamp('last_thread_reply_at', { withTimezone: true }),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
@@ -710,6 +714,70 @@ export const messagePhotos = pgTable('message_photos', {
 	originalName: text('original_name').notNull(),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
+
+// ============================================
+// GROUP CHAT TABLES
+// ============================================
+
+// Groups table - each group has one conversation
+export const groups = pgTable('groups', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),
+	description: text('description'),
+	// Link to conversation - each group has exactly one conversation
+	conversationId: uuid('conversation_id')
+		.notNull()
+		.references(() => conversations.id, { onDelete: 'cascade' }),
+	// Auto-sync with userType
+	linkedUserTypeId: uuid('linked_user_type_id')
+		.references(() => userTypes.id, { onDelete: 'set null' }),
+	isAutoSynced: boolean('is_auto_synced').notNull().default(false),
+	// Appearance
+	color: text('color').default('#6B7280'),
+	// Status
+	isActive: boolean('is_active').notNull().default(true),
+	// Audit
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	uniqueConversation: unique().on(table.conversationId),
+	uniqueLinkedUserType: unique().on(table.linkedUserTypeId)
+}));
+
+// Group members table
+export const groupMembers = pgTable('group_members', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	groupId: uuid('group_id')
+		.notNull()
+		.references(() => groups.id, { onDelete: 'cascade' }),
+	userId: uuid('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	// Member role within the group
+	role: text('role').notNull().default('member'), // 'admin', 'member'
+	// For auto-synced groups, track whether membership is auto-assigned
+	isAutoAssigned: boolean('is_auto_assigned').notNull().default(false),
+	joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+	addedBy: uuid('added_by').references(() => users.id, { onDelete: 'set null' })
+}, (table) => ({
+	uniqueGroupUser: unique().on(table.groupId, table.userId)
+}));
+
+// Thread participants table - track who has participated in a thread
+export const threadParticipants = pgTable('thread_participants', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	messageId: uuid('message_id') // The parent message (thread root)
+		.notNull()
+		.references(() => messages.id, { onDelete: 'cascade' }),
+	userId: uuid('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	lastReadAt: timestamp('last_read_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	uniqueThreadUser: unique().on(table.messageId, table.userId)
+}));
 
 // Notifications table
 export const notifications = pgTable('notifications', {
@@ -1476,7 +1544,11 @@ export const conversationsRelations = relations(conversations, ({ one, many }) =
 		references: [users.id]
 	}),
 	participants: many(conversationParticipants),
-	messages: many(messages)
+	messages: many(messages),
+	group: one(groups, {
+		fields: [conversations.id],
+		references: [groups.conversationId]
+	})
 }));
 
 export const conversationParticipantsRelations = relations(conversationParticipants, ({ one }) => ({
@@ -1499,7 +1571,58 @@ export const messagesRelations = relations(messages, ({ one, many }) => ({
 		fields: [messages.senderId],
 		references: [users.id]
 	}),
-	photos: many(messagePhotos)
+	photos: many(messagePhotos),
+	// Thread support
+	parentMessage: one(messages, {
+		fields: [messages.parentMessageId],
+		references: [messages.id],
+		relationName: 'threadReplies'
+	}),
+	threadReplies: many(messages, { relationName: 'threadReplies' }),
+	threadParticipants: many(threadParticipants)
+}));
+
+// Group Chat Relations
+export const groupsRelations = relations(groups, ({ one, many }) => ({
+	conversation: one(conversations, {
+		fields: [groups.conversationId],
+		references: [conversations.id]
+	}),
+	linkedUserType: one(userTypes, {
+		fields: [groups.linkedUserTypeId],
+		references: [userTypes.id]
+	}),
+	members: many(groupMembers),
+	createdByUser: one(users, {
+		fields: [groups.createdBy],
+		references: [users.id]
+	})
+}));
+
+export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
+	group: one(groups, {
+		fields: [groupMembers.groupId],
+		references: [groups.id]
+	}),
+	user: one(users, {
+		fields: [groupMembers.userId],
+		references: [users.id]
+	}),
+	addedByUser: one(users, {
+		fields: [groupMembers.addedBy],
+		references: [users.id]
+	})
+}));
+
+export const threadParticipantsRelations = relations(threadParticipants, ({ one }) => ({
+	message: one(messages, {
+		fields: [threadParticipants.messageId],
+		references: [messages.id]
+	}),
+	user: one(users, {
+		fields: [threadParticipants.userId],
+		references: [users.id]
+	})
 }));
 
 // Pricing Decisions Relations

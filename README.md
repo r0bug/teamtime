@@ -53,6 +53,9 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 ### Team Communication
 - Direct messaging between any team members
 - Broadcast messages to all staff
+- **Group chats** with auto-sync to user types (employee categories)
+- **Custom groups** created by admins with manual membership
+- **Threaded replies** — Slack-style threads to keep discussions organized
 - Photo attachments for "where is this item?" scenarios
 - Conversation history retained for accountability
 
@@ -224,14 +227,14 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-48 tables organized across domains:
+51 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries
 - **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules
 - **Pricing**: pricing_decisions, pricing_decision_photos, pricing_grades
 - **Inventory**: inventory_drops, inventory_drop_photos, inventory_drop_items
 - **Expenses**: atm_withdrawals, withdrawal_allocations, purchase_requests
-- **Messaging**: conversations, messages, message_photos
+- **Messaging**: conversations, messages, message_photos, groups, group_members, thread_participants
 - **Gamification**: point_transactions, user_stats, achievements, user_achievements, leaderboard_snapshots, team_goals
 - **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes, ai_tool_config, ai_tool_keywords, ai_context_config, ai_context_keywords
 - **Admin**: app_settings, audit_logs, info_posts

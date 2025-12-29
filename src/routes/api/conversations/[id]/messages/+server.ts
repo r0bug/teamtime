@@ -1,9 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, conversations, conversationParticipants, messages, messagePhotos, users, notifications } from '$lib/server/db';
-import { eq, and, desc, lt } from 'drizzle-orm';
+import { eq, and, desc, lt, isNull } from 'drizzle-orm';
 
-// Get messages
+// Get messages (excludes thread replies - only shows top-level messages)
 export const GET: RequestHandler = async ({ locals, params, url }) => {
 	if (!locals.user) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
@@ -28,6 +28,7 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 	const before = url.searchParams.get('before');
 	const limit = parseInt(url.searchParams.get('limit') || '50', 10);
 
+	// Only fetch top-level messages (exclude thread replies)
 	let query = db
 		.select({
 			id: messages.id,
@@ -35,11 +36,18 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 			isSystemMessage: messages.isSystemMessage,
 			createdAt: messages.createdAt,
 			senderId: messages.senderId,
-			senderName: users.name
+			senderName: users.name,
+			threadReplyCount: messages.threadReplyCount,
+			lastThreadReplyAt: messages.lastThreadReplyAt
 		})
 		.from(messages)
 		.leftJoin(users, eq(users.id, messages.senderId))
-		.where(eq(messages.conversationId, params.id))
+		.where(
+			and(
+				eq(messages.conversationId, params.id),
+				isNull(messages.parentMessageId) // Exclude thread replies
+			)
+		)
 		.orderBy(desc(messages.createdAt))
 		.limit(limit);
 
@@ -51,13 +59,16 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 				isSystemMessage: messages.isSystemMessage,
 				createdAt: messages.createdAt,
 				senderId: messages.senderId,
-				senderName: users.name
+				senderName: users.name,
+				threadReplyCount: messages.threadReplyCount,
+				lastThreadReplyAt: messages.lastThreadReplyAt
 			})
 			.from(messages)
 			.leftJoin(users, eq(users.id, messages.senderId))
 			.where(
 				and(
 					eq(messages.conversationId, params.id),
+					isNull(messages.parentMessageId), // Exclude thread replies
 					lt(messages.createdAt, new Date(before))
 				)
 			)

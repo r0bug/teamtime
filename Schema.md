@@ -60,4 +60,70 @@ Session cookies are managed by the authentication system (Lucia). See authentica
 
 ---
 
+## Database Schema Highlights
+
+The full database schema is defined in `src/lib/server/db/schema.ts`. Here are key additions for Group Chat & Threads:
+
+### Groups Table
+
+```sql
+CREATE TABLE groups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT,
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  linked_user_type_id UUID REFERENCES user_types(id) ON DELETE SET NULL,
+  is_auto_synced BOOLEAN NOT NULL DEFAULT false,
+  color TEXT DEFAULT '#6B7280',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(conversation_id),
+  UNIQUE(linked_user_type_id)
+);
+```
+
+### Group Members Table
+
+```sql
+CREATE TABLE group_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'member',  -- 'admin' or 'member'
+  is_auto_assigned BOOLEAN NOT NULL DEFAULT false,
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  added_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE(group_id, user_id)
+);
+```
+
+### Thread Columns (Messages Table)
+
+```sql
+ALTER TABLE messages ADD COLUMN parent_message_id UUID REFERENCES messages(id) ON DELETE CASCADE;
+ALTER TABLE messages ADD COLUMN thread_reply_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN last_thread_reply_at TIMESTAMPTZ;
+```
+
+### Thread Participants Table
+
+```sql
+CREATE TABLE thread_participants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  last_read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(message_id, user_id)
+);
+```
+
+### Conversation Type Enum
+
+The `conversation_type` enum now includes: `direct`, `broadcast`, `group`
+
+---
+
 *Last updated: December 2024*

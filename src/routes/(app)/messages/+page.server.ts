@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { db, users, conversations, conversationParticipants, messages } from '$lib/server/db';
-import { eq, and, desc, ne, sql } from 'drizzle-orm';
+import { db, users, conversations, conversationParticipants, messages, groups } from '$lib/server/db';
+import { eq, and, desc, ne, sql, isNull } from 'drizzle-orm';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -35,6 +35,25 @@ export const load: PageServerLoad = async ({ locals }) => {
 		)
 		.orderBy(desc(conversations.updatedAt));
 
+	// Get group info for group conversations
+	const groupConversationIds = userConversations
+		.filter(c => c.type === 'group')
+		.map(c => c.id);
+
+	const groupsInfo = groupConversationIds.length > 0
+		? await db
+			.select({
+				conversationId: groups.conversationId,
+				name: groups.name,
+				color: groups.color,
+				memberCount: sql<number>`(SELECT COUNT(*) FROM group_members WHERE group_id = ${groups.id})::int`
+			})
+			.from(groups)
+			.where(sql`${groups.conversationId} IN ${groupConversationIds}`)
+		: [];
+
+	const groupsMap = new Map(groupsInfo.map(g => [g.conversationId, g]));
+
 	// For each conversation, get participants and last message
 	const conversationsWithDetails = await Promise.all(
 		userConversations.map(async (conv) => {
@@ -61,30 +80,40 @@ export const load: PageServerLoad = async ({ locals }) => {
 				.orderBy(desc(messages.createdAt))
 				.limit(1);
 
-			// Count unread
+			// Count unread (only top-level messages, not thread replies)
 			const [{ count: unreadCount }] = await db
 				.select({ count: sql<number>`count(*)::int` })
 				.from(messages)
 				.where(
 					and(
 						eq(messages.conversationId, conv.id),
+						isNull(messages.parentMessageId),
 						conv.lastReadAt
 							? sql`${messages.createdAt} > ${conv.lastReadAt}`
 							: sql`1=1`
 					)
 				);
 
+			// Get group info if this is a group conversation
+			const groupInfo = conv.type === 'group' ? groupsMap.get(conv.id) : null;
+
 			return {
 				...conv,
 				participants,
 				lastMessage,
-				unreadCount
+				unreadCount,
+				group: groupInfo
 			};
 		})
 	);
 
+	// Separate group conversations and direct/broadcast
+	const groupConversations = conversationsWithDetails.filter(c => c.type === 'group');
+	const otherConversations = conversationsWithDetails.filter(c => c.type !== 'group');
+
 	return {
-		conversations: conversationsWithDetails,
+		conversations: otherConversations,
+		groupConversations,
 		users: allUsers
 	};
 };
