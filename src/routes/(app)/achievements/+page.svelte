@@ -7,6 +7,8 @@
 	$: byCategory = data.byCategory;
 	$: stats = data.stats;
 	$: userStats = data.userStats;
+	$: pricingStats = data.pricingStats;
+	$: recentGrades = data.recentGrades;
 
 	function getTierColor(tier: string): string {
 		switch (tier) {
@@ -58,6 +60,31 @@
 			day: 'numeric',
 			year: 'numeric'
 		});
+	}
+
+	function getGradeColor(grade: number): string {
+		if (grade >= 4.5) return 'text-green-600';
+		if (grade >= 3.5) return 'text-blue-600';
+		if (grade >= 2.5) return 'text-yellow-600';
+		return 'text-red-600';
+	}
+
+	function getGradeBgColor(grade: number): string {
+		if (grade >= 4.5) return 'bg-green-100 text-green-800';
+		if (grade >= 3.5) return 'bg-blue-100 text-blue-800';
+		if (grade >= 2.5) return 'bg-yellow-100 text-yellow-800';
+		return 'bg-red-100 text-red-800';
+	}
+
+	function getGradeLabel(grade: number): string {
+		if (grade >= 4.5) return 'Excellent';
+		if (grade >= 3.5) return 'Good';
+		if (grade >= 2.5) return 'Acceptable';
+		return 'Needs Improvement';
+	}
+
+	function renderStars(rating: number): string {
+		return '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating));
 	}
 
 	const categoryOrder = ['attendance', 'task', 'pricing', 'sales', 'bonus'];
@@ -135,6 +162,142 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- Pricing Performance Section -->
+	{#if pricingStats.totalGraded > 0}
+		<div class="card mb-6">
+			<div class="card-header flex items-center gap-2">
+				<span class="text-xl">💰</span>
+				<h2 class="font-semibold">Pricing Performance</h2>
+			</div>
+			<div class="card-body">
+				<!-- Overview Stats -->
+				<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+					<div class="text-center p-3 bg-gray-50 rounded-lg">
+						<p class="text-2xl font-bold {getGradeColor(pricingStats.averageGrade)}">{pricingStats.averageGrade}</p>
+						<p class="text-xs text-gray-500">Avg Grade</p>
+					</div>
+					<div class="text-center p-3 bg-gray-50 rounded-lg">
+						<p class="text-2xl font-bold text-gray-900">{pricingStats.totalGraded}</p>
+						<p class="text-xs text-gray-500">Graded</p>
+					</div>
+					<div class="text-center p-3 bg-gray-50 rounded-lg">
+						<p class="text-2xl font-bold {pricingStats.totalPoints >= 0 ? 'text-green-600' : 'text-red-600'}">
+							{pricingStats.totalPoints >= 0 ? '+' : ''}{pricingStats.totalPoints}
+						</p>
+						<p class="text-xs text-gray-500">Points</p>
+					</div>
+					<div class="text-center p-3 bg-gray-50 rounded-lg">
+						<p class="text-2xl font-bold text-green-600">{pricingStats.excellent}</p>
+						<p class="text-xs text-gray-500">Excellent</p>
+					</div>
+				</div>
+
+				<!-- Grade Distribution -->
+				<div class="mb-6">
+					<h3 class="text-sm font-medium text-gray-600 mb-3">Grade Distribution</h3>
+					<div class="flex gap-1 h-4 rounded-full overflow-hidden bg-gray-200">
+						{#if pricingStats.excellent > 0}
+							<div
+								class="bg-green-500 transition-all"
+								style="width: {(pricingStats.excellent / pricingStats.totalGraded) * 100}%"
+								title="{pricingStats.excellent} Excellent"
+							></div>
+						{/if}
+						{#if pricingStats.good > 0}
+							<div
+								class="bg-blue-500 transition-all"
+								style="width: {(pricingStats.good / pricingStats.totalGraded) * 100}%"
+								title="{pricingStats.good} Good"
+							></div>
+						{/if}
+						{#if pricingStats.acceptable > 0}
+							<div
+								class="bg-yellow-500 transition-all"
+								style="width: {(pricingStats.acceptable / pricingStats.totalGraded) * 100}%"
+								title="{pricingStats.acceptable} Acceptable"
+							></div>
+						{/if}
+						{#if pricingStats.needsImprovement > 0}
+							<div
+								class="bg-red-500 transition-all"
+								style="width: {(pricingStats.needsImprovement / pricingStats.totalGraded) * 100}%"
+								title="{pricingStats.needsImprovement} Needs Improvement"
+							></div>
+						{/if}
+					</div>
+					<div class="flex justify-between text-xs text-gray-500 mt-2">
+						<div class="flex items-center gap-1">
+							<span class="w-2 h-2 rounded-full bg-green-500"></span>
+							Excellent ({pricingStats.excellent})
+						</div>
+						<div class="flex items-center gap-1">
+							<span class="w-2 h-2 rounded-full bg-blue-500"></span>
+							Good ({pricingStats.good})
+						</div>
+						<div class="flex items-center gap-1">
+							<span class="w-2 h-2 rounded-full bg-yellow-500"></span>
+							Acceptable ({pricingStats.acceptable})
+						</div>
+						<div class="flex items-center gap-1">
+							<span class="w-2 h-2 rounded-full bg-red-500"></span>
+							Needs Work ({pricingStats.needsImprovement})
+						</div>
+					</div>
+				</div>
+
+				<!-- Category Averages -->
+				<div class="mb-6">
+					<h3 class="text-sm font-medium text-gray-600 mb-3">Category Averages</h3>
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-gray-600">Price Accuracy</span>
+							<span class="text-amber-500 tracking-wider">{renderStars(pricingStats.avgPriceAccuracy)}</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-gray-600">Justification Quality</span>
+							<span class="text-amber-500 tracking-wider">{renderStars(pricingStats.avgJustificationQuality)}</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-gray-600">Photo Quality</span>
+							<span class="text-amber-500 tracking-wider">{renderStars(pricingStats.avgPhotoQuality)}</span>
+						</div>
+					</div>
+				</div>
+
+				<!-- Recent Grades -->
+				{#if recentGrades.length > 0}
+					<div>
+						<h3 class="text-sm font-medium text-gray-600 mb-3">Recent Grades</h3>
+						<div class="space-y-2">
+							{#each recentGrades as grade}
+								<a
+									href="/pricing/{grade.pricingDecisionId}"
+									class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+								>
+									<div class="min-w-0 flex-1">
+										<p class="font-medium text-gray-900 truncate">{grade.itemDescription}</p>
+										<p class="text-xs text-gray-500">{formatDate(grade.gradedAt)}</p>
+									</div>
+									<div class="flex items-center gap-3 ml-3">
+										<span class="px-2 py-0.5 text-sm font-medium rounded-full {getGradeBgColor(parseFloat(grade.overallGrade))}">
+											{grade.overallGrade}
+										</span>
+										<span class="text-sm font-medium {grade.pointsAwarded >= 0 ? 'text-green-600' : 'text-red-600'}">
+											{grade.pointsAwarded >= 0 ? '+' : ''}{grade.pointsAwarded}
+										</span>
+									</div>
+								</a>
+							{/each}
+						</div>
+						<a href="/pricing" class="block text-center text-sm text-primary-600 hover:text-primary-700 mt-3">
+							View all pricing history →
+						</a>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
 
 	<!-- Achievements by Category -->
 	{#each sortedCategories as category}

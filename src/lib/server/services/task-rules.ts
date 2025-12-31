@@ -6,7 +6,7 @@
  * time into shift, task completion, and scheduled events.
  */
 
-import { db, taskAssignmentRules, taskTemplates, tasks, users, timeEntries, cashCountConfigs, cashCountTaskLinks, locations } from '$lib/server/db';
+import { db, taskAssignmentRules, taskTemplates, tasks, users, timeEntries, shifts, cashCountConfigs, cashCountTaskLinks, locations } from '$lib/server/db';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('services:task-rules');
@@ -279,11 +279,12 @@ async function getLocationStaffUser(
 ): Promise<string | null> {
 	if (!locationId) return null;
 
-	// Get users currently clocked in at this location
+	// Get users currently clocked in at this location (via their shift)
 	const clockedInUsers = await db
 		.select({ userId: timeEntries.userId })
 		.from(timeEntries)
-		.where(and(eq(timeEntries.locationId, locationId), isNull(timeEntries.clockOut)))
+		.innerJoin(shifts, eq(timeEntries.shiftId, shifts.id))
+		.where(and(eq(shifts.locationId, locationId), isNull(timeEntries.clockOut)))
 		.limit(1);
 
 	if (clockedInUsers.length > 0) {
@@ -393,12 +394,14 @@ export async function isFirstClockInAtLocation(
 	// Use Pacific timezone for "today" boundary
 	const startOfDay = getPacificStartOfDay();
 
+	// Check for other clock-ins at this location via their shift
 	const existingClockIns = await db
 		.select({ count: sql<number>`count(*)` })
 		.from(timeEntries)
+		.innerJoin(shifts, eq(timeEntries.shiftId, shifts.id))
 		.where(
 			and(
-				eq(timeEntries.locationId, locationId),
+				eq(shifts.locationId, locationId),
 				gte(timeEntries.clockIn, startOfDay),
 				ne(timeEntries.userId, userId)
 			)
@@ -414,13 +417,14 @@ export async function isLastClockOutAtLocation(
 	userId: string,
 	locationId: string
 ): Promise<boolean> {
-	// Check if there are any other users still clocked in at this location
+	// Check if there are any other users still clocked in at this location (via their shift)
 	const stillClockedIn = await db
 		.select({ count: sql<number>`count(*)` })
 		.from(timeEntries)
+		.innerJoin(shifts, eq(timeEntries.shiftId, shifts.id))
 		.where(
 			and(
-				eq(timeEntries.locationId, locationId),
+				eq(shifts.locationId, locationId),
 				isNull(timeEntries.clockOut),
 				ne(timeEntries.userId, userId)
 			)

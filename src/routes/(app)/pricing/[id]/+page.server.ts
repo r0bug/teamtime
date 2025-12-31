@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { db, pricingDecisions, pricingDecisionPhotos, users, locations, tasks } from '$lib/server/db';
+import { db, pricingDecisions, pricingDecisionPhotos, pricingGrades, users, locations, tasks } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 
@@ -67,11 +67,35 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		ebayTask = task || null;
 	}
 
+	// Fetch grading if available
+	let grade = null;
+	const [gradeData] = await db
+		.select({
+			id: pricingGrades.id,
+			priceAccuracy: pricingGrades.priceAccuracy,
+			justificationQuality: pricingGrades.justificationQuality,
+			photoQuality: pricingGrades.photoQuality,
+			overallGrade: pricingGrades.overallGrade,
+			feedback: pricingGrades.feedback,
+			pointsAwarded: pricingGrades.pointsAwarded,
+			gradedAt: pricingGrades.gradedAt,
+			graderName: users.name
+		})
+		.from(pricingGrades)
+		.leftJoin(users, eq(pricingGrades.gradedBy, users.id))
+		.where(eq(pricingGrades.pricingDecisionId, id))
+		.limit(1);
+
+	if (gradeData) {
+		grade = gradeData;
+	}
+
 	return {
 		decision: {
 			...decision,
 			photos,
-			ebayTask
+			ebayTask,
+			grade
 		},
 		isManager
 	};

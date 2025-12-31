@@ -35,6 +35,30 @@
 		}
 	}
 
+	function getGradeColor(grade: number) {
+		if (grade >= 4.5) return 'text-green-600';
+		if (grade >= 3.5) return 'text-blue-600';
+		if (grade >= 2.5) return 'text-yellow-600';
+		return 'text-red-600';
+	}
+
+	function getGradeLabel(grade: number) {
+		if (grade >= 4.5) return 'Excellent';
+		if (grade >= 3.5) return 'Good';
+		if (grade >= 2.5) return 'Acceptable';
+		return 'Needs Improvement';
+	}
+
+	function getPointsColor(points: number) {
+		if (points > 0) return 'text-green-600';
+		if (points < 0) return 'text-red-600';
+		return 'text-gray-600';
+	}
+
+	function renderStars(rating: number) {
+		return '★'.repeat(rating) + '☆'.repeat(5 - rating);
+	}
+
 	function openLightbox(index: number) {
 		selectedPhotoIndex = index;
 		showLightbox = true;
@@ -170,6 +194,78 @@
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
 					</svg>
 				</a>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Grading Results -->
+	{#if decision.grade}
+		<div class="card mb-6">
+			<div class="card-body">
+				<div class="flex items-center justify-between mb-4">
+					<h2 class="text-lg font-semibold">Grading Results</h2>
+					<div class="flex items-center gap-2">
+						<span class="text-2xl font-bold {getGradeColor(parseFloat(decision.grade.overallGrade))}">
+							{decision.grade.overallGrade}
+						</span>
+						<span class="text-sm text-gray-500">/ 5.0</span>
+					</div>
+				</div>
+
+				<!-- Overall Grade Badge -->
+				<div class="flex items-center justify-between p-3 rounded-lg mb-4 {
+					parseFloat(decision.grade.overallGrade) >= 4.5 ? 'bg-green-50 border border-green-200' :
+					parseFloat(decision.grade.overallGrade) >= 3.5 ? 'bg-blue-50 border border-blue-200' :
+					parseFloat(decision.grade.overallGrade) >= 2.5 ? 'bg-yellow-50 border border-yellow-200' :
+					'bg-red-50 border border-red-200'
+				}">
+					<span class="font-medium {getGradeColor(parseFloat(decision.grade.overallGrade))}">
+						{getGradeLabel(parseFloat(decision.grade.overallGrade))}
+					</span>
+					<span class="font-bold {getPointsColor(decision.grade.pointsAwarded)}">
+						{decision.grade.pointsAwarded > 0 ? '+' : ''}{decision.grade.pointsAwarded} points
+					</span>
+				</div>
+
+				<!-- Individual Scores -->
+				<div class="space-y-3 mb-4">
+					<div class="flex items-center justify-between">
+						<span class="text-sm text-gray-600">Price Accuracy</span>
+						<span class="text-amber-500 tracking-wider">{renderStars(decision.grade.priceAccuracy)}</span>
+					</div>
+					<div class="flex items-center justify-between">
+						<span class="text-sm text-gray-600">Justification Quality</span>
+						<span class="text-amber-500 tracking-wider">{renderStars(decision.grade.justificationQuality)}</span>
+					</div>
+					<div class="flex items-center justify-between">
+						<span class="text-sm text-gray-600">Photo Quality</span>
+						<span class="text-amber-500 tracking-wider">{renderStars(decision.grade.photoQuality)}</span>
+					</div>
+				</div>
+
+				<!-- Feedback -->
+				{#if decision.grade.feedback}
+					<div class="border-t pt-4">
+						<h3 class="text-sm font-medium text-gray-500 mb-2">Manager Feedback</h3>
+						<p class="text-gray-900 bg-gray-50 p-3 rounded-lg">{decision.grade.feedback}</p>
+					</div>
+				{/if}
+
+				<!-- Graded By -->
+				<div class="text-xs text-gray-400 mt-4">
+					Graded by {decision.grade.graderName || 'Manager'} on {formatDate(decision.grade.gradedAt)}
+				</div>
+			</div>
+		</div>
+	{:else}
+		<!-- Pending Grade Notice -->
+		<div class="card mb-6 bg-gray-50">
+			<div class="card-body text-center py-6">
+				<svg class="w-10 h-10 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+				</svg>
+				<p class="text-gray-600 font-medium">Awaiting Review</p>
+				<p class="text-sm text-gray-500">This pricing decision hasn't been graded yet</p>
 			</div>
 		</div>
 	{/if}

@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db, timeEntries, shifts, taskTemplates, tasks } from '$lib/server/db';
+import { db, timeEntries, shifts, taskTemplates, tasks, users } from '$lib/server/db';
 import { eq, and, isNull, lte, gte } from 'drizzle-orm';
 import {
 	processRulesForTrigger,
@@ -13,6 +13,13 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!locals.user) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
+
+	// Get user's primary location
+	const [userWithLocation] = await db
+		.select({ primaryLocationId: users.primaryLocationId })
+		.from(users)
+		.where(eq(users.id, locals.user.id))
+		.limit(1);
 
 	// Check if already clocked in
 	const [existingEntry] = await db
@@ -47,8 +54,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		)
 		.limit(1);
 
-	// Determine location (from body, shift, or null)
-	const entryLocationId = locationId || currentShift?.locationId || null;
+	// Determine location (from body, shift, user's primary location, or null)
+	const entryLocationId = locationId || currentShift?.locationId || userWithLocation?.primaryLocationId || null;
 
 	// Create time entry
 	const [entry] = await db
@@ -56,7 +63,6 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		.values({
 			userId: locals.user.id,
 			shiftId: currentShift?.id || null,
-			locationId: entryLocationId,
 			clockIn: now,
 			clockInLat: lat || null,
 			clockInLng: lng || null,

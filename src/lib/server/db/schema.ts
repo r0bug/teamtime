@@ -295,6 +295,7 @@ export const users = pgTable('users', {
 	passwordHash: text('password_hash'), // Optional password for password-based login
 	role: userRoleEnum('role').notNull().default('staff'),
 	userTypeId: uuid('user_type_id').references(() => userTypes.id, { onDelete: 'set null' }), // Custom user type for granular permissions
+	primaryLocationId: uuid('primary_location_id').references(() => locations.id, { onDelete: 'set null' }), // User's default work location
 	name: text('name').notNull(),
 	phone: text('phone'),
 	avatarUrl: text('avatar_url'),
@@ -1423,6 +1424,10 @@ export const usersRelations = relations(users, ({ one, many }) => ({
 	userType: one(userTypes, {
 		fields: [users.userTypeId],
 		references: [userTypes.id]
+	}),
+	primaryLocation: one(locations, {
+		fields: [users.primaryLocationId],
+		references: [locations.id]
 	}),
 	sessions: many(sessions),
 	shifts: many(shifts),

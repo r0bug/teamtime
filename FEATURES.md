@@ -728,6 +728,19 @@ Rules can have optional conditions:
 - **Time Window**: Only trigger within time range (Pacific timezone)
 - **Roles**: Only apply to users with certain roles
 
+### User Primary Location
+
+Users can have a `primaryLocationId` set in their profile. This serves as:
+- **Fallback for clock-in**: When a user clocks in without a shift or explicit location, their primary location is used
+- **Location-based rules**: Ensures rules like `first_clock_in` and `closing_shift` can fire even without scheduled shifts
+- **Admin setting**: Set via `/admin/users/[id]` or database directly
+
+Location determination priority:
+1. Explicit location parameter on clock-in
+2. Current shift's location
+3. User's primary location
+4. No location (rules won't match)
+
 ### Configuration
 
 **URL**: Admin → Tasks → Rules (`/admin/tasks/rules`)
@@ -948,6 +961,26 @@ Consecutive work days with on-time clock-in and no task failures build a streak:
   - Photo Quality (30% weight)
 - Optional feedback field
 - Points auto-calculated and awarded
+
+### Staff Feedback Features
+
+#### Pricing Feedback Display (`/pricing/[id]`)
+Staff can view their grading results on any priced item:
+- Overall grade with color-coded badge (Excellent/Good/Acceptable/Needs Improvement)
+- Points awarded (+25, +15, +5, or -10)
+- Individual star ratings for each criterion
+- Manager feedback text (if provided)
+- Grader name and date
+- "Awaiting Review" notice for ungraded items
+
+#### Pricing Performance (`/achievements`)
+The Achievements page includes a "Pricing Performance" section:
+- **Overview Stats**: Average grade, total graded, points earned, excellent count
+- **Grade Distribution**: Visual bar chart showing percentage of each grade level
+- **Category Averages**: Star ratings for Price Accuracy, Justification Quality, Photo Quality
+- **Recent Grades**: Last 5 graded items with links to full details
+
+This section only appears if the user has at least one graded pricing decision.
 
 ### Cron Jobs
 
