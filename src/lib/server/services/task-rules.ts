@@ -612,21 +612,29 @@ export async function processClosingShiftRules(): Promise<{
 				if (!evaluateConditions(rule, context)) continue;
 
 				// Get all users currently clocked in at the location (if specified)
-				const locationCondition = rule.conditions?.locationId
-					? eq(timeEntries.locationId, rule.conditions.locationId as string)
-					: sql`true`;
+				// Join with shifts and users to get location from shift or user's primary location
+				const ruleLocationId = rule.conditions?.locationId as string | undefined;
 
-				const clockedInUsers = await db
+				const clockedInUsersQuery = db
 					.select({
 						userId: timeEntries.userId,
-						locationId: timeEntries.locationId
+						locationId: sql<string>`COALESCE(${shifts.locationId}, ${users.primaryLocationId})`
 					})
 					.from(timeEntries)
-					.where(and(isNull(timeEntries.clockOut), locationCondition));
+					.innerJoin(users, eq(timeEntries.userId, users.id))
+					.leftJoin(shifts, eq(timeEntries.shiftId, shifts.id))
+					.where(isNull(timeEntries.clockOut));
 
-				if (clockedInUsers.length === 0) continue;
+				const clockedInUsers = await clockedInUsersQuery;
 
-				for (const entry of clockedInUsers) {
+				// Filter by location if rule specifies one
+				const filteredUsers = ruleLocationId
+					? clockedInUsers.filter(u => u.locationId === ruleLocationId)
+					: clockedInUsers;
+
+				if (filteredUsers.length === 0) continue;
+
+				for (const entry of filteredUsers) {
 					// Check if we already created a task for this user and rule today
 					const existingTask = await db
 						.select({ count: sql<number>`count(*)` })
