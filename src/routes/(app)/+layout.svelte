@@ -181,13 +181,13 @@
 
 <div class="min-h-screen bg-gray-50">
 	<!-- Desktop Sidebar -->
-	<aside class="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
-		<div class="flex flex-col flex-grow bg-white border-r border-gray-200">
-			<div class="flex items-center h-16 px-4 border-b border-gray-200">
+	<aside class="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col overflow-hidden">
+		<div class="flex flex-col h-full bg-white border-r border-gray-200 overflow-hidden">
+			<div class="flex-shrink-0 flex items-center h-16 px-4 border-b border-gray-200">
 				<h1 class="text-xl font-bold text-primary-600">TeamTime</h1>
 			</div>
 
-			<nav class="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+			<nav class="flex-1 px-2 py-4 space-y-1 overflow-y-auto overscroll-contain">
 				{#each navItems as item}
 					<a
 						href={item.href}
@@ -504,3 +504,24 @@
 
 <!-- PWA Install Prompt Component - displays above bottom nav on mobile -->
 <InstallPrompt />
+
+<style>
+	/* Ensure sidebar nav scrolls properly */
+	aside nav {
+		scrollbar-width: thin;
+		scrollbar-color: #cbd5e1 transparent;
+	}
+	aside nav::-webkit-scrollbar {
+		width: 6px;
+	}
+	aside nav::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	aside nav::-webkit-scrollbar-thumb {
+		background-color: #cbd5e1;
+		border-radius: 3px;
+	}
+	aside nav::-webkit-scrollbar-thumb:hover {
+		background-color: #94a3b8;
+	}
+</style>
