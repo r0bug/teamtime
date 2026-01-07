@@ -9,21 +9,24 @@
 	$: user = data.user;
 	$: isManager = user?.role === 'manager' || user?.role === 'admin';
 
-	let currentDate = new Date();
+	// Use the server-provided start date to ensure timezone consistency
+	$: startDateFromServer = data.startDate;
+
+	let weekOffset = 0;
 
 	$: weekStart = (() => {
-		const d = new Date(currentDate);
-		d.setDate(d.getDate() - d.getDay());
-		d.setHours(0, 0, 0, 0);
+		// Parse the server-provided Pacific date and add week offset
+		const [year, month, day] = startDateFromServer.split('-').map(Number);
+		const d = new Date(year, month - 1, day);
+		d.setDate(d.getDate() + (weekOffset * 7));
 		return d;
 	})();
 
 	$: weekDays = (() => {
 		const days = [];
-		const start = weekStart;
 		for (let i = 0; i < 7; i++) {
-			const day = new Date(start);
-			day.setDate(day.getDate() + i);
+			const day = new Date(weekStart);
+			day.setDate(weekStart.getDate() + i);
 			days.push(day);
 		}
 		return days;
@@ -49,9 +52,7 @@
 	}
 
 	function navigateWeek(delta: number) {
-		const newDate = new Date(currentDate);
-		newDate.setDate(newDate.getDate() + delta * 7);
-		currentDate = newDate;
+		weekOffset += delta;
 	}
 
 	function isMyShift(userId: string) {
