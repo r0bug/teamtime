@@ -4,7 +4,7 @@ import { db, users, shifts, locations, storeHours, appSettings } from '$lib/serv
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
 import { createLogger } from '$lib/server/logger';
-import { parsePacificDatetime } from '$lib/server/utils/timezone';
+import { parsePacificDatetime, getPacificDateParts, toPacificDateString, parsePacificDate, parsePacificEndOfDay } from '$lib/server/utils/timezone';
 
 const log = createLogger('admin:schedule');
 
@@ -101,21 +101,38 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const currentPayPeriod = getCurrentPayPeriod(payPeriodConfig);
 
-	// Get date range from query params or default to current week
+	// Get date range from query params or default to current week (in Pacific timezone)
 	const startParam = url.searchParams.get('start');
 	const endParam = url.searchParams.get('end');
 
 	const now = new Date();
-	const startOfWeek = startParam ? new Date(startParam) : new Date(now);
-	if (!startParam) {
-		startOfWeek.setDate(now.getDate() - now.getDay());
-		startOfWeek.setHours(0, 0, 0, 0);
+	const pacificNow = getPacificDateParts(now);
+
+	// Calculate start of week in Pacific timezone (Sunday)
+	let startDateStr: string;
+	if (startParam) {
+		startDateStr = startParam;
+	} else {
+		// Get current Pacific date and find Sunday
+		const daysToSubtract = pacificNow.weekday; // weekday 0 = Sunday
+		const startDate = new Date(now);
+		startDate.setDate(startDate.getDate() - daysToSubtract);
+		startDateStr = toPacificDateString(startDate);
 	}
 
-	const endOfWeek = endParam ? new Date(endParam) : new Date(startOfWeek);
-	if (!endParam) {
-		endOfWeek.setDate(startOfWeek.getDate() + 7);
+	// Calculate end of week (7 days from start)
+	let endDateStr: string;
+	if (endParam) {
+		endDateStr = endParam;
+	} else {
+		const endDate = new Date(parsePacificDate(startDateStr));
+		endDate.setDate(endDate.getDate() + 7);
+		endDateStr = toPacificDateString(endDate);
 	}
+
+	// Convert to proper UTC timestamps for querying
+	const startOfWeek = parsePacificDate(startDateStr);
+	const endOfWeek = parsePacificEndOfDay(endDateStr);
 
 	// Get all shifts in range
 	const allShifts = await db
@@ -203,8 +220,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		users: allUsers,
 		locations: allLocations,
 		storeHours: allStoreHours,
-		startDate: startOfWeek.toISOString().split('T')[0],
-		endDate: endOfWeek.toISOString().split('T')[0],
+		startDate: startDateStr,
+		endDate: endDateStr,
 		// Pay period data
 		currentPayPeriod: currentPayPeriod ? {
 			startDate: currentPayPeriod.startDate.toISOString().split('T')[0],
