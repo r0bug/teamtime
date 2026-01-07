@@ -2,6 +2,12 @@
 export { sendMessageTool } from './send-message';
 export { createTaskTool } from './create-task';
 export { cancelTaskTool } from './cancel-task';
+export { deleteTaskTool } from './delete-task';
+export { listTaskRulesTool } from './list-task-rules';
+export { toggleTaskRuleTool } from './toggle-task-rule';
+export { createTaskRuleTool } from './create-task-rule';
+export { updateScheduleTool } from './update-schedule';
+export { copyScheduleTool } from './copy-schedule';
 export { sendSMSTool } from './send-sms';
 export { getAvailableStaffTool } from './get-available-staff';
 export { viewScheduleTool } from './view-schedule';
@@ -35,6 +41,12 @@ export {
 import { sendMessageTool } from './send-message';
 import { createTaskTool } from './create-task';
 import { cancelTaskTool } from './cancel-task';
+import { deleteTaskTool } from './delete-task';
+import { listTaskRulesTool } from './list-task-rules';
+import { toggleTaskRuleTool } from './toggle-task-rule';
+import { createTaskRuleTool } from './create-task-rule';
+import { updateScheduleTool } from './update-schedule';
+import { copyScheduleTool } from './copy-schedule';
 import { sendSMSTool } from './send-sms';
 import { getAvailableStaffTool } from './get-available-staff';
 import { viewScheduleTool } from './view-schedule';
@@ -73,16 +85,23 @@ export const officeManagerTools: AITool<any, any>[] = [
 	sendMessageTool,
 	createTaskTool,
 	cancelTaskTool,
+	deleteTaskTool,
 	sendSMSTool,
 	tradeShiftsTool,
 	deleteScheduleTool,
 	deleteDuplicateSchedulesTool,
 	createRecurringTaskTool,
 	createScheduleTool,
+	updateScheduleTool,
+	copyScheduleTool,
 	createCashCountTaskTool,
 	createSocialMediaTaskTool,
 	processInventoryPhotosTool,
 	continueWorkTool,
+	// Task rule management tools
+	listTaskRulesTool,
+	toggleTaskRuleTool,
+	createTaskRuleTool,
 	// Gamification & recognition tools
 	awardPointsTool,
 	giveShoutoutTool,

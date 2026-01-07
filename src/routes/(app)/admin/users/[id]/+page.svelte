@@ -115,6 +115,17 @@
 							</select>
 						</div>
 
+						<div>
+							<label for="primaryLocationId" class="label">Primary Location</label>
+							<select id="primaryLocationId" name="primaryLocationId" class="input">
+								<option value="">-- No default location --</option>
+								{#each data.locations as location}
+									<option value={location.id} selected={user.primaryLocationId === location.id}>{location.name}</option>
+								{/each}
+							</select>
+							<p class="text-xs text-gray-500 mt-1">Default work location for scheduling rules</p>
+						</div>
+
 						<div class="flex items-center">
 							<label class="flex items-center gap-3">
 								<input

@@ -394,14 +394,16 @@ export async function isFirstClockInAtLocation(
 	// Use Pacific timezone for "today" boundary
 	const startOfDay = getPacificStartOfDay();
 
-	// Check for other clock-ins at this location via their shift
+	// Check for other clock-ins at this location via shift OR user's primary location
+	// Uses COALESCE to check shift.locationId first, then user.primaryLocationId
 	const existingClockIns = await db
 		.select({ count: sql<number>`count(*)` })
 		.from(timeEntries)
-		.innerJoin(shifts, eq(timeEntries.shiftId, shifts.id))
+		.innerJoin(users, eq(timeEntries.userId, users.id))
+		.leftJoin(shifts, eq(timeEntries.shiftId, shifts.id))
 		.where(
 			and(
-				eq(shifts.locationId, locationId),
+				sql`COALESCE(${shifts.locationId}, ${users.primaryLocationId}) = ${locationId}`,
 				gte(timeEntries.clockIn, startOfDay),
 				ne(timeEntries.userId, userId)
 			)
@@ -417,14 +419,16 @@ export async function isLastClockOutAtLocation(
 	userId: string,
 	locationId: string
 ): Promise<boolean> {
-	// Check if there are any other users still clocked in at this location (via their shift)
+	// Check if there are any other users still clocked in at this location
+	// Uses COALESCE to check shift.locationId first, then user.primaryLocationId
 	const stillClockedIn = await db
 		.select({ count: sql<number>`count(*)` })
 		.from(timeEntries)
-		.innerJoin(shifts, eq(timeEntries.shiftId, shifts.id))
+		.innerJoin(users, eq(timeEntries.userId, users.id))
+		.leftJoin(shifts, eq(timeEntries.shiftId, shifts.id))
 		.where(
 			and(
-				eq(shifts.locationId, locationId),
+				sql`COALESCE(${shifts.locationId}, ${users.primaryLocationId}) = ${locationId}`,
 				isNull(timeEntries.clockOut),
 				ne(timeEntries.userId, userId)
 			)

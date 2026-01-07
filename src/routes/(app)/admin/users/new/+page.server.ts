@@ -1,6 +1,6 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
-import { db, users } from '$lib/server/db';
+import { db, users, locations } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { hashPin, validatePinFormat, generatePin } from '$lib/server/auth/pin';
 import { isManager } from '$lib/server/auth/roles';
@@ -13,7 +13,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// Generate a random PIN for the new user
 	const suggestedPin = generatePin();
 
-	return { suggestedPin };
+	// Get all active locations for the dropdown
+	const allLocations = await db
+		.select({ id: locations.id, name: locations.name })
+		.from(locations)
+		.where(eq(locations.isActive, true))
+		.orderBy(locations.name);
+
+	return { suggestedPin, locations: allLocations };
 };
 
 export const actions: Actions = {
@@ -29,6 +36,7 @@ export const actions: Actions = {
 		const phone = formData.get('phone')?.toString().trim() || null;
 		const role = formData.get('role')?.toString() as 'manager' | 'purchaser' | 'staff';
 		const pin = formData.get('pin')?.toString();
+		const primaryLocationId = formData.get('primaryLocationId')?.toString() || null;
 
 		// Validation
 		if (!email || !username || !name || !role || !pin) {
@@ -75,6 +83,7 @@ export const actions: Actions = {
 			phone,
 			role,
 			pinHash,
+			primaryLocationId,
 			isActive: true
 		});
 

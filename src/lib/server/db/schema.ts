@@ -368,6 +368,7 @@ export const timeEntries = pgTable('time_entries', {
 		.notNull()
 		.references(() => users.id, { onDelete: 'cascade' }),
 	shiftId: uuid('shift_id').references(() => shifts.id, { onDelete: 'set null' }),
+	locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
 	clockIn: timestamp('clock_in', { withTimezone: true }).notNull(),
 	clockInLat: decimal('clock_in_lat', { precision: 10, scale: 7 }),
 	clockInLng: decimal('clock_in_lng', { precision: 10, scale: 7 }),

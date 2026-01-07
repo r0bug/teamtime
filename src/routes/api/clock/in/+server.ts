@@ -63,6 +63,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		.values({
 			userId: locals.user.id,
 			shiftId: currentShift?.id || null,
+			locationId: entryLocationId || null,
 			clockIn: now,
 			clockInLat: lat || null,
 			clockInLng: lng || null,

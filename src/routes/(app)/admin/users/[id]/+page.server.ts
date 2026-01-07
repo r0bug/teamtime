@@ -1,6 +1,6 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect, error } from '@sveltejs/kit';
-import { db, users } from '$lib/server/db';
+import { db, users, locations } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { hashPin, validatePinFormat } from '$lib/server/auth/pin';
 import { isManager } from '$lib/server/auth/roles';
@@ -21,6 +21,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			isActive: users.isActive,
 			canListOnEbay: users.canListOnEbay,
 			avatarUrl: users.avatarUrl,
+			primaryLocationId: users.primaryLocationId,
 			createdAt: users.createdAt
 		})
 		.from(users)
@@ -31,7 +32,14 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		throw error(404, 'User not found');
 	}
 
-	return { user };
+	// Get all active locations for the dropdown
+	const allLocations = await db
+		.select({ id: locations.id, name: locations.name })
+		.from(locations)
+		.where(eq(locations.isActive, true))
+		.orderBy(locations.name);
+
+	return { user, locations: allLocations };
 };
 
 export const actions: Actions = {
@@ -48,6 +56,7 @@ export const actions: Actions = {
 		const role = formData.get('role')?.toString() as 'manager' | 'purchaser' | 'staff';
 		const isActive = formData.get('isActive') === 'on';
 		const canListOnEbay = formData.get('canListOnEbay') === 'on';
+		const primaryLocationId = formData.get('primaryLocationId')?.toString() || null;
 
 		if (!email || !username || !name || !role) {
 			return fail(400, { error: 'All required fields must be filled' });
@@ -89,6 +98,7 @@ export const actions: Actions = {
 				role,
 				isActive,
 				canListOnEbay,
+				primaryLocationId,
 				updatedAt: new Date()
 			})
 			.where(eq(users.id, params.id));
