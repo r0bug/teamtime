@@ -395,21 +395,52 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 
 **Triggers**: Runs on a 15-minute cron schedule during business hours (7 AM - 7 PM).
 
-**Available Tools**:
+**Available Tools** (30 total):
+
+*Communication:*
 - `send_message` — Send direct messages to users or all staff (with cooldowns)
+- `send_sms` — Send SMS messages to users or all staff
+
+*Task Management:*
 - `create_task` — Create follow-up tasks (with cooldowns)
 - `cancel_task` — Cancel tasks with accountability tracking and user notification
-- `view_schedule` — View work schedule by date and location
-- `get_available_staff` — Query staff availability and clock-in status
-- `send_sms` — Send SMS messages to users or all staff
-- `trade_shifts` — Facilitate shift trades between users
-- `create_schedule` — Create new schedule entries
-- `delete_schedule` — Delete scheduled shifts
-- `delete_duplicate_schedules` — Batch delete duplicate shifts
+- `delete_task` — Permanently delete tasks with audit logging
 - `create_recurring_task` — Create recurring task templates
 - `create_cash_count_task` — Create cash count tasks
+- `create_social_media_task` — Create social media posting tasks
+
+*Task Rules Management:*
+- `list_task_rules` — View all task assignment rules with trigger details
+- `toggle_task_rule` — Enable or disable task rules by ID
+- `create_task_rule` — Create automated task rules with triggers
+
+*Schedule Management:*
+- `view_schedule` — View work schedule by date and location
+- `create_schedule` — Create new schedule entries
+- `update_schedule` — Modify existing shifts (times, date, location, notes)
+- `copy_schedule` — Copy a week of shifts to another week
+- `delete_schedule` — Delete scheduled shifts
+- `delete_duplicate_schedules` — Batch delete duplicate shifts
+- `trade_shifts` — Facilitate shift trades between users
+- `get_available_staff` — Query staff availability and clock-in status
+
+*Points & Recognition:*
+- `view_points` — Query user points, level, streak, and leaderboard position
+- `award_points` — Award bonus points with reason
+- `give_shoutout` — Create public recognition
+
+*Inventory:*
 - `process_inventory_photos` — Process inventory batch photos
-- Permission management tools (view, grant, change user types)
+
+*Permission Management:*
+- `view_user_permissions` — View a user's current permissions
+- `grant_temporary_permission` — Grant temporary permissions
+- `change_user_type_temporarily` — Temporarily change user type
+- `rollback_permission_change` — Undo a permission change
+- `list_grantable_permissions` — List permissions the AI can grant
+- `list_grantable_user_types` — List user types the AI can assign
+- `view_pending_approvals` — View pending permission approvals
+- `get_my_permissions` — Check what the AI is allowed to do
 
 **Broadcast Messaging**:
 - `send_message` and `send_sms` support `toAllStaff: true` parameter
@@ -1016,7 +1047,7 @@ This section only appears if the user has at least one graded pricing decision.
 
 ---
 
-*Last updated: December 2024*
+*Last updated: January 2026*
 
 ---
 
@@ -1372,4 +1403,4 @@ Shoutout points use the existing gamification system:
 
 ---
 
-*Last updated: December 2024*
+*Last updated: January 2026*
