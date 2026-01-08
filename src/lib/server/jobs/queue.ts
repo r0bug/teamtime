@@ -5,7 +5,8 @@ import type { Job, NewJob } from '$lib/server/db/schema';
 
 export type JobType =
 	| 'inventory_drop_process'
-	| 'inventory_drop_upload_complete';
+	| 'inventory_drop_upload_complete'
+	| 'scheduled_sms';
 
 export interface JobPayload {
 	inventory_drop_process: {
@@ -14,6 +15,14 @@ export interface JobPayload {
 	};
 	inventory_drop_upload_complete: {
 		dropId: string;
+	};
+	scheduled_sms: {
+		toUserId?: string;
+		toPhone?: string;
+		toAllStaff?: boolean;
+		message: string;
+		scheduledBy: string;
+		aiRunId?: string;
 	};
 }
 
@@ -24,6 +33,13 @@ export interface JobResult {
 	};
 	inventory_drop_upload_complete: {
 		photosUploaded: number;
+	};
+	scheduled_sms: {
+		success: boolean;
+		recipientCount?: number;
+		recipientName?: string;
+		messageSid?: string;
+		error?: string;
 	};
 }
 

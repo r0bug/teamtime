@@ -75,7 +75,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 
 Three specialized AI agents run in the background:
 
-**Office Manager** — Monitors attendance, flags missing staff, creates/cancels tasks, sends proactive messages, views schedules, manages permissions, and awards recognition. **30 tools available** including points management (view_points, award_points, give_shoutout), schedule management (create_schedule, update_schedule, copy_schedule, delete_schedule), and task rule management (list_task_rules, toggle_task_rule, create_task_rule, delete_task). Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours.
+**Office Manager** — Monitors attendance, flags missing staff, creates/cancels tasks, sends proactive messages, views schedules, manages permissions, and awards recognition. **33 tools available** including points management (view_points, award_points, give_shoutout), schedule management (create_schedule, update_schedule, copy_schedule, delete_schedule), task rule management (list_task_rules, toggle_task_rule, create_task_rule, delete_task), and SMS scheduling (schedule_sms, view_scheduled_sms, cancel_scheduled_sms). Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours.
 
 **Revenue Optimizer** — Analyzes patterns across scheduling, task completion, and expenses. Writes long-term observations and creates policies for the Office Manager to follow. 4 specialized tools. Runs nightly.
 

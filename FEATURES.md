@@ -395,11 +395,14 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 
 **Triggers**: Runs on a 15-minute cron schedule during business hours (7 AM - 7 PM).
 
-**Available Tools** (30 total):
+**Available Tools** (33 total):
 
 *Communication:*
 - `send_message` — Send direct messages to users or all staff (with cooldowns)
 - `send_sms` — Send SMS messages to users or all staff
+- `schedule_sms` — Schedule SMS for future delivery (by delay or specific time)
+- `view_scheduled_sms` — View pending scheduled SMS messages
+- `cancel_scheduled_sms` — Cancel a pending scheduled SMS
 
 *Task Management:*
 - `create_task` — Create follow-up tasks (with cooldowns)

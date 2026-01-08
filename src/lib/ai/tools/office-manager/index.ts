@@ -9,6 +9,9 @@ export { createTaskRuleTool } from './create-task-rule';
 export { updateScheduleTool } from './update-schedule';
 export { copyScheduleTool } from './copy-schedule';
 export { sendSMSTool } from './send-sms';
+export { scheduleSMSTool } from './schedule-sms';
+export { viewScheduledSMSTool } from './view-scheduled-sms';
+export { cancelScheduledSMSTool } from './cancel-scheduled-sms';
 export { getAvailableStaffTool } from './get-available-staff';
 export { viewScheduleTool } from './view-schedule';
 export { tradeShiftsTool } from './trade-shifts';
@@ -48,6 +51,9 @@ import { createTaskRuleTool } from './create-task-rule';
 import { updateScheduleTool } from './update-schedule';
 import { copyScheduleTool } from './copy-schedule';
 import { sendSMSTool } from './send-sms';
+import { scheduleSMSTool } from './schedule-sms';
+import { viewScheduledSMSTool } from './view-scheduled-sms';
+import { cancelScheduledSMSTool } from './cancel-scheduled-sms';
 import { getAvailableStaffTool } from './get-available-staff';
 import { viewScheduleTool } from './view-schedule';
 import { tradeShiftsTool } from './trade-shifts';
@@ -87,6 +93,9 @@ export const officeManagerTools: AITool<any, any>[] = [
 	cancelTaskTool,
 	deleteTaskTool,
 	sendSMSTool,
+	scheduleSMSTool,
+	viewScheduledSMSTool,
+	cancelScheduledSMSTool,
 	tradeShiftsTool,
 	deleteScheduleTool,
 	deleteDuplicateSchedulesTool,
