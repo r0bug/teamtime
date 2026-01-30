@@ -54,7 +54,7 @@ export const POST: RequestHandler = async ({ locals, params }) => {
 			reviewedAt: updated.reviewedAt?.toISOString()
 		});
 	} catch (error) {
-		log.error('Error completing drop review', { dropId, error: error instanceof Error ? error.message : String(error) });
+		log.error({ dropId, error: error instanceof Error ? error.message : String(error) }, 'Error completing drop review');
 		return json({ error: 'Failed to complete review' }, { status: 500 });
 	}
 };

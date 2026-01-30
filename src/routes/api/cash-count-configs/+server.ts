@@ -60,7 +60,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 		return json({ success: true, config }, { status: 201 });
 	} catch (error) {
-		log.error({ error, userId: locals.user?.id, locationId, name }, 'Error creating cash count config');
+		log.error({ error, userId: locals.user?.id }, 'Error creating cash count config');
 		return json({ error: 'Failed to create config' }, { status: 500 });
 	}
 };

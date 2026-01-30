@@ -61,7 +61,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Post created successfully' };
 		} catch (error) {
-			log.error('Error creating post', { error, title, category });
+			log.error({ error, title, category }, 'Error creating post');
 			return fail(500, { error: 'Failed to create post' });
 		}
 	},
@@ -98,7 +98,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Post updated successfully' };
 		} catch (error) {
-			log.error('Error updating post', { error, postId, title });
+			log.error({ error, postId, title }, 'Error updating post');
 			return fail(500, { error: 'Failed to update post' });
 		}
 	},
@@ -119,7 +119,7 @@ export const actions: Actions = {
 			await db.delete(infoPosts).where(eq(infoPosts.id, postId));
 			return { success: true, message: 'Post deleted successfully' };
 		} catch (error) {
-			log.error('Error deleting post', { error, postId });
+			log.error({ error, postId }, 'Error deleting post');
 			return fail(500, { error: 'Failed to delete post' });
 		}
 	},
@@ -148,7 +148,7 @@ export const actions: Actions = {
 
 			return { success: true, message: isPinned ? 'Post pinned' : 'Post unpinned' };
 		} catch (error) {
-			log.error('Error toggling pin', { error, postId, isPinned });
+			log.error({ error, postId, isPinned }, 'Error toggling pin');
 			return fail(500, { error: 'Failed to toggle pin' });
 		}
 	}

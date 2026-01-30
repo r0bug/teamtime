@@ -16,17 +16,15 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const limit = parseInt(url.searchParams.get('limit') || '20', 10);
 
 	try {
-		let query = db
+		const baseQuery = db
 			.select()
 			.from(cashCounts)
 			.orderBy(desc(cashCounts.submittedAt))
 			.limit(limit);
 
-		if (locationId) {
-			query = query.where(eq(cashCounts.locationId, locationId));
-		}
-
-		const counts = await query;
+		const counts = locationId
+			? await baseQuery.where(eq(cashCounts.locationId, locationId))
+			: await baseQuery;
 
 		return json({ success: true, cashCounts: counts });
 	} catch (error) {
@@ -77,7 +75,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 		return json({ success: true, cashCount }, { status: 201 });
 	} catch (error) {
-		log.error({ error, userId: locals.user.id, configId }, 'Error creating cash count');
+		log.error({ error, userId: locals.user.id }, 'Error creating cash count');
 		return json({ error: 'Failed to create cash count' }, { status: 500 });
 	}
 };

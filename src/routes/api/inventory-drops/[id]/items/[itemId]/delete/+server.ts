@@ -66,7 +66,7 @@ export const POST: RequestHandler = async ({ locals, params }) => {
 
 		return json({ success: true });
 	} catch (error) {
-		log.error('Error deleting inventory item', { dropId, itemId, error: error instanceof Error ? error.message : String(error) });
+		log.error({ dropId, itemId, error: error instanceof Error ? error.message : String(error) }, 'Error deleting inventory item');
 		return json({ error: 'Failed to delete item' }, { status: 500 });
 	}
 };

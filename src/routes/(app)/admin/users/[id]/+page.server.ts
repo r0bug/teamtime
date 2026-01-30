@@ -129,7 +129,7 @@ export const actions: Actions = {
 	},
 
 	delete: async ({ params, locals }) => {
-		if (!isManager(locals.user)) {
+		if (!locals.user || !isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 

@@ -29,9 +29,10 @@ export const load: PageServerLoad = async () => {
 	// Note: saleDate from DB might be a Date object or string depending on driver
 	const dailyData = new Map<string, typeof snapshots[0]>();
 	for (const snapshot of snapshots) {
-		const dateKey = typeof snapshot.saleDate === 'string'
-			? snapshot.saleDate
-			: snapshot.saleDate.toISOString().split('T')[0];
+		const saleDate = snapshot.saleDate as string | Date;
+		const dateKey = typeof saleDate === 'string'
+			? saleDate
+			: saleDate.toISOString().split('T')[0];
 		if (!dailyData.has(dateKey)) {
 			dailyData.set(dateKey, snapshot);
 		}

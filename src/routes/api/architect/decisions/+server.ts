@@ -105,7 +105,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			}
 		});
 	} catch (error) {
-		log.error({ error, userId: locals.user?.id, title }, 'Create error');
+		log.error({ error, userId: locals.user?.id }, 'Create error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

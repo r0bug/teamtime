@@ -63,7 +63,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			}
 		});
 	} catch (error) {
-		log.error('Upload error', { error: error instanceof Error ? error.message : String(error) });
+		log.error({ error: error instanceof Error ? error.message : String(error) }, 'Upload error');
 		return json({ error: 'Upload failed' }, { status: 500 });
 	}
 };

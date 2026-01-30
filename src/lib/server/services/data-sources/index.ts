@@ -295,8 +295,9 @@ export async function getDataSourceStatus(name: string): Promise<DataSourceStatu
 			LIMIT 1
 		`);
 
-		if (result.rows && result.rows.length > 0) {
-			const row = result.rows[0] as {
+		const rows = Array.isArray(result) ? result : [];
+		if (rows.length > 0) {
+			const row = rows[0] as {
 				last_sync_at?: string;
 				last_sync_status?: string;
 				last_sync_error?: string;
@@ -441,12 +442,13 @@ export async function getImportHistory(
 		}
 
 		const result = await db.execute(sql.raw(query));
+		const rows = Array.isArray(result) ? result : [];
 
-		if (!result.rows) {
+		if (rows.length === 0) {
 			return [];
 		}
 
-		return result.rows.map((row: Record<string, unknown>) => ({
+		return rows.map((row: Record<string, unknown>) => ({
 			id: row.id as string,
 			dataSourceId: row.data_source_id as string | undefined,
 			sourceName: row.source_name as string,

@@ -102,7 +102,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			message: 'Drop created and queued for processing'
 		}, { status: 201 });
 	} catch (error) {
-		log.error({ error, userId: locals.user.id, description }, 'Error creating inventory drop');
+		log.error({ error, userId: locals.user.id }, 'Error creating inventory drop');
 		return json({ error: 'Failed to create inventory drop' }, { status: 500 });
 	}
 };

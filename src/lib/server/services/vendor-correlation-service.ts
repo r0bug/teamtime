@@ -936,8 +936,10 @@ export async function queryCorrelations(params: {
 			hoursWorked: vendorEmployeeCorrelations.hoursWorked,
 			vendorSales: vendorEmployeeCorrelations.vendorSales,
 			vendorRetained: vendorEmployeeCorrelations.vendorRetained,
+			transactionCount: vendorEmployeeCorrelations.transactionCount,
 			avgVendorSalesOverall: vendorEmployeeCorrelations.avgVendorSalesOverall,
 			salesDeltaPct: vendorEmployeeCorrelations.salesDeltaPct,
+			sampleSize: vendorEmployeeCorrelations.sampleSize,
 			confidenceScore: vendorEmployeeCorrelations.confidenceScore
 		})
 		.from(vendorEmployeeCorrelations)
@@ -951,23 +953,25 @@ export async function queryCorrelations(params: {
 		.orderBy(sql`${vendorEmployeeCorrelations.periodStart} DESC`)
 		.limit(limit);
 
-	const correlations: VendorCorrelationData[] = results.map(r => ({
-		userId: r.userId,
-		userName: r.userName || 'Unknown',
-		vendorId: r.vendorId,
-		vendorName: r.vendorName,
-		periodType: r.periodType,
-		periodStart: r.periodStart,
-		shiftsCount: r.shiftsCount,
-		hoursWorked: parseFloat(r.hoursWorked as unknown as string),
-		vendorSales: parseFloat(r.vendorSales as unknown as string),
-		vendorRetained: parseFloat(r.vendorRetained as unknown as string),
-		transactionCount: r.transactionCount ?? 0,
-		avgVendorSalesOverall: r.avgVendorSalesOverall ? parseFloat(r.avgVendorSalesOverall as unknown as string) : 0,
-		salesDeltaPct: r.salesDeltaPct ? parseFloat(r.salesDeltaPct as unknown as string) : 0,
-		sampleSize: r.sampleSize ?? 0,
-		confidenceScore: r.confidenceScore ? parseFloat(r.confidenceScore as unknown as string) : 0
-	}));
+	const correlations: VendorCorrelationData[] = results
+		.filter(r => ['daily', 'weekly', 'monthly'].includes(r.periodType))
+		.map(r => ({
+			userId: r.userId,
+			userName: r.userName || 'Unknown',
+			vendorId: r.vendorId,
+			vendorName: r.vendorName,
+			periodType: r.periodType as PeriodType,
+			periodStart: r.periodStart,
+			shiftsCount: r.shiftsCount,
+			hoursWorked: parseFloat(r.hoursWorked as unknown as string),
+			vendorSales: parseFloat(r.vendorSales as unknown as string),
+			vendorRetained: parseFloat(r.vendorRetained as unknown as string),
+			transactionCount: r.transactionCount ?? 0,
+			avgVendorSalesOverall: r.avgVendorSalesOverall ? parseFloat(r.avgVendorSalesOverall as unknown as string) : 0,
+			salesDeltaPct: r.salesDeltaPct ? parseFloat(r.salesDeltaPct as unknown as string) : 0,
+			sampleSize: r.sampleSize ?? 0,
+			confidenceScore: r.confidenceScore ? parseFloat(r.confidenceScore as unknown as string) : 0
+		}));
 
 	return {
 		correlations,

@@ -48,13 +48,13 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			}, { status: 403 });
 		}
 
-		// Build date range
-		const dateRange = startDate || endDate
-			? {
-				start: startDate ? new Date(startDate) : undefined,
-				end: endDate ? new Date(endDate) : undefined
-			}
-			: undefined;
+		// Build date range - use defaults if not provided
+		const now = new Date();
+		const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+		const dateRange = {
+			start: startDate ? new Date(startDate) : thirtyDaysAgo,
+			end: endDate ? new Date(endDate) : now
+		};
 
 		log.debug({
 			userId,

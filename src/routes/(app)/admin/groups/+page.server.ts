@@ -62,7 +62,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 export const actions: Actions = {
 	createGroup: async ({ request, locals }) => {
-		if (!isAdmin(locals.user)) {
+		if (!locals.user || !isAdmin(locals.user)) {
 			return fail(403, { error: 'Not authorized' });
 		}
 
@@ -135,7 +135,7 @@ export const actions: Actions = {
 	},
 
 	addMember: async ({ request, locals }) => {
-		if (!isAdmin(locals.user)) {
+		if (!locals.user || !isAdmin(locals.user)) {
 			return fail(403, { error: 'Not authorized' });
 		}
 

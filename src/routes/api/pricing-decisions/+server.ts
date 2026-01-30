@@ -228,7 +228,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			}
 		}, { status: 201 });
 	} catch (error) {
-		log.error({ error, userId: locals.user.id, itemDescription }, 'Error creating pricing decision');
+		log.error({ error, userId: locals.user.id }, 'Error creating pricing decision');
 		return json({ error: 'Failed to create pricing decision' }, { status: 500 });
 	}
 };

@@ -91,7 +91,7 @@ export const actions: Actions = {
 				message: `Synced ${result.added} new permissions (${result.existing} already existed)`
 			};
 		} catch (error) {
-			log.error('Error syncing routes', { error });
+			log.error({ error }, 'Error syncing routes');
 			return fail(500, { error: 'Failed to sync routes' });
 		}
 	},
@@ -106,7 +106,7 @@ export const actions: Actions = {
 			await seedSystemUserTypes();
 			return { success: true, message: 'System user types seeded' };
 		} catch (error) {
-			log.error('Error seeding user types', { error });
+			log.error({ error }, 'Error seeding user types');
 			return fail(500, { error: 'Failed to seed user types' });
 		}
 	},
@@ -142,7 +142,7 @@ export const actions: Actions = {
 			});
 			return { success: true, message: id ? 'User type updated' : 'User type created' };
 		} catch (error) {
-			log.error('Error saving user type', { error, id, name });
+			log.error({ error, id, name }, 'Error saving user type');
 			return fail(500, { error: 'Failed to save user type' });
 		}
 	},
@@ -175,7 +175,7 @@ export const actions: Actions = {
 			await db.delete(userTypes).where(eq(userTypes.id, id));
 			return { success: true, message: 'User type deleted' };
 		} catch (error) {
-			log.error('Error deleting user type', { error, id });
+			log.error({ error, id }, 'Error deleting user type');
 			return fail(500, { error: 'Failed to delete user type' });
 		}
 	},
@@ -203,7 +203,7 @@ export const actions: Actions = {
 			}
 			return { success: true };
 		} catch (error) {
-			log.error('Error toggling permission', { error, userTypeId, permissionId, action });
+			log.error({ error, userTypeId, permissionId, action }, 'Error toggling permission');
 			return fail(500, { error: 'Failed to update permission' });
 		}
 	}

@@ -72,7 +72,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	// For direct messages, get other participant's name as title
 	let displayTitle = conversation.title;
 	if (conversation.type === 'direct' && !displayTitle) {
-		const otherParticipant = participants.find(p => p.userId !== locals.user.id);
+		const otherParticipant = participants.find(p => p.userId !== locals.user!.id);
 		displayTitle = otherParticipant?.userName || 'Direct Message';
 	}
 

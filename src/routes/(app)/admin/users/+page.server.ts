@@ -80,7 +80,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'User updated successfully' };
 		} catch (error) {
-			log.error('Error updating user', { error, userId });
+			log.error({ error, userId }, 'Error updating user');
 			return fail(500, { error: 'Failed to update user' });
 		}
 	},
@@ -109,7 +109,7 @@ export const actions: Actions = {
 
 			return { success: true, message: '2FA setting updated successfully' };
 		} catch (error) {
-			log.error('Error toggling 2FA', { error, userId, enabled });
+			log.error({ error, userId, enabled }, 'Error toggling 2FA');
 			return fail(500, { error: 'Failed to update 2FA setting' });
 		}
 	},
@@ -154,10 +154,10 @@ export const actions: Actions = {
 		} catch (error: unknown) {
 			// Check for PostgreSQL unique constraint violation
 			if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
-				log.warn('Duplicate user creation attempted', { email, username });
+				log.warn({ email, username }, 'Duplicate user creation attempted');
 				return fail(400, { error: 'Email or username already exists' });
 			}
-			log.error('Error creating user', { error, email, username });
+			log.error({ error, email, username }, 'Error creating user');
 			return fail(500, { error: 'Failed to create user' });
 		}
 	},
@@ -206,7 +206,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'PIN updated successfully' };
 		} catch (error) {
-			log.error('Error resetting PIN', { error, userId });
+			log.error({ error, userId }, 'Error resetting PIN');
 			return fail(500, { error: 'Failed to reset PIN' });
 		}
 	},
@@ -241,7 +241,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Password set successfully' };
 		} catch (error) {
-			log.error('Error setting password', { error, userId });
+			log.error({ error, userId }, 'Error setting password');
 			return fail(500, { error: 'Failed to set password' });
 		}
 	}

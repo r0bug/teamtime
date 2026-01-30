@@ -49,7 +49,7 @@ export const POST: RequestHandler = async ({ locals, params }) => {
 			message: 'Drop queued for retry'
 		});
 	} catch (error) {
-		log.error('Error retrying drop', { dropId, error: error instanceof Error ? error.message : String(error) });
+		log.error({ dropId, error: error instanceof Error ? error.message : String(error) }, 'Error retrying drop');
 		return json({ error: 'Failed to retry drop' }, { status: 500 });
 	}
 };

@@ -54,7 +54,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Location created successfully' };
 		} catch (error) {
-			log.error('Error creating location', { error, name, address });
+			log.error({ error, name, address }, 'Error creating location');
 			return fail(500, { error: 'Failed to create location' });
 		}
 	},
@@ -91,7 +91,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Location updated successfully' };
 		} catch (error) {
-			log.error('Error updating location', { error, locationId, name });
+			log.error({ error, locationId, name }, 'Error updating location');
 			return fail(500, { error: 'Failed to update location' });
 		}
 	},
@@ -112,7 +112,7 @@ export const actions: Actions = {
 			await db.delete(locations).where(eq(locations.id, locationId));
 			return { success: true, message: 'Location deleted successfully' };
 		} catch (error) {
-			log.error('Error deleting location', { error, locationId });
+			log.error({ error, locationId }, 'Error deleting location');
 			return fail(500, { error: 'Failed to delete location' });
 		}
 	},
@@ -171,7 +171,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Store hours updated successfully' };
 		} catch (error) {
-			log.error('Error updating store hours', { error, locationId });
+			log.error({ error, locationId }, 'Error updating store hours');
 			return fail(500, { error: 'Failed to update store hours' });
 		}
 	}

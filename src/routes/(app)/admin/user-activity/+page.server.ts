@@ -125,7 +125,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		const pricingData = await db
 			.select({
 				id: pricingDecisions.id,
-				itemName: pricingDecisions.itemName,
+				itemDescription: pricingDecisions.itemDescription,
 				price: pricingDecisions.price,
 				destination: pricingDecisions.destination,
 				locationName: locations.name,
@@ -142,7 +142,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			id: p.id,
 			type: 'pricing_decision',
 			action: 'Item Priced',
-			description: `${p.itemName} - $${p.price} → ${p.destination}`,
+			description: `${p.itemDescription} - $${p.price} → ${p.destination}`,
 			details: { price: p.price, destination: p.destination, location: p.locationName },
 			createdAt: p.createdAt
 		})));
@@ -245,8 +245,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			audit: db.select({ count: sql<number>`count(*)` }).from(auditLogs).where(eq(auditLogs.userId, selectedUserId))
 		};
 
-		if (countQueries[activityType]) {
-			const countResult = await countQueries[activityType];
+		const activityTypeKey = activityType as keyof typeof countQueries;
+		if (activityTypeKey in countQueries) {
+			const countResult = await countQueries[activityTypeKey];
 			totalCount = countResult[0]?.count || 0;
 		}
 	}

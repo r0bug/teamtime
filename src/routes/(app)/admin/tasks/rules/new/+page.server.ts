@@ -208,7 +208,7 @@ export const actions: Actions = {
 
 			const errorMessage = error instanceof Error ? error.message : String(error);
 			const errorStack = error instanceof Error ? error.stack : undefined;
-			log.error('Error creating rule', {
+			log.error({
 				error: errorMessage,
 				stack: errorStack,
 				name,
@@ -217,7 +217,7 @@ export const actions: Actions = {
 				cashCountConfigId,
 				triggerType,
 				assignmentType
-			});
+			}, 'Error creating rule');
 			return fail(500, { error: `Failed to create rule: ${errorMessage}` });
 		}
 	}

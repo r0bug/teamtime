@@ -211,7 +211,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Rule updated successfully' };
 		} catch (error) {
-			log.error('Error updating rule', { error, ruleId: params.id, name, templateId, cashCountConfigId });
+			log.error({ error, ruleId: params.id, name, templateId, cashCountConfigId }, 'Error updating rule');
 			return fail(500, { error: 'Failed to update rule' });
 		}
 	},
@@ -227,7 +227,7 @@ export const actions: Actions = {
 		} catch (error) {
 			if (error instanceof Response) throw error;
 			if (error && typeof error === 'object' && 'status' in error && 'location' in error) throw error;
-			log.error('Error deleting rule', { error, ruleId: params.id });
+			log.error({ error, ruleId: params.id }, 'Error deleting rule');
 			return fail(500, { error: 'Failed to delete rule' });
 		}
 	}

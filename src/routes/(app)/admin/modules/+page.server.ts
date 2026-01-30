@@ -76,7 +76,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Module setting updated' };
 		} catch (error) {
-			log.error('Error updating module', { error, moduleKey, enabled });
+			log.error({ error, moduleKey, enabled }, 'Error updating module');
 			return fail(500, { error: 'Failed to update module setting' });
 		}
 	}

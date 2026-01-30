@@ -43,7 +43,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		}, { status: 400 });
 
 	} catch (error) {
-		log.error({ error, userId: locals.user?.id, action: body.action }, 'Revert error');
+		log.error({ error, userId: locals.user?.id }, 'Revert error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

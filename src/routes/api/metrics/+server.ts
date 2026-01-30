@@ -56,12 +56,17 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		}, 'Metrics query request');
 
 		// Build filter options
+		const validSources = ['teamtime', 'lob_scraper', 'api', 'manual', 'computed'] as const;
+		const sourceValue = source && validSources.includes(source as typeof validSources[number])
+			? (source as typeof validSources[number])
+			: undefined;
+
 		const filters = {
 			metricType: metricType || undefined,
 			metricKey: metricKey || undefined,
 			startDate: startDate ? new Date(startDate) : undefined,
 			endDate: endDate ? new Date(endDate) : undefined,
-			source: source || undefined,
+			source: sourceValue,
 			dimensions,
 			limit,
 			offset

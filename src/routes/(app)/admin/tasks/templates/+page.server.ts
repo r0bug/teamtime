@@ -66,7 +66,7 @@ export const actions: Actions = {
 
 			return { success: true, message: `Template ${isActive ? 'activated' : 'deactivated'}` };
 		} catch (error) {
-			log.error('Error toggling template', { error, templateId, isActive });
+			log.error({ error, templateId, isActive }, 'Error toggling template');
 			return fail(500, { error: 'Failed to update template' });
 		}
 	},
@@ -98,7 +98,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Template deleted' };
 		} catch (error) {
-			log.error('Error deleting template', { error, templateId });
+			log.error({ error, templateId }, 'Error deleting template');
 			return fail(500, { error: 'Failed to delete template' });
 		}
 	}

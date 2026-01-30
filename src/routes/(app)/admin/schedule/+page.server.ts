@@ -265,7 +265,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Shift created successfully' };
 		} catch (error) {
-			log.error('Error creating shift', { error, userId, locationId, startTime, endTime });
+			log.error({ error, userId, locationId, startTime, endTime }, 'Error creating shift');
 			return fail(500, { error: 'Failed to create shift' });
 		}
 	},
@@ -286,7 +286,7 @@ export const actions: Actions = {
 			await db.delete(shifts).where(eq(shifts.id, shiftId));
 			return { success: true, message: 'Shift deleted successfully' };
 		} catch (error) {
-			log.error('Error deleting shift', { error, shiftId });
+			log.error({ error, shiftId }, 'Error deleting shift');
 			return fail(500, { error: 'Failed to delete shift' });
 		}
 	},
@@ -323,7 +323,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Shift updated successfully' };
 		} catch (error) {
-			log.error('Error updating shift', { error, shiftId, userId, locationId, startTime, endTime });
+			log.error({ error, shiftId, userId, locationId, startTime, endTime }, 'Error updating shift');
 			return fail(500, { error: 'Failed to update shift' });
 		}
 	},
@@ -410,7 +410,7 @@ export const actions: Actions = {
 				message: `Created ${shiftsToCreate.length} shift(s) successfully`
 			};
 		} catch (error) {
-			log.error('Error creating bulk shifts', { error, userId, locationId, repeatCount, datesCount: dates.length });
+			log.error({ error, userId, locationId, repeatCount, datesCount: dates.length }, 'Error creating bulk shifts');
 			return fail(500, { error: 'Failed to create shifts' });
 		}
 	}

@@ -97,7 +97,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		: [];
 
 	// Check if current user has already completed this task (for all_staff tasks)
-	const userHasCompleted = completions.some(c => c.completedBy === locals.user.id);
+	const userHasCompleted = completions.some(c => c.completedBy === locals.user!.id);
 
 	return {
 		task,

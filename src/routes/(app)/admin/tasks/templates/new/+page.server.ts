@@ -85,7 +85,7 @@ export const actions: Actions = {
 			throw redirect(302, `/admin/tasks/templates/${result[0].id}`);
 		} catch (error) {
 			if (error instanceof Response) throw error;
-			log.error('Error creating template', { error, name, locationId, triggerEvent });
+			log.error({ error, name, locationId, triggerEvent }, 'Error creating template');
 			return fail(500, { error: 'Failed to create template' });
 		}
 	}

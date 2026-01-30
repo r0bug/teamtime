@@ -94,7 +94,7 @@ export const actions: Actions = {
 
 			return { success: true, message: `Rule ${isActive ? 'activated' : 'deactivated'}` };
 		} catch (error) {
-			log.error('Error toggling rule', { error, ruleId, isActive });
+			log.error({ error, ruleId, isActive }, 'Error toggling rule');
 			return fail(500, { error: 'Failed to update rule' });
 		}
 	},
@@ -115,7 +115,7 @@ export const actions: Actions = {
 			await db.delete(taskAssignmentRules).where(eq(taskAssignmentRules.id, ruleId));
 			return { success: true, message: 'Rule deleted' };
 		} catch (error) {
-			log.error('Error deleting rule', { error, ruleId });
+			log.error({ error, ruleId }, 'Error deleting rule');
 			return fail(500, { error: 'Failed to delete rule' });
 		}
 	}

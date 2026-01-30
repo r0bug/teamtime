@@ -109,7 +109,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Template updated successfully' };
 		} catch (error) {
-			log.error('Error updating template', { error, templateId: params.id, name });
+			log.error({ error, templateId: params.id, name }, 'Error updating template');
 			return fail(500, { error: 'Failed to update template' });
 		}
 	},
@@ -124,7 +124,7 @@ export const actions: Actions = {
 			throw redirect(302, '/admin/tasks/templates');
 		} catch (error) {
 			if (error instanceof Response) throw error;
-			log.error('Error deleting template', { error, templateId: params.id });
+			log.error({ error, templateId: params.id }, 'Error deleting template');
 			return fail(500, { error: 'Failed to delete template' });
 		}
 	}

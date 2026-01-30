@@ -132,12 +132,13 @@ export const actions: Actions = {
 			[existing] = await db.insert(architectConfig).values({}).returning();
 		}
 
+		type ProviderType = 'anthropic' | 'openai' | 'segmind';
 		const updates = {
-			quickProvider: (formData.get('quickProvider') as string) || 'anthropic',
+			quickProvider: ((formData.get('quickProvider') as string) || 'anthropic') as ProviderType,
 			quickModel: (formData.get('quickModel') as string) || 'claude-3-5-sonnet-20241022',
-			standardProvider: (formData.get('standardProvider') as string) || 'anthropic',
+			standardProvider: ((formData.get('standardProvider') as string) || 'anthropic') as ProviderType,
 			standardModel: (formData.get('standardModel') as string) || 'claude-sonnet-4-20250514',
-			deliberatePrimaryProvider: (formData.get('deliberatePrimaryProvider') as string) || 'anthropic',
+			deliberatePrimaryProvider: ((formData.get('deliberatePrimaryProvider') as string) || 'anthropic') as ProviderType,
 			deliberatePrimaryModel: (formData.get('deliberatePrimaryModel') as string) || 'claude-opus-4-20250514',
 			updatedAt: new Date()
 		};

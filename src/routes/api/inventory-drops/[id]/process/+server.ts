@@ -90,7 +90,7 @@ export const POST: RequestHandler = async ({ locals, params }) => {
 					}
 				});
 			} catch (error) {
-				log.error('Failed to read image', { filePath: photo.filePath, error: error instanceof Error ? error.message : String(error) });
+				log.error({ filePath: photo.filePath, error: error instanceof Error ? error.message : String(error) }, 'Failed to read image');
 			}
 		}
 
@@ -203,7 +203,7 @@ Respond with valid JSON only in this exact format:
 			notes: result.notes
 		});
 	} catch (error) {
-		log.error('Error processing inventory drop', { dropId, error: error instanceof Error ? error.message : String(error) });
+		log.error({ dropId, error: error instanceof Error ? error.message : String(error) }, 'Error processing inventory drop');
 
 		// Update status to failed
 		await db
