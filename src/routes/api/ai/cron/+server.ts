@@ -116,7 +116,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		return json({ error: `Unknown agent: ${agent}` }, { status: 400 });
 	} catch (error) {
-		log.error({ error, agent: body.agent }, 'AI Cron POST error');
+		log.error({ error }, 'AI Cron POST error');
 		return json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

@@ -69,19 +69,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 		// If querying by specific user, use the employee trends function
 		if (userId && !vendorId) {
-			result = await getVendorTrendsByEmployee(userId, {
-				periodType: periodType || undefined,
-				dateRange,
-				limit
-			});
+			result = await getVendorTrendsByEmployee(userId, dateRange, periodType || undefined);
 		}
 		// If querying by specific vendor, use the vendor trends function
 		else if (vendorId && !userId) {
-			result = await getEmployeeTrendsByVendor(vendorId, {
-				periodType: periodType || undefined,
-				dateRange,
-				limit
-			});
+			result = await getEmployeeTrendsByVendor(vendorId, dateRange, periodType || undefined);
 		}
 		// Otherwise use the general query
 		else {
