@@ -212,11 +212,11 @@ export const scheduleSMSTool: AITool<ScheduleSMSParams, ScheduleSMSResult> = {
 				}
 			);
 
-			log.info('Scheduled SMS job created', {
+			log.info({
 				jobId: job.id,
 				runAt: runAt.toISOString(),
 				recipient: recipientDescription
-			});
+			}, 'Scheduled SMS job created');
 
 			return {
 				success: true,
@@ -225,7 +225,7 @@ export const scheduleSMSTool: AITool<ScheduleSMSParams, ScheduleSMSResult> = {
 				recipientDescription
 			};
 		} catch (error) {
-			log.error('Failed to schedule SMS', { error });
+			log.error({ error }, 'Failed to schedule SMS');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

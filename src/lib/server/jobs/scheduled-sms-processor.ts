@@ -15,7 +15,7 @@ async function processScheduledSMS(
 ): Promise<JobResult['scheduled_sms']> {
 	const { toUserId, toPhone, toAllStaff, message, scheduledBy } = payload;
 
-	log.info('Processing scheduled SMS', { toUserId, toPhone, toAllStaff, scheduledBy });
+	log.info({ toUserId, toPhone, toAllStaff, scheduledBy }, 'Processing scheduled SMS');
 
 	// Handle sending to all staff
 	if (toAllStaff) {
@@ -32,7 +32,7 @@ async function processScheduledSMS(
 		});
 
 		if (staffWithPhones.length === 0) {
-			log.warn('No active staff with valid phone numbers found');
+			log.warn({}, 'No active staff with valid phone numbers found');
 			return { success: false, error: 'No active staff with valid phone numbers found' };
 		}
 
@@ -54,14 +54,14 @@ async function processScheduledSMS(
 		}
 
 		if (successCount === 0) {
-			log.error('Failed to send SMS to any staff', { errors });
+			log.error({ errors }, 'Failed to send SMS to any staff');
 			return {
 				success: false,
 				error: `Failed to send SMS to any staff. Errors: ${errors.join(', ')}`
 			};
 		}
 
-		log.info('Scheduled SMS sent to all staff', { successCount, failCount });
+		log.info({ successCount, failCount }, 'Scheduled SMS sent to all staff');
 		return {
 			success: true,
 			recipientCount: successCount,
@@ -81,18 +81,18 @@ async function processScheduledSMS(
 			.limit(1);
 
 		if (!user) {
-			log.error('User not found for scheduled SMS', { toUserId });
+			log.error({ toUserId }, 'User not found for scheduled SMS');
 			return { success: false, error: 'User not found' };
 		}
 
 		if (!user.phone) {
-			log.error('User has no phone number', { toUserId, userName: user.name });
+			log.error({ toUserId, userName: user.name }, 'User has no phone number');
 			return { success: false, error: `User ${user.name} has no phone number on file` };
 		}
 
 		const formatted = formatPhoneToE164(user.phone);
 		if (!formatted) {
-			log.error('Invalid phone number format', { phone: user.phone });
+			log.error({ phone: user.phone }, 'Invalid phone number format');
 			return { success: false, error: `User's phone number "${user.phone}" is not in a valid format` };
 		}
 
@@ -101,12 +101,12 @@ async function processScheduledSMS(
 	} else if (toPhone) {
 		const formatted = formatPhoneToE164(toPhone);
 		if (!formatted) {
-			log.error('Invalid phone number format', { toPhone });
+			log.error({ toPhone }, 'Invalid phone number format');
 			return { success: false, error: 'Invalid phone number format' };
 		}
 		phoneNumber = formatted;
 	} else {
-		log.error('No recipient specified for scheduled SMS');
+		log.error({}, 'No recipient specified for scheduled SMS');
 		return { success: false, error: 'No recipient specified' };
 	}
 
@@ -114,14 +114,14 @@ async function processScheduledSMS(
 	const result = await sendSMS(phoneNumber, message);
 
 	if (!result.success) {
-		log.error('Failed to send scheduled SMS', { error: result.error, phoneNumber });
+		log.error({ error: result.error, phoneNumber }, 'Failed to send scheduled SMS');
 		return {
 			success: false,
 			error: result.error || 'Failed to send SMS'
 		};
 	}
 
-	log.info('Scheduled SMS sent successfully', { recipientName, phoneNumber, sid: result.sid });
+	log.info({ recipientName, phoneNumber, sid: result.sid }, 'Scheduled SMS sent successfully');
 	return {
 		success: true,
 		recipientName,

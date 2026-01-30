@@ -82,7 +82,7 @@ export const cancelScheduledSMSTool: AITool<CancelScheduledSMSParams, CancelSche
 			const cancelled = await cancelJob(params.jobId);
 
 			if (cancelled) {
-				log.info('Scheduled SMS cancelled', { jobId: params.jobId });
+				log.info({ jobId: params.jobId }, 'Scheduled SMS cancelled');
 				return {
 					success: true,
 					cancelled: true,
@@ -96,7 +96,7 @@ export const cancelScheduledSMSTool: AITool<CancelScheduledSMSParams, CancelSche
 				};
 			}
 		} catch (error) {
-			log.error('Failed to cancel scheduled SMS', { error, jobId: params.jobId });
+			log.error({ error, jobId: params.jobId }, 'Failed to cancel scheduled SMS');
 			return {
 				success: false,
 				cancelled: false,

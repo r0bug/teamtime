@@ -138,7 +138,7 @@ export const viewScheduledSMSTool: AITool<ViewScheduledSMSParams, ViewScheduledS
 
 			return { success: true, scheduled: enriched };
 		} catch (error) {
-			log.error('Failed to view scheduled SMS', { error });
+			log.error({ error }, 'Failed to view scheduled SMS');
 			return {
 				success: false,
 				scheduled: [],

@@ -18,6 +18,7 @@ This document provides detailed information about TeamTime features, their imple
 12. [Sales Dashboard](#sales-dashboard)
 13. [Group Chat & Threads](#group-chat--threads)
 14. [Shoutouts & Recognition](#shoutouts--recognition)
+15. [Metrics & Analytics Module](#metrics--analytics-module)
 
 ---
 
@@ -1403,6 +1404,100 @@ Shoutout points use the existing gamification system:
 **Admin**: `src/routes/(app)/admin/shoutouts/`
 
 **AI Tools**: `src/lib/ai/tools/office-manager/view-points.ts`, `award-points.ts`, `give-shoutout.ts`
+
+---
+
+## Metrics & Analytics Module
+
+### Overview
+
+The Metrics Module provides deep analytics on sales performance, employee-vendor correlations, and business intelligence. It enables tracking which employees correlate with higher sales for specific vendors, identifying trends, and exporting data for analysis.
+
+### Key Features
+
+#### Vendor-Employee Correlations
+
+Analyzes correlations between employee shifts and vendor sales performance:
+
+- **Daily Correlations**: Who worked when sales occurred
+- **Weekly/Monthly Rollups**: Aggregated performance trends
+- **Delta Analysis**: Compares vendor performance against overall averages
+- **Confidence Scoring**: Statistical confidence based on sample size
+
+#### Metrics Dashboard
+
+Admin analytics at `/admin/metrics`:
+
+- Sales trends over time
+- Vendor performance rankings
+- Employee sales attribution
+- Profitability analysis (retained vs labor costs)
+
+### Data Export
+
+Export correlation data to CSV via `scripts/export-sales-worker-correlation.mjs`:
+
+```bash
+node scripts/export-sales-worker-correlation.mjs
+```
+
+**Output Files**:
+- `daily-sales-workers-{date}.csv` — Daily breakdown: date, worker, hours, attributed sales
+- `worker-summary-{date}.csv` — Per-worker totals: days, hours, total $, $/hour
+- `top-vendors-by-day-{date}.csv` — Top vendors per day with sales
+
+### Office Manager AI Tools
+
+Two new tools for the Office Manager AI:
+
+**`query_metrics`** — Query sales, attendance, and performance metrics
+- Parameters: `metricType`, `dateRange`, `groupBy`, `filters`
+- Returns: Aggregated metric data with trends
+
+**`get_vendor_correlations`** — Get employee-vendor sales correlations
+- Parameters: `userId`, `vendorId`, `periodType`, `dateRange`
+- Returns: Correlation data showing who performs well with which vendors
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/metrics` | GET | Query metrics with filters |
+| `/api/metrics/definitions` | GET | List metric definitions |
+| `/api/metrics/reports` | GET | Get metric reports |
+| `/api/metrics/vendor-correlations` | GET | Query vendor correlations |
+| `/api/metrics/vendor-correlations/top` | GET | Get top correlations |
+| `/api/metrics/cron` | POST | Trigger metric computation |
+
+### Database Schema
+
+| Table | Purpose |
+|-------|---------|
+| `sales_snapshots` | Daily sales data imported from LOB software |
+| `vendor_employee_correlations` | Computed correlations by period |
+| `metric_definitions` | Configurable metric definitions |
+| `metric_data_points` | Time-series metric data |
+| `metric_reports` | Saved report configurations |
+
+### Files
+
+**Services**:
+- `src/lib/server/services/vendor-correlation-service.ts` — Correlation computation
+- `src/lib/server/services/metrics-service.ts` — Metrics aggregation
+- `src/lib/server/services/sales-attribution-service.ts` — Sales attribution
+
+**AI Tools**:
+- `src/lib/ai/tools/office-manager/query-metrics.ts`
+- `src/lib/ai/tools/office-manager/get-vendor-correlations.ts`
+
+**API Routes**:
+- `src/routes/api/metrics/` — Metrics API endpoints
+
+**Admin UI**:
+- `src/routes/(app)/admin/metrics/` — Metrics dashboard
+
+**Export Script**:
+- `scripts/export-sales-worker-correlation.mjs` — CSV export
 
 ---
 

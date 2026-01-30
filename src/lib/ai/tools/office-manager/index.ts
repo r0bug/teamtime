@@ -30,6 +30,8 @@ export { viewSalesTool } from './view-sales';
 export { viewPointsTool } from './view-points';
 export { awardPointsTool } from './award-points';
 export { giveShoutoutTool } from './give-shoutout';
+export { queryMetricsTool } from './query-metrics';
+export { getVendorCorrelationsTool } from './get-vendor-correlations';
 export {
 	viewUserPermissionsTool,
 	grantTemporaryPermissionTool,
@@ -72,6 +74,8 @@ import { viewSalesTool } from './view-sales';
 import { viewPointsTool } from './view-points';
 import { awardPointsTool } from './award-points';
 import { giveShoutoutTool } from './give-shoutout';
+import { queryMetricsTool } from './query-metrics';
+import { getVendorCorrelationsTool } from './get-vendor-correlations';
 import { permissionTools } from './permission-tools';
 import type { AITool } from '../../types';
 
@@ -87,6 +91,9 @@ export const officeManagerTools: AITool<any, any>[] = [
 	getChatDetailsTool,
 	viewSalesTool,
 	viewPointsTool,
+	// Metrics tools
+	queryMetricsTool,
+	getVendorCorrelationsTool,
 	// Action tools
 	sendMessageTool,
 	createTaskTool,

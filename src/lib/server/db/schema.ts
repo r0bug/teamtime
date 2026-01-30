@@ -2307,3 +2307,144 @@ export type NewAwardType = typeof awardTypes.$inferInsert;
 export type Shoutout = typeof shoutouts.$inferSelect;
 export type NewShoutout = typeof shoutouts.$inferInsert;
 
+// ============================================
+// METRICS MODULE
+// ============================================
+
+// Metrics Enums
+export const metricAggregationEnum = pgEnum('metric_aggregation', ['sum', 'avg', 'min', 'max', 'count', 'last']);
+export const metricPeriodTypeEnum = pgEnum('metric_period_type', ['hourly', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly']);
+export const metricSourceEnum = pgEnum('metric_source', ['teamtime', 'lob_scraper', 'api', 'manual', 'computed']);
+
+// Metric Definitions - Registry of all metric types
+export const metricDefinitions = pgTable('metric_definitions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	metricType: text('metric_type').notNull().unique(),          // e.g., 'vendor_sales', 'task_completion_rate'
+	displayName: text('display_name').notNull(),
+	description: text('description'),
+	unit: text('unit'),                                           // '$', '%', 'count', 'hours', 'items'
+	aggregation: metricAggregationEnum('aggregation').notNull().default('sum'),
+	availableDimensions: text('available_dimensions').array().notNull(), // ['user_id', 'vendor_id', 'location_id']
+	sourceTypes: text('source_types').array().notNull(),          // ['teamtime', 'lob_scraper']
+	isActive: boolean('is_active').notNull().default(true),
+	metadata: jsonb('metadata').default({}),                      // Additional config
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Metrics - Generic metrics storage
+export const metrics = pgTable('metrics', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	metricType: text('metric_type').notNull(),                    // Foreign key to metricDefinitions.metricType
+	metricKey: text('metric_key').notNull(),                      // Specific metric identifier
+	value: decimal('value', { precision: 14, scale: 4 }).notNull(),
+	dimensions: jsonb('dimensions').notNull().default({}),        // {user_id, vendor_id, location_id, etc}
+	periodType: metricPeriodTypeEnum('period_type').notNull(),
+	periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+	periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+	source: metricSourceEnum('source').notNull(),
+	sourceId: text('source_id'),                                  // Reference to source record
+	metadata: jsonb('metadata').default({}),                      // Additional context
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Vendor Employee Correlations - Pre-computed correlations for fast querying
+export const vendorEmployeeCorrelations = pgTable('vendor_employee_correlations', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+	vendorId: text('vendor_id').notNull(),
+	vendorName: text('vendor_name').notNull(),
+	periodType: metricPeriodTypeEnum('period_type').notNull(),
+	periodStart: date('period_start').notNull(),
+
+	// When this employee worked
+	shiftsCount: integer('shifts_count').notNull().default(0),
+	hoursWorked: decimal('hours_worked', { precision: 8, scale: 2 }).notNull().default('0'),
+
+	// Vendor performance when employee was working
+	vendorSales: decimal('vendor_sales', { precision: 12, scale: 2 }).notNull().default('0'),
+	vendorRetained: decimal('vendor_retained', { precision: 12, scale: 2 }).notNull().default('0'),
+	transactionCount: integer('transaction_count').notNull().default(0),
+
+	// Comparison metrics
+	avgVendorSalesOverall: decimal('avg_vendor_sales_overall', { precision: 12, scale: 2 }),
+	salesDeltaPct: decimal('sales_delta_pct', { precision: 8, scale: 4 }),           // % difference from average
+
+	// Statistical significance
+	sampleSize: integer('sample_size').notNull().default(0),
+	confidenceScore: decimal('confidence_score', { precision: 5, scale: 4 }),        // 0-1 confidence level
+
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	uniqueCorrelation: unique().on(table.userId, table.vendorId, table.periodType, table.periodStart)
+}));
+
+// Metric Data Sources - Registry of external data sources
+export const metricDataSources = pgTable('metric_data_sources', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull().unique(),
+	sourceType: text('source_type').notNull(),                    // 'scraper', 'api', 'manual', 'webhook'
+	config: jsonb('config').notNull().default({}),                // Connection config, credentials reference
+	metricTypes: text('metric_types').array().notNull(),          // Which metrics this source provides
+	isActive: boolean('is_active').notNull().default(true),
+	lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
+	lastSyncStatus: text('last_sync_status'),                     // 'success', 'error', 'partial'
+	lastSyncError: text('last_sync_error'),
+	syncIntervalMinutes: integer('sync_interval_minutes').default(60),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Metric Import History - Track all data imports
+export const metricImportHistory = pgTable('metric_import_history', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	dataSourceId: uuid('data_source_id').references(() => metricDataSources.id, { onDelete: 'set null' }),
+	sourceName: text('source_name').notNull(),                    // Denormalized for history
+	importType: text('import_type').notNull(),                    // 'scheduled', 'manual', 'webhook'
+	status: text('status').notNull(),                             // 'running', 'completed', 'failed'
+	metricsImported: integer('metrics_imported').notNull().default(0),
+	metricsSkipped: integer('metrics_skipped').notNull().default(0),
+	metricsErrored: integer('metrics_errored').notNull().default(0),
+	periodStart: timestamp('period_start', { withTimezone: true }),
+	periodEnd: timestamp('period_end', { withTimezone: true }),
+	errorDetails: jsonb('error_details'),
+	startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+	completedAt: timestamp('completed_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Metrics Relations
+export const metricsRelations = relations(metrics, ({ one }) => ({
+	definition: one(metricDefinitions, {
+		fields: [metrics.metricType],
+		references: [metricDefinitions.metricType]
+	})
+}));
+
+export const vendorEmployeeCorrelationsRelations = relations(vendorEmployeeCorrelations, ({ one }) => ({
+	user: one(users, {
+		fields: [vendorEmployeeCorrelations.userId],
+		references: [users.id]
+	})
+}));
+
+export const metricImportHistoryRelations = relations(metricImportHistory, ({ one }) => ({
+	dataSource: one(metricDataSources, {
+		fields: [metricImportHistory.dataSourceId],
+		references: [metricDataSources.id]
+	})
+}));
+
+// Metrics Types
+export type MetricDefinition = typeof metricDefinitions.$inferSelect;
+export type NewMetricDefinition = typeof metricDefinitions.$inferInsert;
+export type Metric = typeof metrics.$inferSelect;
+export type NewMetric = typeof metrics.$inferInsert;
+export type VendorEmployeeCorrelation = typeof vendorEmployeeCorrelations.$inferSelect;
+export type NewVendorEmployeeCorrelation = typeof vendorEmployeeCorrelations.$inferInsert;
+export type MetricDataSource = typeof metricDataSources.$inferSelect;
+export type NewMetricDataSource = typeof metricDataSources.$inferInsert;
+export type MetricImportHistory = typeof metricImportHistory.$inferSelect;
+export type NewMetricImportHistory = typeof metricImportHistory.$inferInsert;
+
