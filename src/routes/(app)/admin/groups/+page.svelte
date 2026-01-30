@@ -415,10 +415,10 @@
 												return async ({ update }) => {
 													await update();
 													// Refresh members list
-													await openMembersModal(managingMembersGroup);
+													if (managingMembersGroup) await openMembersModal(managingMembersGroup);
 												};
 											}}>
-												<input type="hidden" name="groupId" value={managingMembersGroup.id} />
+												<input type="hidden" name="groupId" value={managingMembersGroup?.id} />
 												<input type="hidden" name="userId" value={member.userId} />
 												<button type="submit" class="text-red-600 hover:text-red-700 text-sm">
 													Remove
@@ -440,10 +440,10 @@
 							return async ({ update }) => {
 								await update();
 								// Refresh members list
-								await openMembersModal(managingMembersGroup);
+								if (managingMembersGroup) await openMembersModal(managingMembersGroup);
 							};
 						}} class="flex gap-2">
-							<input type="hidden" name="groupId" value={managingMembersGroup.id} />
+							<input type="hidden" name="groupId" value={managingMembersGroup?.id} />
 							<select name="userId" class="input flex-1">
 								<option value="">Select a user...</option>
 								{#each data.users.filter(u => !isMember(u.id)) as user}

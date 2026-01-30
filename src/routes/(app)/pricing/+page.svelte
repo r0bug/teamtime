@@ -3,7 +3,14 @@
 
 	export let data: PageData;
 
-	let filter: 'all' | 'store' | 'ebay' = 'all';
+	type FilterType = 'all' | 'store' | 'ebay';
+	let filter: FilterType = 'all';
+
+	const filterTabs: { value: FilterType; label: string }[] = [
+		{ value: 'all', label: 'All' },
+		{ value: 'store', label: 'Store' },
+		{ value: 'ebay', label: 'eBay' }
+	];
 
 	$: filteredDecisions = filter === 'all'
 		? data.decisions
@@ -53,11 +60,7 @@
 
 	<!-- Filter Tabs -->
 	<div class="flex space-x-2 mb-6 overflow-x-auto pb-2">
-		{#each [
-			{ value: 'all', label: 'All' },
-			{ value: 'store', label: 'Store' },
-			{ value: 'ebay', label: 'eBay' }
-		] as tab}
+		{#each filterTabs as tab}
 			<button
 				on:click={() => filter = tab.value}
 				class="px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors {filter === tab.value ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"

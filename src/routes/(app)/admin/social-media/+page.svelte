@@ -140,12 +140,15 @@
 										{config.isActive ? 'Deactivate' : 'Activate'}
 									</button>
 								</form>
-								<form method="POST" action="?/delete" use:enhance class="inline">
+								<form method="POST" action="?/delete" use:enhance={({ cancel }) => {
+									if (!confirm('Delete this configuration?')) {
+										cancel();
+									}
+								}} class="inline">
 									<input type="hidden" name="configId" value={config.id} />
 									<button
 										type="submit"
 										class="text-sm text-red-600 hover:text-red-700"
-										onclick="return confirm('Delete this configuration?')"
 									>
 										Delete
 									</button>

@@ -52,9 +52,10 @@
 		}
 	}
 
-	function formatDate(dateString: string | null): string {
-		if (!dateString) return '';
-		return new Date(dateString).toLocaleDateString('en-US', {
+	function formatDate(date: Date | string | null): string {
+		if (!date) return '';
+		const d = date instanceof Date ? date : new Date(date);
+		return d.toLocaleDateString('en-US', {
 			timeZone: 'America/Los_Angeles',
 			month: 'short',
 			day: 'numeric',
@@ -121,7 +122,7 @@
 					<p class="text-sm opacity-80">Complete</p>
 				</div>
 				<div>
-					<p class="text-3xl font-bold">+{stats.totalPoints}</p>
+					<p class="text-3xl font-bold">+{userStats.totalPoints}</p>
 					<p class="text-sm opacity-80">Points Earned</p>
 				</div>
 			</div>

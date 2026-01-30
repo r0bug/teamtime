@@ -3,7 +3,16 @@
 
 	export let data: PageData;
 
-	let filter: 'all' | 'pending' | 'processing' | 'completed' | 'failed' | 'reviewed' = 'all';
+	type FilterType = 'all' | 'pending' | 'processing' | 'completed' | 'failed' | 'reviewed';
+	let filter: FilterType = 'all';
+	const filterTabs: { value: FilterType; label: string }[] = [
+		{ value: 'all', label: 'All' },
+		{ value: 'pending', label: 'Pending' },
+		{ value: 'processing', label: 'Processing' },
+		{ value: 'completed', label: 'Completed' },
+		{ value: 'reviewed', label: 'Reviewed' },
+		{ value: 'failed', label: 'Failed' }
+	];
 
 	$: filteredDrops = filter === 'all'
 		? data.drops
@@ -68,14 +77,7 @@
 
 	<!-- Filter Tabs -->
 	<div class="flex space-x-2 mb-6 overflow-x-auto pb-2">
-		{#each [
-			{ value: 'all', label: 'All' },
-			{ value: 'pending', label: 'Pending' },
-			{ value: 'processing', label: 'Processing' },
-			{ value: 'completed', label: 'Completed' },
-			{ value: 'reviewed', label: 'Reviewed' },
-			{ value: 'failed', label: 'Failed' }
-		] as tab}
+		{#each filterTabs as tab}
 			<button
 				on:click={() => { filter = tab.value; }}
 				class="px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors {filter === tab.value ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"

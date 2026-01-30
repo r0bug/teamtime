@@ -7,7 +7,14 @@
 	export let form: ActionData;
 
 	// Tabs
-	let activeTab: 'presets' | 'rules' | 'groups' | 'grants' = 'presets';
+	type TabType = 'presets' | 'rules' | 'groups' | 'grants';
+	let activeTab: TabType = 'presets';
+	const tabs: { id: TabType; label: string }[] = [
+		{ id: 'presets', label: 'Quick Setup' },
+		{ id: 'rules', label: 'Visibility Rules' },
+		{ id: 'groups', label: 'Custom Groups' },
+		{ id: 'grants', label: 'User Grants' }
+	];
 
 	// Category display names
 	const categoryNames: Record<string, string> = {
@@ -112,12 +119,7 @@
 	<!-- Tabs -->
 	<div class="border-b border-gray-200 dark:border-gray-700 mb-6">
 		<nav class="flex space-x-4">
-			{#each [
-				{ id: 'presets', label: 'Quick Setup' },
-				{ id: 'rules', label: 'Visibility Rules' },
-				{ id: 'groups', label: 'Custom Groups' },
-				{ id: 'grants', label: 'User Grants' }
-			] as tab}
+			{#each tabs as tab}
 				<button
 					on:click={() => activeTab = tab.id}
 					class="px-4 py-2 font-medium text-sm border-b-2 transition-colors {activeTab === tab.id

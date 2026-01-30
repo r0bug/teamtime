@@ -234,7 +234,7 @@
 					class="py-4 px-1 border-b-2 font-medium text-sm {activeTab === 'migration' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
 				>
 					Migration
-					{#if data.migrationStatus?.unmigatedUsers > 0}
+					{#if data.migrationStatus && data.migrationStatus.unmigatedUsers && data.migrationStatus.unmigatedUsers > 0}
 						<span class="ml-1 px-1.5 py-0.5 text-xs bg-yellow-100 text-yellow-800 rounded-full">{data.migrationStatus.unmigatedUsers}</span>
 					{/if}
 				</button>
@@ -426,12 +426,15 @@
 										Edit
 									</button>
 									{#if !userType.isSystem}
-										<form method="POST" action="?/deleteUserType" use:enhance>
+										<form method="POST" action="?/deleteUserType" use:enhance={({ cancel }) => {
+											if (!confirm('Delete this user type?')) {
+												cancel();
+											}
+										}}>
 											<input type="hidden" name="id" value={userType.id} />
 											<button
 												type="submit"
 												class="text-sm text-red-600 hover:text-red-700"
-												onclick="return confirm('Delete this user type?')"
 											>
 												Delete
 											</button>

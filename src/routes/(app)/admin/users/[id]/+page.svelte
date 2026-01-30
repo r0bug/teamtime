@@ -188,11 +188,14 @@
 			<div class="card-body">
 				<h2 class="text-lg font-semibold text-red-600 mb-4">Danger Zone</h2>
 				<p class="text-gray-600 mb-4">Deleting this user will permanently remove all their data including time entries, tasks, and messages.</p>
-				<form method="POST" action="?/delete">
+				<form method="POST" action="?/delete" use:enhance={({ cancel }) => {
+					if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+						cancel();
+					}
+				}}>
 					<button
 						type="submit"
 						class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg"
-						onclick="return confirm('Are you sure you want to delete this user? This action cannot be undone.')"
 					>
 						Delete User
 					</button>

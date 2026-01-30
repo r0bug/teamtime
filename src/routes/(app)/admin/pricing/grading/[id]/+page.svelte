@@ -19,9 +19,10 @@
 	$: overallGrade = (priceAccuracy * 0.4 + justificationQuality * 0.3 + photoQuality * 0.3).toFixed(2);
 	$: pointsPreview = getPointsPreview(parseFloat(overallGrade));
 
-	function formatDate(dateString: string | null): string {
-		if (!dateString) return '';
-		return new Date(dateString).toLocaleDateString('en-US', {
+	function formatDate(date: Date | string | null): string {
+		if (!date) return '';
+		const d = date instanceof Date ? date : new Date(date);
+		return d.toLocaleDateString('en-US', {
 			timeZone: 'America/Los_Angeles',
 			weekday: 'long',
 			month: 'long',

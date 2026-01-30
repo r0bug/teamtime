@@ -201,14 +201,18 @@
 								</button>
 							{/if}
 							{#if isManager}
-								<form method="POST" action="?/forceComplete" use:enhance={() => {
+								<form method="POST" action="?/forceComplete" use:enhance={({ cancel }) => {
+									if (!confirm('This will mark the task as complete for everyone. Are you sure?')) {
+										cancel();
+										return;
+									}
 									loading = true;
 									return async ({ update }) => {
 										loading = false;
 										await update();
 									};
 								}}>
-									<button type="submit" disabled={loading} class="btn-secondary w-full" onclick="return confirm('This will mark the task as complete for everyone. Are you sure?')">
+									<button type="submit" disabled={loading} class="btn-secondary w-full">
 										{loading ? 'Processing...' : 'Mark Complete for All Staff'}
 									</button>
 								</form>
@@ -293,8 +297,12 @@
 						</div>
 					</form>
 
-					<form method="POST" action="?/delete" class="mt-4 pt-4 border-t">
-						<button type="submit" class="text-red-600 hover:text-red-700 text-sm" onclick="return confirm('Are you sure you want to delete this task?')">
+					<form method="POST" action="?/delete" use:enhance={({ cancel }) => {
+						if (!confirm('Are you sure you want to delete this task?')) {
+							cancel();
+						}
+					}} class="mt-4 pt-4 border-t">
+						<button type="submit" class="text-red-600 hover:text-red-700 text-sm">
 							Delete Task
 						</button>
 					</form>
@@ -351,9 +359,9 @@
 			<div class="bg-white rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
 				<SocialMediaMetricsForm
 					configId={socialMediaConfig.configId}
-					configName={socialMediaConfig.configName || 'Social Media Metrics'}
-					platform={socialMediaConfig.platform}
-					fields={socialMediaConfig.fields || []}
+					configName={socialMediaConfig.configName ?? 'Social Media Metrics'}
+					platform={socialMediaConfig.platform ?? ''}
+					fields={socialMediaConfig.fields ?? []}
 					existingUrl={socialMediaConfig.postUrl}
 					taskId={task.id}
 					disabled={loading}

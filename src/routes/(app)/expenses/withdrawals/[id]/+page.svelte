@@ -131,8 +131,12 @@
 
 		{#if data.isManager}
 			<div class="mt-6">
-				<form method="POST" action="?/delete">
-					<button type="submit" class="text-red-600 hover:text-red-700 text-sm" onclick="return confirm('Are you sure you want to delete this withdrawal?')">
+				<form method="POST" action="?/delete" use:enhance={({ cancel }) => {
+					if (!confirm('Are you sure you want to delete this withdrawal?')) {
+						cancel();
+					}
+				}}>
+					<button type="submit" class="text-red-600 hover:text-red-700 text-sm">
 						Delete Withdrawal
 					</button>
 				</form>

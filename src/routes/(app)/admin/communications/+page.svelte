@@ -1,8 +1,9 @@
 <script lang="ts">
 	export let data;
 
-	function formatDate(date: string) {
-		return new Date(date).toLocaleString();
+	function formatDate(date: Date | string) {
+		const d = date instanceof Date ? date : new Date(date);
+		return d.toLocaleString();
 	}
 
 	function truncate(text: string, length: number = 100) {

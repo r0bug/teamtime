@@ -235,7 +235,7 @@ You can include:
 					<pre class="whitespace-pre-wrap font-sans text-gray-700 bg-gray-50 p-4 rounded-lg">{viewingPost.content}</pre>
 				</div>
 				<div class="flex flex-wrap gap-2 pt-4 border-t">
-					<button on:click={() => { editingPost = { ...viewingPost }; viewingPost = null; }} class="btn-secondary">
+					<button on:click={() => { if (viewingPost) editingPost = viewingPost; viewingPost = null; }} class="btn-secondary">
 						Edit
 					</button>
 					<form method="POST" action="?/togglePin" use:enhance class="inline">

@@ -12,9 +12,9 @@
 	let showRejectModal = false;
 	let rejectingId: string | null = null;
 
-	function formatTime(dateStr: string): string {
+	function formatTime(dateInput: Date | string): string {
 		try {
-			const date = new Date(dateStr);
+			const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
 			const now = new Date();
 			const diff = now.getTime() - date.getTime();
 			const seconds = Math.floor(diff / 1000);
