@@ -817,10 +817,10 @@ export async function getTopCorrelations(
 		vendorSales: parseFloat(c.vendorSales),
 		vendorRetained: parseFloat(c.vendorRetained),
 		transactionCount: c.transactionCount,
-		avgVendorSalesOverall: parseFloat(c.avgVendorSalesOverall),
-		salesDeltaPct: parseFloat(c.salesDeltaPct),
+		avgVendorSalesOverall: parseFloat(c.avgVendorSalesOverall ?? '0'),
+		salesDeltaPct: parseFloat(c.salesDeltaPct ?? '0'),
 		sampleSize: c.sampleSize,
-		confidenceScore: parseFloat(c.confidenceScore)
+		confidenceScore: parseFloat(c.confidenceScore ?? '0')
 	}));
 }
 
@@ -962,8 +962,10 @@ export async function queryCorrelations(params: {
 		hoursWorked: parseFloat(r.hoursWorked as unknown as string),
 		vendorSales: parseFloat(r.vendorSales as unknown as string),
 		vendorRetained: parseFloat(r.vendorRetained as unknown as string),
+		transactionCount: r.transactionCount ?? 0,
 		avgVendorSalesOverall: r.avgVendorSalesOverall ? parseFloat(r.avgVendorSalesOverall as unknown as string) : 0,
 		salesDeltaPct: r.salesDeltaPct ? parseFloat(r.salesDeltaPct as unknown as string) : 0,
+		sampleSize: r.sampleSize ?? 0,
 		confidenceScore: r.confidenceScore ? parseFloat(r.confidenceScore as unknown as string) : 0
 	}));
 
