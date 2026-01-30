@@ -22,6 +22,7 @@ import {
 	computeWeeklyCorrelations,
 	computeMonthlyCorrelations
 } from '$lib/server/services/vendor-correlation-service';
+import { computeAllStaffingAnalytics } from '$lib/server/services/staffing-analytics-service';
 
 const log = createLogger('api:metrics:cron');
 
@@ -60,6 +61,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		dailyCorrelations: { processed: false, correlationsComputed: 0, error: null as string | null },
 		weeklyRollup: { processed: false, correlationsComputed: 0 },
 		monthlyRollup: { processed: false, correlationsComputed: 0 },
+		staffingAnalytics: { processed: false, pairs: 0, impact: 0, levels: 0, dayOfWeek: 0 },
 		cleanup: { processed: false, recordsDeleted: 0 },
 		timestamp: now.toISOString(),
 		pacificTime: `${pacific.year}-${String(pacific.month).padStart(2, '0')}-${String(pacific.day).padStart(2, '0')} ${String(pacific.hour).padStart(2, '0')}:${String(pacific.minute).padStart(2, '0')}`
@@ -131,7 +133,27 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			}
 		}
 
-		// 5. Cleanup old metrics (configurable retention, default 90 days)
+		// 5. Compute staffing analytics (weekly on Sunday or force)
+		if (!skipCorrelations && (pacific.weekday === 0 || force)) {
+			try {
+				const ninetyDaysAgo = new Date(now);
+				ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+				log.info('Computing staffing analytics');
+				const staffingResult = await computeAllStaffingAnalytics(ninetyDaysAgo, now);
+				results.staffingAnalytics = {
+					processed: true,
+					pairs: staffingResult.pairs.pairsComputed,
+					impact: staffingResult.impact.workersAnalyzed,
+					levels: staffingResult.staffingLevels.levelsComputed,
+					dayOfWeek: staffingResult.dayOfWeek.daysAnalyzed
+				};
+				log.info({ staffingResult }, 'Staffing analytics completed');
+			} catch (error) {
+				log.error({ error }, 'Staffing analytics computation failed');
+			}
+		}
+
+		// 6. Cleanup old metrics (configurable retention, default 90 days)
 		if (!skipCleanup) {
 			try {
 				const retentionDays = parseInt(url.searchParams.get('retentionDays') || '90', 10);

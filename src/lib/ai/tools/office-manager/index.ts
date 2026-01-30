@@ -32,6 +32,7 @@ export { awardPointsTool } from './award-points';
 export { giveShoutoutTool } from './give-shoutout';
 export { queryMetricsTool } from './query-metrics';
 export { getVendorCorrelationsTool } from './get-vendor-correlations';
+export { analyzeStaffingPatternsTool } from './analyze-staffing-patterns';
 export {
 	viewUserPermissionsTool,
 	grantTemporaryPermissionTool,
@@ -76,6 +77,7 @@ import { awardPointsTool } from './award-points';
 import { giveShoutoutTool } from './give-shoutout';
 import { queryMetricsTool } from './query-metrics';
 import { getVendorCorrelationsTool } from './get-vendor-correlations';
+import { analyzeStaffingPatternsTool } from './analyze-staffing-patterns';
 import { permissionTools } from './permission-tools';
 import type { AITool } from '../../types';
 
@@ -94,6 +96,7 @@ export const officeManagerTools: AITool<any, any>[] = [
 	// Metrics tools
 	queryMetricsTool,
 	getVendorCorrelationsTool,
+	analyzeStaffingPatternsTool,
 	// Action tools
 	sendMessageTool,
 	createTaskTool,

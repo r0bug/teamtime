@@ -2448,3 +2448,110 @@ export type NewMetricDataSource = typeof metricDataSources.$inferInsert;
 export type MetricImportHistory = typeof metricImportHistory.$inferSelect;
 export type NewMetricImportHistory = typeof metricImportHistory.$inferInsert;
 
+// ============================================
+// STAFFING ANALYTICS TABLES
+// ============================================
+
+// Worker pair performance - tracks how pairs of employees perform together
+export const workerPairPerformance = pgTable('worker_pair_performance', {
+	id: uuid('id').defaultRandom().primaryKey(),
+	computedAt: timestamp('computed_at', { withTimezone: true }).defaultNow(),
+	periodStart: date('period_start').notNull(),
+	periodEnd: date('period_end').notNull(),
+	userId1: uuid('user_id_1').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	userId2: uuid('user_id_2').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	daysTogether: integer('days_together').notNull().default(0),
+	totalSales: decimal('total_sales', { precision: 12, scale: 2 }).notNull().default('0'),
+	avgDailySales: decimal('avg_daily_sales', { precision: 12, scale: 2 }).notNull().default('0'),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
+}, (table) => ({
+	uniquePair: unique().on(table.userId1, table.userId2, table.periodStart, table.periodEnd)
+}));
+
+// Worker impact analysis - sales when worker present vs absent
+export const workerImpactMetrics = pgTable('worker_impact_metrics', {
+	id: uuid('id').defaultRandom().primaryKey(),
+	computedAt: timestamp('computed_at', { withTimezone: true }).defaultNow(),
+	periodStart: date('period_start').notNull(),
+	periodEnd: date('period_end').notNull(),
+	userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	totalHoursWorked: decimal('total_hours_worked', { precision: 10, scale: 2 }).default('0'),
+	totalAttributedSales: decimal('total_attributed_sales', { precision: 12, scale: 2 }).default('0'),
+	salesPerHour: decimal('sales_per_hour', { precision: 10, scale: 2 }).default('0'),
+	daysWorked: integer('days_worked').default(0),
+	avgSalesWhenPresent: decimal('avg_sales_when_present', { precision: 12, scale: 2 }),
+	avgSalesWhenAbsent: decimal('avg_sales_when_absent', { precision: 12, scale: 2 }),
+	salesImpact: decimal('sales_impact', { precision: 12, scale: 2 }),
+	impactConfidence: decimal('impact_confidence', { precision: 5, scale: 4 }),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
+}, (table) => ({
+	uniqueWorker: unique().on(table.userId, table.periodStart, table.periodEnd)
+}));
+
+// Staffing level analysis - sales by worker count
+export const staffingLevelMetrics = pgTable('staffing_level_metrics', {
+	id: uuid('id').defaultRandom().primaryKey(),
+	computedAt: timestamp('computed_at', { withTimezone: true }).defaultNow(),
+	periodStart: date('period_start').notNull(),
+	periodEnd: date('period_end').notNull(),
+	workerCount: integer('worker_count').notNull(),
+	daysObserved: integer('days_observed').default(0),
+	avgTotalHours: decimal('avg_total_hours', { precision: 10, scale: 2 }),
+	avgDailySales: decimal('avg_daily_sales', { precision: 12, scale: 2 }),
+	minDailySales: decimal('min_daily_sales', { precision: 12, scale: 2 }),
+	maxDailySales: decimal('max_daily_sales', { precision: 12, scale: 2 }),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow()
+}, (table) => ({
+	uniqueLevel: unique().on(table.workerCount, table.periodStart, table.periodEnd)
+}));
+
+// Day of week patterns
+export const dayOfWeekMetrics = pgTable('day_of_week_metrics', {
+	id: uuid('id').defaultRandom().primaryKey(),
+	computedAt: timestamp('computed_at', { withTimezone: true }).defaultNow(),
+	periodStart: date('period_start').notNull(),
+	periodEnd: date('period_end').notNull(),
+	dayOfWeek: integer('day_of_week').notNull(), // 0=Sunday, 6=Saturday
+	daysObserved: integer('days_observed').default(0),
+	avgWorkerCount: decimal('avg_worker_count', { precision: 6, scale: 2 }),
+	avgTotalHours: decimal('avg_total_hours', { precision: 10, scale: 2 }),
+	avgDailySales: decimal('avg_daily_sales', { precision: 12, scale: 2 }),
+	avgRetained: decimal('avg_retained', { precision: 12, scale: 2 }),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow()
+}, (table) => ({
+	uniqueDay: unique().on(table.dayOfWeek, table.periodStart, table.periodEnd)
+}));
+
+// Staffing Analytics Relations
+export const workerPairPerformanceRelations = relations(workerPairPerformance, ({ one }) => ({
+	user1: one(users, {
+		fields: [workerPairPerformance.userId1],
+		references: [users.id],
+		relationName: 'workerPairUser1'
+	}),
+	user2: one(users, {
+		fields: [workerPairPerformance.userId2],
+		references: [users.id],
+		relationName: 'workerPairUser2'
+	})
+}));
+
+export const workerImpactMetricsRelations = relations(workerImpactMetrics, ({ one }) => ({
+	user: one(users, {
+		fields: [workerImpactMetrics.userId],
+		references: [users.id]
+	})
+}));
+
+// Staffing Analytics Types
+export type WorkerPairPerformance = typeof workerPairPerformance.$inferSelect;
+export type NewWorkerPairPerformance = typeof workerPairPerformance.$inferInsert;
+export type WorkerImpactMetric = typeof workerImpactMetrics.$inferSelect;
+export type NewWorkerImpactMetric = typeof workerImpactMetrics.$inferInsert;
+export type StaffingLevelMetric = typeof staffingLevelMetrics.$inferSelect;
+export type NewStaffingLevelMetric = typeof staffingLevelMetrics.$inferInsert;
+export type DayOfWeekMetric = typeof dayOfWeekMetrics.$inferSelect;
+export type NewDayOfWeekMetric = typeof dayOfWeekMetrics.$inferInsert;
+

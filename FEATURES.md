@@ -19,6 +19,7 @@ This document provides detailed information about TeamTime features, their imple
 13. [Group Chat & Threads](#group-chat--threads)
 14. [Shoutouts & Recognition](#shoutouts--recognition)
 15. [Metrics & Analytics Module](#metrics--analytics-module)
+16. [Staffing Analytics](#staffing-analytics-extended-correlation-analytics)
 
 ---
 
@@ -1498,6 +1499,136 @@ Two new tools for the Office Manager AI:
 
 **Export Script**:
 - `scripts/export-sales-worker-correlation.mjs` — CSV export
+
+---
+
+## Staffing Analytics (Extended Correlation Analytics)
+
+### Overview
+
+The Staffing Analytics module extends the Metrics system with advanced pattern analysis for optimizing team scheduling. It analyzes worker combinations, individual performance, and temporal patterns to provide data-driven staffing recommendations.
+
+### Key Features
+
+#### Worker Pair Analysis
+Identifies which employee combinations perform best together:
+- Tracks days employees worked together
+- Calculates average daily sales when paired
+- Ranks pairs by performance
+
+#### Worker Impact Metrics
+Measures individual worker contribution:
+- Sales when worker present vs absent
+- Statistical confidence scoring
+- Impact delta calculation
+
+#### Worker Efficiency Rankings
+Ranks employees by sales per hour:
+- Total hours worked
+- Attributed sales
+- $/hour efficiency metric
+
+#### Staffing Level Optimization
+Determines optimal team size:
+- Sales by worker count
+- Min/max/avg daily sales per level
+- Days observed for confidence
+
+#### Day of Week Patterns
+Identifies best/worst performing days:
+- Average sales by day
+- Average staffing by day
+- Retained earnings patterns
+
+#### AI-Powered Insights
+Automatically generates scheduling recommendations:
+- Best worker pairs to schedule together
+- Optimal staffing levels
+- Day-specific staffing suggestions
+
+### Admin Dashboard
+
+**URL**: `/admin/metrics/staffing-analytics`
+
+**Features**:
+- Date range filter with quick range buttons (7/30/90 days)
+- Key insights panel with prioritized recommendations
+- Best worker pairs table
+- Worker impact analysis table
+- Worker efficiency rankings
+- Staffing optimization bar chart
+- Day of week patterns chart
+- CSV export and recompute buttons
+
+### Office Manager AI Tool
+
+**`analyze_staffing_patterns`** — Analyze employee scheduling patterns
+
+**Parameters**:
+- `startDate` — Start date (YYYY-MM-DD, default: 30 days ago)
+- `endDate` — End date (YYYY-MM-DD, default: today)
+- `focusArea` — Focus on: pairs, efficiency, impact, staffing, dayOfWeek, or all
+- `userId` — Focus on specific user (optional)
+- `limit` — Results per category (default: 5)
+
+**Example Queries**:
+- "Who should I schedule together for best sales?"
+- "Which employees have the highest sales per hour?"
+- "What's our best day of the week for sales?"
+- "How many workers should we have on shift?"
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/metrics/staffing-analytics` | GET | Overview/summary |
+| `/api/metrics/staffing-analytics/pairs` | GET | Top worker pairs |
+| `/api/metrics/staffing-analytics/efficiency` | GET | Worker efficiency |
+| `/api/metrics/staffing-analytics/impact` | GET | Worker impact analysis |
+| `/api/metrics/staffing-analytics/staffing-levels` | GET | Staffing optimization |
+| `/api/metrics/staffing-analytics/day-of-week` | GET | Day patterns |
+| `/api/metrics/staffing-analytics/insights` | GET | Generated insights |
+| `/api/metrics/staffing-analytics/compute` | POST | Trigger recomputation |
+
+**Query Parameters**:
+- `startDate`, `endDate` — Date range (default: 30 days)
+- `limit` — Results limit
+- `minDays`, `minHours` — Minimum thresholds
+
+### Database Schema
+
+4 new tables for staffing analytics:
+
+| Table | Purpose |
+|-------|---------|
+| `worker_pair_performance` | Tracks pairs of employees working together |
+| `worker_impact_metrics` | Sales when worker present vs absent |
+| `staffing_level_metrics` | Sales by worker count |
+| `day_of_week_metrics` | Day-of-week sales patterns |
+
+### Cron Integration
+
+Staffing analytics computation runs weekly (Sundays) as part of the metrics cron:
+- Computes 90 days of historical data
+- Can be forced with `?force=true` parameter
+- Also triggered by recompute button in admin dashboard
+
+### Files
+
+**Service**:
+- `src/lib/server/services/staffing-analytics-service.ts` — Compute and query functions
+
+**AI Tool**:
+- `src/lib/ai/tools/office-manager/analyze-staffing-patterns.ts`
+
+**API Routes**:
+- `src/routes/api/metrics/staffing-analytics/` — 8 endpoints
+
+**Admin UI**:
+- `src/routes/(app)/admin/metrics/staffing-analytics/` — Dashboard
+
+**Cron**:
+- `src/routes/api/metrics/cron/+server.ts` — Updated with staffing analytics
 
 ---
 
