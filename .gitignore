@@ -55,3 +55,13 @@ scraper-imports/__pycache__/
 # Test files with API calls
 test-*.cjs
 test-*.js
+
+# Generated exports
+exports/
+
+# Test artifacts
+playwright-report/
+test-results/
+
+# User uploads (local only)
+static/uploads/

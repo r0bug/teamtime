@@ -169,3 +169,28 @@ CRON_SECRET                 # AI trigger authentication
 ## Timezone Handling
 
 All times are Pacific Time with DST support. Use utilities in `src/lib/server/utils/timezone.ts` for conversions.
+
+## Security Rules - CRITICAL
+
+### Files to NEVER Read or Commit
+- `.env`, `.env.local`, `.env.production` - Contains secrets
+- `.ai-keys.json` - AI provider API keys
+- Any `*.pem`, `*.key` files - Private keys/certificates
+
+### Git Safety
+- **ALWAYS** create new commits, never amend unless explicitly requested
+- **NEVER** force push to main/master
+- **NEVER** use `--no-verify` to skip pre-commit hooks
+- Run `npm run check` before committing TypeScript changes
+
+### Dangerous Operations - REQUIRE CONFIRMATION
+Stop and ask before:
+- Deleting database tables or running destructive migrations
+- Modifying production environment variables
+- Running `rm -rf` on any directory
+- Force pushing to any branch
+
+### Code Quality
+- Run `npm run check` to verify TypeScript before suggesting code is complete
+- Follow existing patterns in the codebase
+- Keep changes minimal - don't over-engineer or add unnecessary abstractions
