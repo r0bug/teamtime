@@ -219,7 +219,27 @@
 					{#if sortedData.length === 0}
 						<tr>
 							<td colspan="7" class="px-4 py-8 text-center text-gray-500">
-								No correlation data for this date range. Make sure there are both sales snapshots and time entries.
+								<div class="space-y-3">
+									<p>No correlation data for this date range.</p>
+									{#if data.debugInfo}
+										<div class="bg-gray-100 rounded-lg p-4 text-left max-w-md mx-auto">
+											<p class="font-medium text-gray-700 mb-2">Debug Info:</p>
+											<ul class="text-sm space-y-1">
+												<li>Sales snapshots found: <span class="font-mono">{data.debugInfo.snapshotsFound}</span></li>
+												<li>Time entries found: <span class="font-mono">{data.debugInfo.timeEntriesFound}</span></li>
+												<li>Dates with hours: <span class="font-mono">{data.debugInfo.uniqueDatesWithHours}</span></li>
+												<li>Vendors in snapshots: <span class="font-mono">{data.debugInfo.vendorsInSnapshots}</span></li>
+											</ul>
+											{#if data.debugInfo.snapshotsFound === 0}
+												<p class="mt-3 text-amber-600 text-sm">No sales snapshots found. Import sales data first.</p>
+											{:else if data.debugInfo.timeEntriesFound === 0}
+												<p class="mt-3 text-amber-600 text-sm">No time entries found. Employees need to clock in/out.</p>
+											{:else if data.debugInfo.uniqueDatesWithHours === 0}
+												<p class="mt-3 text-amber-600 text-sm">Time entries don't overlap with snapshot dates.</p>
+											{/if}
+										</div>
+									{/if}
+								</div>
 							</td>
 						</tr>
 					{:else}

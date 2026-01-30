@@ -318,6 +318,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		name
 	})).sort((a, b) => a.name.localeCompare(b.name));
 
+	// Debug info to help diagnose empty results
+	const debugInfo = {
+		snapshotsFound: snapshots.length,
+		timeEntriesFound: entriesResult.length,
+		uniqueDatesWithHours: hoursByDateUser.size,
+		vendorsInSnapshots: vendorSet.size
+	};
+
 	return {
 		startDate: startDate.toISOString().split('T')[0],
 		endDate: endDate.toISOString().split('T')[0],
@@ -326,7 +334,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		vendorFilter,
 		correlations,
 		employeeList,
-		vendorList
+		vendorList,
+		debugInfo
 	};
 };
 
