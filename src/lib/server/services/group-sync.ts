@@ -301,9 +301,9 @@ export async function getGroupByUserType(userTypeId: string): Promise<GroupWithD
 			isAutoSynced: groups.isAutoSynced,
 			color: groups.color,
 			isActive: groups.isActive,
-			memberCount: sql<number>`(
-				SELECT COUNT(*) FROM group_members WHERE group_id = ${groups.id}
-			)::int`
+			memberCount: sql<number>`COALESCE((
+				SELECT COUNT(*)::int FROM group_members gm WHERE gm.group_id = ${groups.id}
+			), 0)`
 		})
 		.from(groups)
 		.where(eq(groups.linkedUserTypeId, userTypeId))
@@ -326,9 +326,9 @@ export async function getUserGroups(userId: string): Promise<GroupWithDetails[]>
 			isAutoSynced: groups.isAutoSynced,
 			color: groups.color,
 			isActive: groups.isActive,
-			memberCount: sql<number>`(
-				SELECT COUNT(*) FROM group_members WHERE group_id = ${groups.id}
-			)::int`
+			memberCount: sql<number>`COALESCE((
+				SELECT COUNT(*)::int FROM group_members gm WHERE gm.group_id = ${groups.id}
+			), 0)`
 		})
 		.from(groups)
 		.innerJoin(groupMembers, eq(groups.id, groupMembers.groupId))
@@ -354,9 +354,9 @@ export async function getAllGroups(): Promise<GroupWithDetails[]> {
 			isAutoSynced: groups.isAutoSynced,
 			color: groups.color,
 			isActive: groups.isActive,
-			memberCount: sql<number>`(
-				SELECT COUNT(*) FROM group_members WHERE group_id = ${groups.id}
-			)::int`
+			memberCount: sql<number>`COALESCE((
+				SELECT COUNT(*)::int FROM group_members gm WHERE gm.group_id = ${groups.id}
+			), 0)`
 		})
 		.from(groups);
 
@@ -515,9 +515,9 @@ export async function getGroup(groupId: string): Promise<GroupWithDetails | null
 			isAutoSynced: groups.isAutoSynced,
 			color: groups.color,
 			isActive: groups.isActive,
-			memberCount: sql<number>`(
-				SELECT COUNT(*) FROM group_members WHERE group_id = ${groups.id}
-			)::int`
+			memberCount: sql<number>`COALESCE((
+				SELECT COUNT(*)::int FROM group_members gm WHERE gm.group_id = ${groups.id}
+			), 0)`
 		})
 		.from(groups)
 		.where(eq(groups.id, groupId))
