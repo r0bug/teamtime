@@ -277,7 +277,7 @@ export async function recordCollectedMetrics(
 		periodType: m.periodType,
 		periodStart: m.periodStart,
 		periodEnd: m.periodEnd,
-		source: m.source,
+		source: m.source as MetricSourceType,
 		sourceId: m.sourceId,
 		metadata: m.metadata
 	}));

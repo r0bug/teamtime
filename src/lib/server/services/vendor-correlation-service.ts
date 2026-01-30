@@ -689,8 +689,8 @@ export async function getVendorTrendsByEmployee(
 		vendorName: c.vendorName,
 		vendorSales: parseFloat(c.vendorSales),
 		vendorRetained: parseFloat(c.vendorRetained),
-		salesDeltaPct: parseFloat(c.salesDeltaPct),
-		confidenceScore: parseFloat(c.confidenceScore)
+		salesDeltaPct: parseFloat(c.salesDeltaPct ?? '0'),
+		confidenceScore: parseFloat(c.confidenceScore ?? '0')
 	}));
 }
 
@@ -740,8 +740,8 @@ export async function getEmployeeTrendsByVendor(
 		hoursWorked: parseFloat(c.hoursWorked),
 		vendorSales: parseFloat(c.vendorSales),
 		vendorRetained: parseFloat(c.vendorRetained),
-		salesDeltaPct: parseFloat(c.salesDeltaPct),
-		confidenceScore: parseFloat(c.confidenceScore)
+		salesDeltaPct: parseFloat(c.salesDeltaPct ?? '0'),
+		confidenceScore: parseFloat(c.confidenceScore ?? '0')
 	}));
 }
 

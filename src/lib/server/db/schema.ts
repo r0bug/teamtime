@@ -483,6 +483,7 @@ export const taskAssignmentRules = pgTable('task_assignment_rules', {
 		hoursIntoShift?: number; // For 'time_into_shift'
 		taskTemplateId?: string; // For 'task_completed' - which template triggers this
 		cronExpression?: string; // For 'schedule' - e.g., '0 9 * * 1' (Mon 9am)
+		triggerTime?: string; // For 'schedule' - simple time format e.g., '20:30'
 	}>().notNull().default({}),
 
 	// Conditions - when should the rule apply?
