@@ -161,7 +161,7 @@ export async function sendMessage(
 
 		// Detect consultation tier based on message content
 		const tierDetection = detectConsultationTier(userMessage, architectConfigData);
-		log.info('Consultation tier detected', { chatId, tier: tierDetection.tier, reason: tierDetection.reason, triggers: tierDetection.triggers });
+		log.info({ chatId, tier: tierDetection.tier, reason: tierDetection.reason, triggers: tierDetection.triggers }, 'Consultation tier detected');
 
 		// Perform consultation based on detected tier
 		let consultationResult: ConsultationResult;

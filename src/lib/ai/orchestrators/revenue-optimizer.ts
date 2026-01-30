@@ -18,6 +18,20 @@ interface RunConfig {
 	analysisWindow?: string; // e.g., "past 24 hours", "past week"
 }
 
+// Transform context summary to match aiActions contextSnapshot schema
+function buildContextSnapshot(summary: Record<string, number>): Record<string, number> {
+	return {
+		clockedIn: summary['attendance_totalClockedIn'] ?? 0,
+		expectedButMissing: summary['attendance_totalLateArrivals'] ?? 0,
+		overdueTasks: summary['tasks_totalOverdue'] ?? 0,
+		pendingApprovals: 0,
+		unassignedWithdrawals: 0,
+		activeMemories: summary['memory_totalMemories'] ?? 0,
+		activePolicies: summary['memory_totalPolicies'] ?? 0,
+		totalUsers: summary['users_totalActive'] ?? 0
+	};
+}
+
 export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRunResult> {
 	const runId = uuidv4();
 	const startedAt = new Date();
@@ -27,7 +41,7 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 	let totalCostCents = 0;
 	let contextTokens = 0;
 
-	log.info('Starting revenue optimizer run', { runId });
+	log.info({ runId }, 'Starting revenue optimizer run');
 
 	try {
 		// Get agent configuration
@@ -37,28 +51,29 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 			.where(eq(aiConfig.agent, AGENT));
 
 		if (agentConfigs.length === 0) {
-			log.info('No configuration found, skipping run', { runId });
+			log.info({ runId }, 'No configuration found, skipping run');
 			return createResult(runId, startedAt, contextTokens, actionsLogged, actionsExecuted, ['No configuration'], totalCostCents);
 		}
 
 		const agentConfig = agentConfigs[0];
 
 		if (!agentConfig.enabled && !config.forceRun) {
-			log.info('Agent disabled, skipping run', { runId, forceRun: config.forceRun });
+			log.info({ runId, forceRun: config.forceRun }, 'Agent disabled, skipping run');
 			return createResult(runId, startedAt, contextTokens, actionsLogged, actionsExecuted, ['Agent disabled'], totalCostCents);
 		}
 
 		const isDryRun = agentConfig.dryRunMode;
-		log.info('Run mode configured', { runId, mode: isDryRun ? 'DRY_RUN' : 'LIVE', provider: agentConfig.provider, model: agentConfig.model });
+		log.info({ runId, mode: isDryRun ? 'DRY_RUN' : 'LIVE', provider: agentConfig.provider, model: agentConfig.model }, 'Run mode configured');
 
 		// Assemble context - Revenue Optimizer needs more context for analysis
 		const context = await assembleContext(AGENT, agentConfig.maxTokensContext || 8000);
 		contextTokens = context.totalTokens;
-		log.info('Context assembled', { runId, contextTokens, modulesCount: context.modules.length });
+		log.info({ runId, contextTokens, modulesCount: context.modules.length }, 'Context assembled');
 
 		// Get LLM provider
 		const provider = getProvider(agentConfig.provider);
-		const tools = revenueOptimizerTools;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const tools: AITool<any, any>[] = revenueOptimizerTools;
 
 		// Build prompts
 		const systemPrompt = buildRevenueOptimizerSystemPrompt(
@@ -75,21 +90,17 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 			model: agentConfig.model,
 			systemPrompt,
 			userPrompt,
-			tools: tools.map(t => ({
-				name: t.name,
-				description: t.description,
-				parameters: t.parameters
-			})),
+			tools,
 			maxTokens: 2048, // More tokens for analysis
 			temperature: parseFloat(agentConfig.temperature?.toString() || '0.5') // Slightly higher for creative insights
 		});
 
-		log.info('LLM response received', { runId, finishReason: response.finishReason, toolCallsCount: response.toolCalls?.length || 0 });
+		log.info({ runId, finishReason: response.finishReason, toolCallsCount: response.toolCalls?.length || 0 }, 'LLM response received');
 
 		// Calculate cost - prefer provider-reported cost if available
 		const responseCost = response.usage.costCents ??
 			provider.estimateCost(response.usage.inputTokens, response.usage.outputTokens, agentConfig.model);
-		log.info('Response cost calculated', { runId, costCents: responseCost, costType: response.usage.costCents ? 'provider-reported' : 'estimated' });
+		log.info({ runId, costCents: responseCost, costType: response.usage.costCents ? 'provider-reported' : 'estimated' }, 'Response cost calculated');
 
 		// Log the analysis action
 		await db.insert(aiActions).values({
@@ -98,7 +109,7 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 			runStartedAt: startedAt,
 			provider: agentConfig.provider,
 			model: agentConfig.model,
-			contextSnapshot: context.summary,
+			contextSnapshot: buildContextSnapshot(context.summary),
 			contextTokens,
 			reasoning: response.content,
 			toolName: null,
@@ -116,7 +127,7 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 			for (const toolCall of response.toolCalls.slice(0, maxActions)) {
 				const tool = tools.find(t => t.name === toolCall.name);
 				if (!tool) {
-					log.warn('Unknown tool requested', { runId, toolName: toolCall.name });
+					log.warn({ runId, toolName: toolCall.name }, 'Unknown tool requested');
 					errors.push(`Unknown tool: ${toolCall.name}`);
 					continue;
 				}
@@ -124,7 +135,7 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 				// Validate parameters
 				const validation = tool.validate(toolCall.params);
 				if (!validation.valid) {
-					log.warn('Tool validation failed', { runId, toolName: toolCall.name, error: validation.error });
+					log.warn({ runId, toolName: toolCall.name, error: validation.error }, 'Tool validation failed');
 
 					await db.insert(aiActions).values({
 						agent: AGENT,
@@ -144,7 +155,7 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 				// Check cooldowns
 				const cooldownBlocked = await checkCooldown(tool, toolCall.params);
 				if (cooldownBlocked) {
-					log.info('Tool cooldown active', { runId, toolName: toolCall.name });
+					log.info({ runId, toolName: toolCall.name }, 'Tool cooldown active');
 
 					await db.insert(aiActions).values({
 						agent: AGENT,
@@ -175,7 +186,7 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 				try {
 					const result = await tool.execute(toolCall.params, execContext);
 					const resultFormatted = tool.formatResult(result);
-					log.info('Tool executed successfully', { runId, toolName: toolCall.name, result: resultFormatted });
+					log.info({ runId, toolName: toolCall.name, result: resultFormatted }, 'Tool executed successfully');
 
 					await db.insert(aiActions).values({
 						agent: AGENT,
@@ -201,7 +212,7 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 					}
 				} catch (error) {
 					const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-					log.error('Tool execution failed', { runId, toolName: toolCall.name, error: errorMsg });
+					log.error({ runId, toolName: toolCall.name, error: errorMsg }, 'Tool execution failed');
 					errors.push(`${toolCall.name}: ${errorMsg}`);
 
 					await db.insert(aiActions).values({

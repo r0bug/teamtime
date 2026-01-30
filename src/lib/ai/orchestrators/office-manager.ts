@@ -24,6 +24,20 @@ interface CompletedAction {
 	result: string;
 }
 
+// Transform context summary to match aiActions contextSnapshot schema
+function buildContextSnapshot(summary: Record<string, number>): Record<string, number> {
+	return {
+		clockedIn: summary['attendance_totalClockedIn'] ?? 0,
+		expectedButMissing: summary['attendance_totalLateArrivals'] ?? 0,
+		overdueTasks: summary['tasks_totalOverdue'] ?? 0,
+		pendingApprovals: 0, // Not tracked in current context
+		unassignedWithdrawals: 0, // Not tracked in current context
+		activeMemories: summary['memory_totalMemories'] ?? 0,
+		activePolicies: summary['memory_totalPolicies'] ?? 0,
+		totalUsers: summary['users_totalActive'] ?? 0
+	};
+}
+
 export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunResult> {
 	const runId = uuidv4();
 	const startedAt = new Date();
@@ -33,7 +47,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 	let totalCostCents = 0;
 	let contextTokens = 0;
 
-	log.info('Starting office manager run', { runId });
+	log.info({ runId }, 'Starting office manager run');
 
 	try {
 		// Get agent configuration
@@ -43,14 +57,14 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 			.where(eq(aiConfig.agent, AGENT));
 
 		if (agentConfigs.length === 0) {
-			log.info('No configuration found, skipping run', { runId });
+			log.info({ runId }, 'No configuration found, skipping run');
 			return createResult(runId, startedAt, contextTokens, actionsLogged, actionsExecuted, ['No configuration'], totalCostCents);
 		}
 
 		const agentConfig = agentConfigs[0];
 
 		if (!agentConfig.enabled && !config.forceRun) {
-			log.info('Agent disabled, skipping run', { runId, forceRun: config.forceRun });
+			log.info({ runId, forceRun: config.forceRun }, 'Agent disabled, skipping run');
 			return createResult(runId, startedAt, contextTokens, actionsLogged, actionsExecuted, ['Agent disabled'], totalCostCents);
 		}
 
@@ -68,7 +82,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 			const isOperationalDay = operationalDays.includes(currentDay);
 
 			if (!isWithinHours || !isOperationalDay) {
-				log.info('Outside operational hours, skipping run', {
+				log.info({
 					runId,
 					currentHour,
 					currentDay,
@@ -77,13 +91,13 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 					operationalDays,
 					isWithinHours,
 					isOperationalDay
-				});
+				}, 'Outside operational hours, skipping run');
 				return createResult(runId, startedAt, contextTokens, actionsLogged, actionsExecuted, ['Outside operational hours'], totalCostCents);
 			}
 		}
 
 		const isDryRun = agentConfig.dryRunMode;
-		log.info('Run mode configured', { runId, mode: isDryRun ? 'DRY_RUN' : 'LIVE', provider: agentConfig.provider, model: agentConfig.model });
+		log.info({ runId, mode: isDryRun ? 'DRY_RUN' : 'LIVE', provider: agentConfig.provider, model: agentConfig.model }, 'Run mode configured');
 
 		// Check for pending work from a previous run
 		const pendingWork = await checkAndResumePendingWork();
@@ -91,7 +105,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 		// Assemble context
 		const context = await assembleContext(AGENT, agentConfig.maxTokensContext);
 		contextTokens = context.totalTokens;
-		log.info('Context assembled', { runId, contextTokens, modulesCount: context.modules.length });
+		log.info({ runId, contextTokens, modulesCount: context.modules.length }, 'Context assembled');
 
 		// Get LLM provider
 		const provider = getProvider(agentConfig.provider);
@@ -112,12 +126,12 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 				pendingWork.remainingTasks as string[],
 				pendingWork.reason
 			);
-			log.info('Resuming pending work', {
+			log.info({
 				runId,
 				pendingWorkId: pendingWork.id,
 				remainingTasks: pendingWork.remainingTasks,
 				iteration: pendingWork.iterationCount
-			});
+			}, 'Resuming pending work');
 		} else {
 			userPrompt = buildOfficeManagerUserPrompt(formatContextForPrompt(context));
 		}
@@ -130,7 +144,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 		let currentPendingWorkId = pendingWork?.id;
 
 		while (shouldContinue && iteration <= maxIterations) {
-			log.info('Starting iteration', { runId, iteration, maxIterations });
+			log.info({ runId, iteration, maxIterations }, 'Starting iteration');
 
 			// Make LLM request
 			const response = await provider.complete({
@@ -142,7 +156,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 				temperature: parseFloat(agentConfig.temperature?.toString() || '0.3')
 			});
 
-			log.info('LLM response received', { runId, iteration, finishReason: response.finishReason, toolCallsCount: response.toolCalls?.length || 0 });
+			log.info({ runId, iteration, finishReason: response.finishReason, toolCallsCount: response.toolCalls?.length || 0 }, 'LLM response received');
 
 			// Calculate cost
 			const responseCost = response.usage.costCents ??
@@ -156,7 +170,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 				runStartedAt: startedAt,
 				provider: agentConfig.provider,
 				model: agentConfig.model,
-				contextSnapshot: iteration === 1 ? context.summary : `Iteration ${iteration}`,
+				contextSnapshot: iteration === 1 ? buildContextSnapshot(context.summary) : null,
 				contextTokens: iteration === 1 ? contextTokens : 0,
 				reasoning: response.content,
 				toolName: null,
@@ -177,7 +191,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 				for (const toolCall of response.toolCalls.slice(0, maxActions)) {
 					const tool = tools.find(t => t.name === toolCall.name);
 					if (!tool) {
-						log.warn('Unknown tool requested', { runId, toolName: toolCall.name });
+						log.warn({ runId, toolName: toolCall.name }, 'Unknown tool requested');
 						errors.push(`Unknown tool: ${toolCall.name}`);
 						continue;
 					}
@@ -185,7 +199,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 					// Validate parameters
 					const validation = tool.validate(toolCall.params);
 					if (!validation.valid) {
-						log.warn('Tool validation failed', { runId, toolName: toolCall.name, error: validation.error });
+						log.warn({ runId, toolName: toolCall.name, error: validation.error }, 'Tool validation failed');
 
 						await db.insert(aiActions).values({
 							agent: AGENT,
@@ -206,7 +220,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 					if (toolCall.name !== 'continue_work') {
 						const cooldownBlocked = await checkCooldown(tool, toolCall.params);
 						if (cooldownBlocked) {
-							log.info('Tool cooldown active', { runId, toolName: toolCall.name });
+							log.info({ runId, toolName: toolCall.name }, 'Tool cooldown active');
 
 							await db.insert(aiActions).values({
 								agent: AGENT,
@@ -238,7 +252,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 					try {
 						const result = await tool.execute(toolCall.params, execContext);
 						const resultFormatted = tool.formatResult(result);
-						log.info('Tool executed successfully', { runId, toolName: toolCall.name, result: resultFormatted });
+						log.info({ runId, toolName: toolCall.name, result: resultFormatted }, 'Tool executed successfully');
 
 						// Check if this is a continue_work signal
 						if (toolCall.name === 'continue_work') {
@@ -281,7 +295,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 						}
 					} catch (error) {
 						const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-						log.error('Tool execution failed', { runId, toolName: toolCall.name, error: errorMsg });
+						log.error({ runId, toolName: toolCall.name, error: errorMsg }, 'Tool execution failed');
 						errors.push(`${toolCall.name}: ${errorMsg}`);
 
 						await db.insert(aiActions).values({
@@ -327,7 +341,7 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 					}
 				} else {
 					// Hit iteration limit - save pending work for next cron run
-					log.info('Hit iteration limit, saving pending work for continuation', { runId, iteration, remainingTasks });
+					log.info({ runId, iteration, remainingTasks }, 'Hit iteration limit, saving pending work for continuation');
 
 					const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // Expire in 1 hour
 

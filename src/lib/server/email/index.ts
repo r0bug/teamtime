@@ -33,11 +33,11 @@ function getTransporter(): Transporter {
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
 	// In development or when SMTP is not configured, log the email instead of sending
 	if (!SMTP_HOST) {
-		log.info('Email (dev mode - no SMTP configured)', {
+		log.info({
 			to: options.to,
 			subject: options.subject,
 			bodyPreview: (options.text || options.html).substring(0, 100)
-		});
+		}, 'Email (dev mode - no SMTP configured)');
 		return true;
 	}
 
@@ -53,19 +53,19 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
 			text: options.text || options.html.replace(/<[^>]*>/g, '') // Strip HTML as fallback
 		});
 
-		log.info('Email sent successfully', {
+		log.info({
 			messageId: info.messageId,
 			to: options.to,
 			subject: options.subject
-		});
+		}, 'Email sent successfully');
 
 		return true;
 	} catch (error) {
-		log.error('Failed to send email', {
+		log.error({
 			error: error instanceof Error ? error.message : String(error),
 			to: options.to,
 			subject: options.subject
-		});
+		}, 'Failed to send email');
 		return false;
 	}
 }

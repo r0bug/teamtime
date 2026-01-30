@@ -5,12 +5,12 @@ import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('ai:anthropic');
 
-interface AnthropicMessage {
+export interface AnthropicMessage {
 	role: 'user' | 'assistant';
 	content: string | AnthropicContentBlock[];
 }
 
-interface AnthropicContentBlock {
+export interface AnthropicContentBlock {
 	type: 'text' | 'tool_use' | 'tool_result';
 	text?: string;
 	id?: string;

@@ -6,7 +6,8 @@ import { officeManagerTools } from './office-manager';
 import { revenueOptimizerTools } from './revenue-optimizer';
 import type { AITool, AIAgent } from '../types';
 
-export function getToolsForAgent(agent: AIAgent): AITool<unknown, unknown>[] {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getToolsForAgent(agent: AIAgent): AITool<any, any>[] {
 	switch (agent) {
 		case 'office_manager':
 			return officeManagerTools;

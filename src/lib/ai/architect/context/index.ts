@@ -16,7 +16,8 @@ export { mentatsContextProvider } from './mentats';
 export { filesContextProvider, setRequestedFiles, setSearchPattern, clearRequestedFiles, smartLoadFiles } from './files';
 
 // All architect context providers
-export const architectContextProviders: AIContextProvider[] = [
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const architectContextProviders: AIContextProvider<any>[] = [
 	specContextProvider,
 	schemaContextProvider,
 	codebaseContextProvider,
@@ -62,7 +63,7 @@ export async function assembleArchitectContext(
 
 		// Check if we have room
 		if (totalTokens + tokenEstimate > maxTokens) {
-			log.info('Skipping context module - would exceed token limit', { moduleId: provider.moduleId, tokenEstimate, currentTotal: totalTokens, maxTokens });
+			log.info({ moduleId: provider.moduleId, tokenEstimate, currentTotal: totalTokens, maxTokens }, 'Skipping context module - would exceed token limit');
 			continue;
 		}
 

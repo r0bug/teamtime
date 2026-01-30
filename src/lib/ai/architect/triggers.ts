@@ -242,7 +242,8 @@ export function analyzeConversationForEscalation(
 	const result = detectConsultationTier(allUserMessages, config);
 
 	// If conversation as a whole warrants deliberation, escalate
-	if (result.tier === 'deliberate' && currentTier !== 'deliberate') {
+	// Note: currentTier is already checked !== 'deliberate' via early return at line 205
+	if (result.tier === 'deliberate') {
 		return {
 			tier: 'deliberate',
 			reason: 'Conversation context warrants multi-model consultation',

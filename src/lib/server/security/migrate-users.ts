@@ -146,7 +146,7 @@ export async function migrateAllUsers(performedByUserId?: string): Promise<Migra
 				isNull(users.userTypeId)
 			));
 
-		log.info('Found users to migrate', { count: usersToMigrate.length });
+		log.info({ count: usersToMigrate.length }, 'Found users to migrate');
 
 		for (const user of usersToMigrate) {
 			try {
@@ -199,12 +199,12 @@ export async function migrateAllUsers(performedByUserId?: string): Promise<Migra
 			.set({ value: finalStatus, updatedAt: new Date() })
 			.where(eq(appSettings.key, 'user_migration_status'));
 
-		log.info('Migration completed', {
+		log.info({
 			migratedCount,
 			skippedCount,
 			errorCount: errors.length,
 			status: finalStatus
-		});
+		}, 'Migration completed');
 
 		return {
 			success: errors.length === 0,
@@ -216,7 +216,7 @@ export async function migrateAllUsers(performedByUserId?: string): Promise<Migra
 
 	} catch (error) {
 		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-		log.error('Fatal migration error', { error: errorMsg });
+		log.error({ error: errorMsg }, 'Fatal migration error');
 
 		await db
 			.update(appSettings)
@@ -250,7 +250,7 @@ export async function revertMigrationBatch(batchId: string, performedByUserId?: 
 				isNull(userMigrationBackup.revertedAt)
 			));
 
-		log.info('Reverting users from batch', { batchId, count: backupRecords.length });
+		log.info({ batchId, count: backupRecords.length }, 'Reverting users from batch');
 
 		for (const backup of backupRecords) {
 			try {
@@ -293,7 +293,7 @@ export async function revertMigrationBatch(batchId: string, performedByUserId?: 
 				.where(eq(appSettings.key, 'user_migration_status'));
 		}
 
-		log.info('Revert completed', { revertedCount, errorCount: errors.length });
+		log.info({ revertedCount, errorCount: errors.length }, 'Revert completed');
 
 		return {
 			success: errors.length === 0,
@@ -303,7 +303,7 @@ export async function revertMigrationBatch(batchId: string, performedByUserId?: 
 
 	} catch (error) {
 		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-		log.error('Revert fatal error', { error: errorMsg });
+		log.error({ error: errorMsg }, 'Revert fatal error');
 
 		return {
 			success: false,
@@ -375,7 +375,7 @@ export async function revertAllToDefault(performedByUserId?: string): Promise<Re
 			}
 		}
 
-		log.info('Reset to default completed', { revertedCount, errorCount: errors.length });
+		log.info({ revertedCount, errorCount: errors.length }, 'Reset to default completed');
 
 		return {
 			success: errors.length === 0,
@@ -385,7 +385,7 @@ export async function revertAllToDefault(performedByUserId?: string): Promise<Re
 
 	} catch (error) {
 		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-		log.error('Reset fatal error', { error: errorMsg });
+		log.error({ error: errorMsg }, 'Reset fatal error');
 
 		return {
 			success: false,

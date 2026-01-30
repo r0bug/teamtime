@@ -24,7 +24,7 @@ async function fetchWithRetry(
 		// Create an AbortController for timeout
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => {
-			log.warn('Request timeout, aborting', { timeoutMs, attempt });
+			log.warn({ timeoutMs, attempt }, 'Request timeout, aborting');
 			controller.abort();
 		}, timeoutMs);
 
@@ -47,7 +47,7 @@ async function fetchWithRetry(
 				}
 				waitSeconds = Math.min(waitSeconds, 10);
 
-				log.warn('Rate limited, waiting before retry', { waitSeconds, attempt, maxRetries });
+				log.warn({ waitSeconds, attempt, maxRetries }, 'Rate limited, waiting before retry');
 
 				// Wait before retrying
 				await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
@@ -227,7 +227,7 @@ async function callAnthropic(
 		// Check total time budget
 		const elapsedMs = Date.now() - startTime;
 		if (elapsedMs > MAX_TOTAL_TIME_MS) {
-			log.warn('Total time budget exceeded, forcing final response', { elapsedMs, maxTimeMs: MAX_TOTAL_TIME_MS });
+			log.warn({ elapsedMs, maxTimeMs: MAX_TOTAL_TIME_MS }, 'Total time budget exceeded, forcing final response');
 			break;
 		}
 
@@ -246,11 +246,11 @@ async function callAnthropic(
 		// Log estimated token usage
 		const bodyStr = JSON.stringify(body);
 		const estimatedTokens = Math.ceil(bodyStr.length / 4);
-		log.info('Tool iteration starting', { iteration: iterations, estimatedTokens, bodyChars: bodyStr.length });
+		log.info({ iteration: iterations, estimatedTokens, bodyChars: bodyStr.length }, 'Tool iteration starting');
 
 		// If we're way over the limit, bail early
 		if (estimatedTokens > 25000) {
-			log.error('Request too large, aborting', { estimatedTokens, maxTokens: 25000 });
+			log.error({ estimatedTokens, maxTokens: 25000 }, 'Request too large, aborting');
 			throw new Error('Request too large - context exceeds token limits. Try a simpler query.');
 		}
 
@@ -266,12 +266,12 @@ async function callAnthropic(
 
 		const data = await response.json();
 
-		log.info('Received LLM response', {
+		log.info({
 			stopReason: data.stop_reason,
 			contentBlocks: data.content?.length || 0,
 			inputTokens: data.usage?.input_tokens || 0,
 			outputTokens: data.usage?.output_tokens || 0
-		});
+		}, 'Received LLM response');
 
 		totalInputTokens += data.usage?.input_tokens || 0;
 		totalOutputTokens += data.usage?.output_tokens || 0;
@@ -283,28 +283,28 @@ async function callAnthropic(
 		for (const block of data.content) {
 			if (block.type === 'text') {
 				responseText += block.text;
-				log.debug('Text block received', { textLength: block.text?.length || 0 });
+				log.debug({ textLength: block.text?.length || 0 }, 'Text block received');
 			} else if (block.type === 'tool_use') {
 				toolUseBlocks.push({
 					id: block.id,
 					name: block.name,
 					input: block.input
 				});
-				log.info('Tool use requested', { toolName: block.name, toolId: block.id });
+				log.info({ toolName: block.name, toolId: block.id }, 'Tool use requested');
 			}
 		}
 
 		// Accumulate text content
 		finalContent += responseText;
-		log.info('Response processed', {
+		log.info({
 			totalContentLength: finalContent.length,
 			toolCallsThisIteration: toolUseBlocks.length
-		});
+		}, 'Response processed');
 
 		// Only exit if there are NO tool calls - ignore stop_reason when tools were used
 		// The model needs to continue after tool results are returned
 		if (toolUseBlocks.length === 0) {
-			log.info('No tool calls, exiting loop', { finalContentLength: finalContent.length });
+			log.info({ finalContentLength: finalContent.length }, 'No tool calls, exiting loop');
 			break;
 		}
 
@@ -351,10 +351,10 @@ async function callAnthropic(
 			content: toolResults
 		});
 
-		log.info('Tool results added to conversation', {
+		log.info({
 			messagesCount: messages.length,
 			toolResultsCount: toolResults.length
-		});
+		}, 'Tool results added to conversation');
 
 		// Throttle between iterations to avoid rate limits
 		log.debug('Pausing between tool iterations');
@@ -362,11 +362,11 @@ async function callAnthropic(
 	}
 
 	const totalElapsedMs = Date.now() - startTime;
-	log.info('Tool loop completed', {
+	log.info({
 		finalContentLength: finalContent.length,
 		iterations,
 		elapsedMs: totalElapsedMs
-	});
+	}, 'Tool loop completed');
 
 	// If we hit limits (iterations or time) and have little content,
 	// make one final call WITHOUT tools to force a text response
@@ -374,11 +374,11 @@ async function callAnthropic(
 	const needsFinalResponse = finalContent.length < 2000; // Increased threshold
 
 	if (hitLimits && needsFinalResponse) {
-		log.info('Hit limits with insufficient content, making final call without tools', {
+		log.info({
 			iterations,
 			elapsedMs: totalElapsedMs,
 			contentLength: finalContent.length
-		});
+		}, 'Hit limits with insufficient content, making final call without tools');
 
 		// Add a message asking for the final response
 		messages.push({
@@ -415,10 +415,10 @@ async function callAnthropic(
 					finalContent += block.text;
 				}
 			}
-			log.info('Final response added', { totalContentLength: finalContent.length });
+			log.info({ totalContentLength: finalContent.length }, 'Final response added');
 		} catch (error) {
 			const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-			log.error('Error getting final response', { error: errorMsg });
+			log.error({ error: errorMsg }, 'Error getting final response');
 		}
 	}
 
@@ -708,7 +708,7 @@ export async function deliberateConsultation(
 	let totalTokens = 0;
 
 	// Step 1: Primary recommendation
-	log.info('Deliberation step 1: Getting primary recommendation', { model: config.primary.model, provider: config.primary.provider });
+	log.info({ model: config.primary.model, provider: config.primary.provider }, 'Deliberation step 1: Getting primary recommendation');
 	const primaryResponse = await callLLM(
 		config.primary.provider,
 		config.primary.model,
@@ -724,7 +724,7 @@ export async function deliberateConsultation(
 	// Step 2: Peer review (try, but don't fail if unavailable)
 	let reviewResponse: LLMCallResult | undefined;
 	try {
-		log.info('Deliberation step 2: Getting peer review', { model: config.review.model, provider: config.review.provider });
+		log.info({ model: config.review.model, provider: config.review.provider }, 'Deliberation step 2: Getting peer review');
 		const reviewSystemPrompt = `You are a senior software architect providing peer review on another architect's recommendation. Be constructive, specific, and thorough. Focus on:
 - Potential issues or risks not addressed
 - Alternative approaches that might be better
@@ -754,7 +754,7 @@ Please review this architectural recommendation.`;
 		totalTokens += reviewResponse.inputTokens + reviewResponse.outputTokens;
 	} catch (error) {
 		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-		log.warn('Deliberation review step failed, continuing with primary only', { error: errorMsg });
+		log.warn({ error: errorMsg }, 'Deliberation review step failed, continuing with primary only');
 		// Fall back to standard consultation if review fails
 		return {
 			tier: 'deliberate',
@@ -772,7 +772,7 @@ Please review this architectural recommendation.`;
 	}
 
 	// Step 3: Synthesis
-	log.info('Deliberation step 3: Synthesizing responses', { model: config.synthesizer.model, provider: config.synthesizer.provider });
+	log.info({ model: config.synthesizer.model, provider: config.synthesizer.provider }, 'Deliberation step 3: Synthesizing responses');
 	const synthUserPrompt = `You are Ada, synthesizing two expert architectural opinions into a final recommendation.
 
 ## Original Question

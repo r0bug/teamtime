@@ -20,7 +20,7 @@
  * }
  */
 import { randomUUID } from 'crypto';
-import { anthropicProvider, streamWithToolResults, type ToolResult } from '../../providers/anthropic';
+import { anthropicProvider, streamWithToolResults, type ToolResult, type AnthropicMessage, type AnthropicContentBlock } from '../../providers/anthropic';
 import { officeManagerTools } from '../../tools/office-manager';
 import {
 	getChatSession,
@@ -544,11 +544,7 @@ Continue with any remaining tasks from the original request. If there are more i
 			model,
 			systemPrompt: OFFICE_MANAGER_SYSTEM_PROMPT,
 			userPrompt: continuationPrompt,
-			tools: tools.map(t => ({
-				name: t.name,
-				description: t.description,
-				parameters: t.parameters
-			})),
+			tools,
 			maxTokens: 4096,
 			temperature: 0.7
 		};
@@ -565,6 +561,10 @@ Continue with any remaining tasks from the original request. If there are more i
 		// Initial LLM call
 		let currentTurnToolCalls: ExecutedToolCall[] = [];
 		let currentTurnContent = '';
+
+		if (!anthropicProvider.stream) {
+			throw new Error('Streaming not supported by provider');
+		}
 
 		for await (const chunk of anthropicProvider.stream(request)) {
 			if (chunk.type === 'text' && chunk.content) {
@@ -663,12 +663,12 @@ Continue with any remaining tasks from the original request. If there are more i
 		allToolCalls.push(...currentTurnToolCalls);
 
 		// Multi-turn continuation (same logic as processUserMessageStream)
-		const messages: Array<{role: string; content: unknown}> = [];
+		const messages: AnthropicMessage[] = [];
 		while (needsContinuation && continuationTurn < MAX_CONTINUATION_TURNS) {
 			continuationTurn++;
 			needsContinuation = false;
 
-			const assistantContent: Array<{type: string; [key: string]: unknown}> = [];
+			const assistantContent: AnthropicContentBlock[] = [];
 			if (currentTurnContent) {
 				assistantContent.push({ type: 'text', text: currentTurnContent });
 			}
@@ -693,7 +693,7 @@ Continue with any remaining tasks from the original request. If there are more i
 			currentTurnToolCalls = [];
 			currentTurnContent = '';
 
-			const toolResultContentForHistory: Array<{type: string; [key: string]: unknown}> = toolResults.map(tr => ({
+			const toolResultContentForHistory: AnthropicContentBlock[] = toolResults.map(tr => ({
 				type: 'tool_result' as const,
 				tool_use_id: tr.toolUseId,
 				content: typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result),
@@ -952,7 +952,7 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 
 		// Track messages for multi-turn continuation
 		// For Anthropic API, we need: user message, then assistant response with tool_use
-		const messages: Array<{ role: 'user' | 'assistant'; content: string | Array<{type: string; [key: string]: unknown}> }> = [
+		const messages: AnthropicMessage[] = [
 			{ role: 'user', content: userPrompt }
 		];
 
@@ -1104,7 +1104,7 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 
 			// Build the assistant message with tool_use blocks for the previous turn
 			// IMPORTANT: Must include ALL tool_use blocks - Anthropic requires a tool_result for each one
-			const assistantContent: Array<{type: string; [key: string]: unknown}> = [];
+			const assistantContent: AnthropicContentBlock[] = [];
 			if (currentTurnContent) {
 				assistantContent.push({ type: 'text', text: currentTurnContent });
 			}
@@ -1135,7 +1135,7 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 			currentTurnContent = '';
 
 			// Build tool result content for adding to history after this turn completes
-			const toolResultContentForHistory: Array<{type: string; [key: string]: unknown}> = toolResults.map(tr => ({
+			const toolResultContentForHistory: AnthropicContentBlock[] = toolResults.map(tr => ({
 				type: 'tool_result' as const,
 				tool_use_id: tr.toolUseId,
 				content: typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result),
