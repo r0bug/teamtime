@@ -27,14 +27,8 @@ logger.error('This is an error message');
 // Test 2: Module-specific logger
 console.log('\n=== Test 2: Module-Specific Logger ===');
 const authLog = createLogger('auth');
-authLog.info('User authentication attempt', {
-	username: 'testuser',
-	ip: '127.0.0.1',
-});
-authLog.info('Authentication successful', {
-	userId: '12345',
-	role: 'user',
-});
+authLog.info({ username: 'testuser', ip: '127.0.0.1' }, 'User authentication attempt');
+authLog.info({ userId: '12345', role: 'user' }, 'Authentication successful');
 
 // Test 3: Error logging with stack trace
 console.log('\n=== Test 3: Error Logging ===');
@@ -60,34 +54,37 @@ const reqLog = createRequestLogger('api', requestId, {
 
 reqLog.info('Request received');
 reqLog.debug('Processing request');
-reqLog.info('Request completed', {
-	statusCode: 200,
-	responseTime: 42,
-});
+reqLog.info({ statusCode: 200, responseTime: 42 }, 'Request completed');
 
 // Test 5: Structured data logging
 console.log('\n=== Test 5: Structured Data Logging ===');
 const inventoryLog = createLogger('inventory');
-inventoryLog.info('Inventory update', {
-	operation: 'stock_check',
-	items: [
-		{ sku: 'ITEM-001', quantity: 100, location: 'Warehouse A' },
-		{ sku: 'ITEM-002', quantity: 50, location: 'Warehouse B' },
-	],
-	totalValue: 15000,
-	timestamp: new Date().toISOString(),
-});
+inventoryLog.info(
+	{
+		operation: 'stock_check',
+		items: [
+			{ sku: 'ITEM-001', quantity: 100, location: 'Warehouse A' },
+			{ sku: 'ITEM-002', quantity: 50, location: 'Warehouse B' },
+		],
+		totalValue: 15000,
+		timestamp: new Date().toISOString(),
+	},
+	'Inventory update'
+);
 
 // Test 6: Sensitive data redaction
 console.log('\n=== Test 6: Sensitive Data Redaction ===');
 const securityLog = createLogger('security');
-securityLog.info('Login attempt', {
-	username: 'testuser',
-	password: 'this-should-be-redacted', // Should be redacted
-	token: 'secret-token-12345', // Should be redacted
-	apiKey: 'my-api-key', // Should be redacted
-	email: 'test@example.com', // Should NOT be redacted
-});
+securityLog.info(
+	{
+		username: 'testuser',
+		password: 'this-should-be-redacted', // Should be redacted
+		token: 'secret-token-12345', // Should be redacted
+		apiKey: 'my-api-key', // Should be redacted
+		email: 'test@example.com', // Should NOT be redacted
+	},
+	'Login attempt'
+);
 
 // Test 7: Child logger context
 console.log('\n=== Test 7: Child Logger Context ===');
@@ -99,7 +96,7 @@ const operationLog = serviceLog.child({
 
 operationLog.info('Starting user creation');
 operationLog.debug('Validating user data');
-operationLog.info('User created successfully', { userId: 'new-user-123' });
+operationLog.info({ userId: 'new-user-123' }, 'User created successfully');
 
 // Test 8: Performance logging
 console.log('\n=== Test 8: Performance Logging ===');
@@ -108,20 +105,13 @@ async function performanceTest() {
 	const operationId = crypto.randomUUID();
 	const startTime = Date.now();
 
-	perfLog.info('Operation started', {
-		operationId,
-		operation: 'data-processing',
-	});
+	perfLog.info({ operationId, operation: 'data-processing' }, 'Operation started');
 
 	// Simulate async work
 	await new Promise((resolve) => setTimeout(resolve, 100));
 
 	const duration = Date.now() - startTime;
-	perfLog.info('Operation completed', {
-		operationId,
-		duration,
-		status: 'success',
-	});
+	perfLog.info({ operationId, duration, status: 'success' }, 'Operation completed');
 }
 
 await performanceTest();

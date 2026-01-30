@@ -21,9 +21,9 @@ import {
 export function example1_basicLogging() {
 	// Use the root logger for general application logs
 	logger.info('Application starting...');
-	logger.debug('Debug information', { config: { port: 5173 } });
+	logger.debug({ config: { port: 5173 } }, 'Debug information');
 	logger.warn('This is a warning message');
-	logger.error('An error occurred', { errorCode: 500 });
+	logger.error({ errorCode: 500 }, 'An error occurred');
 }
 
 // ============================================================================
@@ -34,13 +34,16 @@ export function example2_moduleLogger() {
 	// Create a logger for a specific module
 	const authLog = createLogger('auth');
 
-	authLog.info('User login attempt', { username: 'john.doe', ip: '192.168.1.1' });
-	authLog.info('User authenticated successfully', { userId: '123', role: 'admin' });
-	authLog.warn('Failed login attempt', {
-		username: 'jane.doe',
-		reason: 'invalid_password',
-		attemptCount: 3,
-	});
+	authLog.info({ username: 'john.doe', ip: '192.168.1.1' }, 'User login attempt');
+	authLog.info({ userId: '123', role: 'admin' }, 'User authenticated successfully');
+	authLog.warn(
+		{
+			username: 'jane.doe',
+			reason: 'invalid_password',
+			attemptCount: 3,
+		},
+		'Failed login attempt'
+	);
 }
 
 // ============================================================================
@@ -79,13 +82,16 @@ export function example4_requestLogging() {
 	log.info('Request received');
 
 	// Process request...
-	log.debug('Fetching user from database', { userId: '123' });
+	log.debug({ userId: '123' }, 'Fetching user from database');
 
 	// Log response
-	log.info('Request completed', {
-		statusCode: 200,
-		responseTime: 45, // ms
-	});
+	log.info(
+		{
+			statusCode: 200,
+			responseTime: 45, // ms
+		},
+		'Request completed'
+	);
 }
 
 // ============================================================================
@@ -96,15 +102,18 @@ export function example5_structuredLogging() {
 	const inventoryLog = createLogger('inventory');
 
 	// Log complex structured data
-	inventoryLog.info('Inventory updated', {
-		operation: 'stock_replenishment',
-		items: [
-			{ id: 'ITEM-001', quantity: 50, location: 'Warehouse A' },
-			{ id: 'ITEM-002', quantity: 30, location: 'Warehouse B' },
-		],
-		totalValue: 12500.0,
-		timestamp: new Date().toISOString(),
-	});
+	inventoryLog.info(
+		{
+			operation: 'stock_replenishment',
+			items: [
+				{ id: 'ITEM-001', quantity: 50, location: 'Warehouse A' },
+				{ id: 'ITEM-002', quantity: 30, location: 'Warehouse B' },
+			],
+			totalValue: 12500.0,
+			timestamp: new Date().toISOString(),
+		},
+		'Inventory updated'
+	);
 }
 
 // ============================================================================
@@ -117,26 +126,32 @@ export async function example6_performanceMonitoring() {
 
 	const startTime = Date.now();
 
-	perfLog.info('Operation started', { operationId, operation: 'data_processing' });
+	perfLog.info({ operationId, operation: 'data_processing' }, 'Operation started');
 
 	try {
 		// Simulate async operation
 		await new Promise((resolve) => setTimeout(resolve, 100));
 
 		const duration = Date.now() - startTime;
-		perfLog.info('Operation completed', {
-			operationId,
-			duration,
-			status: 'success',
-		});
+		perfLog.info(
+			{
+				operationId,
+				duration,
+				status: 'success',
+			},
+			'Operation completed'
+		);
 	} catch (err) {
 		const duration = Date.now() - startTime;
-		perfLog.error('Operation failed', {
-			operationId,
-			duration,
-			status: 'failure',
-			error: (err as Error).message,
-		});
+		perfLog.error(
+			{
+				operationId,
+				duration,
+				status: 'failure',
+				error: (err as Error).message,
+			},
+			'Operation failed'
+		);
 	}
 }
 
@@ -148,16 +163,19 @@ export function example7_conditionalLogging() {
 	const debugLog = createLogger('debug-example');
 
 	// These will only appear if log level is set to 'debug' or 'trace'
-	debugLog.debug('Detailed debugging information', {
-		variables: { x: 10, y: 20 },
-		state: 'processing',
-	});
+	debugLog.debug(
+		{
+			variables: { x: 10, y: 20 },
+			state: 'processing',
+		},
+		'Detailed debugging information'
+	);
 
 	// Check if debug is enabled before expensive operations
 	if (debugLog.level === LogLevels.DEBUG || debugLog.level === LogLevels.TRACE) {
 		// Only perform this expensive operation if we're actually going to log it
 		const expensiveDebugData = generateExpensiveDebugData();
-		debugLog.debug('Expensive debug data', expensiveDebugData);
+		debugLog.debug(expensiveDebugData, 'Expensive debug data');
 	}
 }
 
@@ -181,7 +199,7 @@ export async function load({ params, request }: { params: any; request: Request 
 	try {
 		// Fetch data
 		const data = await fetchData();
-		log.info('Data loaded successfully', { recordCount: data.length });
+		log.info({ recordCount: data.length }, 'Data loaded successfully');
 
 		return { data };
 	} catch (err) {
@@ -208,12 +226,12 @@ export async function POST({ request }: { request: Request }) {
 
 	try {
 		const body = await request.json();
-		log.debug('Request body parsed', { bodySize: JSON.stringify(body).length });
+		log.debug({ bodySize: JSON.stringify(body).length }, 'Request body parsed');
 
 		// Process request
 		const result = await processRequest(body);
 
-		log.info('Request processed successfully', { resultId: result.id });
+		log.info({ resultId: result.id }, 'Request processed successfully');
 
 		return new Response(JSON.stringify(result), {
 			status: 200,
@@ -244,16 +262,19 @@ export class UserService {
 	private log = createLogger('user-service');
 
 	async createUser(userData: { name: string; email: string }) {
-		this.log.info('Creating new user', { email: userData.email });
+		this.log.info({ email: userData.email }, 'Creating new user');
 
 		try {
 			// Create user in database
 			const user = await this.saveToDatabase(userData);
 
-			this.log.info('User created successfully', {
-				userId: user.id,
-				email: user.email,
-			});
+			this.log.info(
+				{
+					userId: user.id,
+					email: user.email,
+				},
+				'User created successfully'
+			);
 
 			return user;
 		} catch (err) {
@@ -263,12 +284,12 @@ export class UserService {
 	}
 
 	async deleteUser(userId: string) {
-		this.log.warn('Deleting user', { userId });
+		this.log.warn({ userId }, 'Deleting user');
 
 		try {
 			await this.deleteFromDatabase(userId);
 
-			this.log.info('User deleted', { userId });
+			this.log.info({ userId }, 'User deleted');
 		} catch (err) {
 			logError(this.log, err as Error, { userId });
 			throw err;
@@ -292,28 +313,37 @@ export function example11_securityLogging() {
 	const secLog = createLogger('security');
 
 	// Log security events
-	secLog.warn('Suspicious activity detected', {
-		event: 'multiple_failed_logins',
-		username: 'admin',
-		ip: '192.168.1.100',
-		attemptCount: 5,
-		timeWindow: '5 minutes',
-	});
+	secLog.warn(
+		{
+			event: 'multiple_failed_logins',
+			username: 'admin',
+			ip: '192.168.1.100',
+			attemptCount: 5,
+			timeWindow: '5 minutes',
+		},
+		'Suspicious activity detected'
+	);
 
-	secLog.info('Permission granted', {
-		userId: '123',
-		resource: '/admin/settings',
-		action: 'update',
-		timestamp: new Date().toISOString(),
-	});
+	secLog.info(
+		{
+			userId: '123',
+			resource: '/admin/settings',
+			action: 'update',
+			timestamp: new Date().toISOString(),
+		},
+		'Permission granted'
+	);
 
-	secLog.error('Security violation', {
-		event: 'unauthorized_access_attempt',
-		userId: '456',
-		resource: '/admin/users',
-		action: 'delete',
-		blocked: true,
-	});
+	secLog.error(
+		{
+			event: 'unauthorized_access_attempt',
+			userId: '456',
+			resource: '/admin/users',
+			action: 'delete',
+			blocked: true,
+		},
+		'Security violation'
+	);
 }
 
 // ============================================================================
@@ -324,30 +354,39 @@ export async function example12_backgroundJob() {
 	const jobLog = createLogger('background-job');
 	const jobId = crypto.randomUUID();
 
-	jobLog.info('Job started', {
-		jobId,
-		jobType: 'inventory-sync',
-		scheduledTime: new Date().toISOString(),
-	});
+	jobLog.info(
+		{
+			jobId,
+			jobType: 'inventory-sync',
+			scheduledTime: new Date().toISOString(),
+		},
+		'Job started'
+	);
 
 	try {
 		// Process job
 		const results = await runJob();
 
-		jobLog.info('Job completed', {
-			jobId,
-			status: 'success',
-			itemsProcessed: results.processed,
-			duration: results.duration,
-		});
+		jobLog.info(
+			{
+				jobId,
+				status: 'success',
+				itemsProcessed: results.processed,
+				duration: results.duration,
+			},
+			'Job completed'
+		);
 	} catch (err) {
 		logError(jobLog, err as Error, { jobId, jobType: 'inventory-sync' });
 
-		jobLog.error('Job failed', {
-			jobId,
-			status: 'failed',
-			willRetry: true,
-		});
+		jobLog.error(
+			{
+				jobId,
+				status: 'failed',
+				willRetry: true,
+			},
+			'Job failed'
+		);
 	}
 }
 
