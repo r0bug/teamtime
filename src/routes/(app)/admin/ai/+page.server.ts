@@ -241,7 +241,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Office Manager settings saved' };
 		} catch (error) {
-			log.error('Error saving Office Manager config', { error, enabled, provider, model });
+			log.error({ error, enabled, provider, model }, 'Error saving Office Manager config');
 			return fail(500, { error: 'Failed to save settings' });
 		}
 	},
@@ -296,7 +296,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Revenue Optimizer settings saved' };
 		} catch (error) {
-			log.error('Error saving Revenue Optimizer config', { error, enabled, provider, model });
+			log.error({ error, enabled, provider, model }, 'Error saving Revenue Optimizer config');
 			return fail(500, { error: 'Failed to save settings' });
 		}
 	},
@@ -326,7 +326,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Policy added' };
 		} catch (error) {
-			log.error('Error adding policy', { error, contentLength: content.trim().length, priority });
+			log.error({ error, contentLength: content.trim().length, priority }, 'Error adding policy');
 			return fail(500, { error: 'Failed to add policy' });
 		}
 	},
@@ -378,7 +378,7 @@ export const actions: Actions = {
 
 			return { success: true, message: `${toolName} configuration updated` };
 		} catch (error) {
-			log.error('Error updating tool config', { error, agent, toolName });
+			log.error({ error, agent, toolName }, 'Error updating tool config');
 			return fail(500, { error: 'Failed to update tool configuration' });
 		}
 	},
@@ -411,7 +411,7 @@ export const actions: Actions = {
 
 			return { success: true, message: `Keyword "${keyword}" added to ${toolName}` };
 		} catch (error) {
-			log.error('Error adding tool keyword', { error, agent, toolName, keyword });
+			log.error({ error, agent, toolName, keyword }, 'Error adding tool keyword');
 			return fail(500, { error: 'Failed to add keyword' });
 		}
 	},
@@ -435,7 +435,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Keyword removed' };
 		} catch (error) {
-			log.error('Error removing tool keyword', { error, keywordId });
+			log.error({ error, keywordId }, 'Error removing tool keyword');
 			return fail(500, { error: 'Failed to remove keyword' });
 		}
 	},
@@ -467,7 +467,7 @@ export const actions: Actions = {
 
 			return { success: true, message: `Context keyword "${keyword}" added` };
 		} catch (error) {
-			log.error('Error adding context keyword', { error, agent, providerId, keyword });
+			log.error({ error, agent, providerId, keyword }, 'Error adding context keyword');
 			return fail(500, { error: 'Failed to add keyword' });
 		}
 	},
@@ -491,7 +491,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Keyword removed' };
 		} catch (error) {
-			log.error('Error removing context keyword', { error, keywordId });
+			log.error({ error, keywordId }, 'Error removing context keyword');
 			return fail(500, { error: 'Failed to remove keyword' });
 		}
 	},
@@ -544,7 +544,7 @@ export const actions: Actions = {
 
 			return { success: true, message: 'Context provider configuration updated' };
 		} catch (error) {
-			log.error('Error updating context config', { error, agent, providerId });
+			log.error({ error, agent, providerId }, 'Error updating context config');
 			return fail(500, { error: 'Failed to update context configuration' });
 		}
 	}
