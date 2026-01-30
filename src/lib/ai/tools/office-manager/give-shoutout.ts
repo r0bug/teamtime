@@ -184,7 +184,7 @@ export const giveShoutoutTool: AITool<GiveShoutoutParams, GiveShoutoutResult> = 
 				pointsAwarded: shoutout.pointsAwarded
 			};
 		} catch (error) {
-			log.error('Give shoutout tool error', { error });
+			log.error({ error }, 'Give shoutout tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

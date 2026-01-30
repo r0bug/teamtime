@@ -194,7 +194,7 @@ export const sendRecommendationTool: AITool<SendRecommendationParams, SendRecomm
 				messagesSent
 			};
 		} catch (error) {
-			log.error('Send recommendation tool error', { error });
+			log.error({ error }, 'Send recommendation tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

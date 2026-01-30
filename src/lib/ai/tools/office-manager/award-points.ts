@@ -137,7 +137,7 @@ export const awardPointsTool: AITool<AwardPointsParams, AwardPointsResult> = {
 				levelUp: result.levelUp
 			};
 		} catch (error) {
-			log.error('Award points tool error', { error });
+			log.error({ error }, 'Award points tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

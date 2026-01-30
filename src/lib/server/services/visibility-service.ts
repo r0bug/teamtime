@@ -444,7 +444,7 @@ export async function getAllGroups(): Promise<(VisibilityGroup & { memberCount: 
  * Get group members
  */
 export async function getGroupMembers(groupId: string): Promise<{ userId: string; name: string; isLeader: boolean }[]> {
-	return db
+	const result = await db
 		.select({
 			userId: visibilityGroupMembers.userId,
 			name: users.name,
@@ -454,6 +454,9 @@ export async function getGroupMembers(groupId: string): Promise<{ userId: string
 		.innerJoin(users, eq(visibilityGroupMembers.userId, users.id))
 		.where(eq(visibilityGroupMembers.groupId, groupId))
 		.orderBy(desc(visibilityGroupMembers.isLeader), users.name);
+
+	// Filter out any null userIds (shouldn't happen due to innerJoin but TypeScript requires it)
+	return result.filter((r): r is { userId: string; name: string; isLeader: boolean } => r.userId !== null);
 }
 
 /**

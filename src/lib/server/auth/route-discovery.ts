@@ -25,7 +25,7 @@ export async function discoverRoutes(): Promise<DiscoveredRoute[]> {
 	const routes: DiscoveredRoute[] = [];
 
 	if (!fs.existsSync(routesDir)) {
-		log.warn('Routes directory not found', { routesDir });
+		log.warn({ routesDir }, 'Routes directory not found');
 		return routes;
 	}
 
@@ -137,10 +137,10 @@ async function extractActions(filePath: string): Promise<string[]> {
 			}
 		}
 	} catch (error) {
-		log.warn('Error parsing file for actions', {
+		log.warn({
 			filePath,
 			error: error instanceof Error ? error.message : String(error)
-		});
+		}, 'Error parsing file for actions');
 	}
 
 	return actions;

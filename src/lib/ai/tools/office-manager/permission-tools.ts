@@ -94,7 +94,7 @@ export const viewUserPermissionsTool: AITool<ViewPermissionsParams, ViewPermissi
 				}
 			};
 		} catch (error) {
-			log.error('View user permissions tool error', { error });
+			log.error({ error }, 'View user permissions tool error');
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},
@@ -216,7 +216,7 @@ export const grantTemporaryPermissionTool: AITool<GrantPermissionParams, GrantPe
 
 			return result;
 		} catch (error) {
-			log.error('Grant temporary permission tool error', { error });
+			log.error({ error }, 'Grant temporary permission tool error');
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},
@@ -329,7 +329,7 @@ export const changeUserTypeTool: AITool<ChangeUserTypeParams, ChangeUserTypeResu
 				...result
 			};
 		} catch (error) {
-			log.error('Change user type temporarily tool error', { error });
+			log.error({ error }, 'Change user type temporarily tool error');
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},
@@ -397,7 +397,7 @@ export const rollbackPermissionChangeTool: AITool<RollbackParams, RollbackResult
 			const result = await rollbackPermissionChange(params.changeId);
 			return result;
 		} catch (error) {
-			log.error('Rollback permission change tool error', { error });
+			log.error({ error }, 'Rollback permission change tool error');
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},
@@ -446,7 +446,7 @@ export const listGrantableUserTypesTool: AITool<ListUserTypesParams, ListUserTyp
 			const types = await getGrantableUserTypes();
 			return { success: true, userTypes: types };
 		} catch (error) {
-			log.error('List grantable user types tool error', { error });
+			log.error({ error }, 'List grantable user types tool error');
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},
@@ -510,7 +510,7 @@ export const listGrantablePermissionsTool: AITool<ListPermissionsParams, ListPer
 			}
 			return { success: true, permissions: perms };
 		} catch (error) {
-			log.error('List grantable permissions tool error', { error });
+			log.error({ error }, 'List grantable permissions tool error');
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},
@@ -591,7 +591,7 @@ export const viewPendingApprovalsTool: AITool<ViewPendingParams, ViewPendingResu
 				}))
 			};
 		} catch (error) {
-			log.error('View pending approvals tool error', { error });
+			log.error({ error }, 'View pending approvals tool error');
 			return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 		}
 	},

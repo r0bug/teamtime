@@ -538,7 +538,7 @@ export async function awardTaskPoints(params: {
 			tasksCompleted: sql`${userStats.tasksCompleted} + 1`,
 			tasksOnTime: breakdown.early || breakdown.onTime
 				? sql`${userStats.tasksOnTime} + 1`
-				: userStats.tasksOnTime,
+				: sql`${userStats.tasksOnTime}`,
 			updatedAt: new Date()
 		})
 		.where(eq(userStats.userId, params.userId));

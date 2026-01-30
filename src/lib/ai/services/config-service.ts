@@ -91,7 +91,7 @@ class AIConfigService {
 
 			// Build resolved configs
 			const resolved: AIToolConfigResolved[] = toolDefinitions.map(tool => {
-				const dbConfig = dbConfigs.find(c => c.toolName === tool.name);
+				const dbConfig = dbConfigs.find(c => c.toolName === tool.name) ?? null;
 				const toolKeywords = dbKeywords
 					.filter(k => k.toolName === tool.name)
 					.map(k => k.keyword);

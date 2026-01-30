@@ -107,7 +107,7 @@ export const processInventoryPhotosTool: AITool<ProcessInventoryPhotosParams, Pr
 				itemCount: drop[0].itemCount || 0
 			};
 		} catch (error) {
-			log.error('Process inventory photos tool error', { error });
+			log.error({ error }, 'Process inventory photos tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

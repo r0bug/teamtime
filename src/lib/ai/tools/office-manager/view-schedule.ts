@@ -362,7 +362,7 @@ export const viewScheduleTool: AITool<ViewScheduleParams, ViewScheduleResult> = 
 				tomorrowPreview
 			};
 		} catch (error) {
-			log.error('View schedule tool error', { error });
+			log.error({ error }, 'View schedule tool error');
 			return {
 				success: false,
 				date: params.date || toPacificDateString(new Date()),

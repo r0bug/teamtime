@@ -308,7 +308,7 @@ export async function grantTemporaryPermission(request: PermissionChangeRequest)
 		action: approval.required ? 'permission_change_requested' : 'permission_change_applied',
 		entityType: 'temporary_permission',
 		entityId: change.id,
-		details: {
+		afterData: {
 			changeType: request.changeType,
 			targetUserId: request.userId,
 			permissionId: request.permissionId,
@@ -395,7 +395,7 @@ export async function rollbackPermissionChange(changeId: string, rolledBackByUse
 		action: 'permission_change_rolled_back',
 		entityType: 'temporary_permission',
 		entityId: changeId,
-		details: { changeType: c.changeType, targetUserId: c.userId }
+		afterData: { changeType: c.changeType, targetUserId: c.userId }
 	});
 
 	return { success: true, changeId };
@@ -450,7 +450,7 @@ export async function approvePermissionChange(changeId: string, approvedByUserId
 		action: 'permission_change_approved',
 		entityType: 'temporary_permission',
 		entityId: changeId,
-		details: {}
+		afterData: {}
 	});
 
 	return { success: true, changeId };
@@ -489,7 +489,7 @@ export async function rejectPermissionChange(changeId: string, rejectedByUserId:
 		action: 'permission_change_rejected',
 		entityType: 'temporary_permission',
 		entityId: changeId,
-		details: { reason }
+		afterData: { reason }
 	});
 
 	return { success: true, changeId };
@@ -638,7 +638,7 @@ export async function expireTemporaryPermissions(): Promise<number> {
 			action: 'permission_change_expired',
 			entityType: 'temporary_permission',
 			entityId: e.id,
-			details: { changeType: e.changeType, targetUserId: e.userId }
+			afterData: { changeType: e.changeType, targetUserId: e.userId }
 		});
 	}
 
@@ -659,8 +659,15 @@ export async function getGrantableUserTypes(): Promise<{ id: string; name: strin
 		.from(userTypes)
 		.where(eq(userTypes.isActive, true));
 
-	// Filter out protected types
-	return types.filter(t => !PROTECTED_USER_TYPES.includes(t.name));
+	// Filter out protected types and convert null to undefined
+	return types
+		.filter(t => !PROTECTED_USER_TYPES.includes(t.name))
+		.map(t => ({
+			id: t.id,
+			name: t.name,
+			description: t.description ?? undefined,
+			basedOnRole: t.basedOnRole ?? undefined
+		}));
 }
 
 /**
@@ -676,6 +683,13 @@ export async function getGrantablePermissions(): Promise<{ id: string; name: str
 		})
 		.from(permissions);
 
-	// Filter out sensitive modules (they'll require approval)
-	return perms.filter(p => !SENSITIVE_PERMISSION_MODULES.includes(p.module));
+	// Filter out sensitive modules (they'll require approval) and convert null to undefined
+	return perms
+		.filter(p => !SENSITIVE_PERMISSION_MODULES.includes(p.module))
+		.map(p => ({
+			id: p.id,
+			name: p.name,
+			module: p.module,
+			description: p.description ?? undefined
+		}));
 }

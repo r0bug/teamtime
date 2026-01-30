@@ -224,7 +224,7 @@ export const createCashCountTaskTool: AITool<CreateCashCountTaskParams, CreateCa
 				dueAt: dueAt.toISOString()
 			};
 		} catch (error) {
-			log.error('Create cash count task tool error', { error });
+			log.error({ error }, 'Create cash count task tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

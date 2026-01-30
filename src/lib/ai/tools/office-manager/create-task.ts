@@ -148,7 +148,7 @@ export const createTaskTool: AITool<CreateTaskParams, CreateTaskResult> = {
 				assigneeName
 			};
 		} catch (error) {
-			log.error('Create task tool error', { error });
+			log.error({ error }, 'Create task tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

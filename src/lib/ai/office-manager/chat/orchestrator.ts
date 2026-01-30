@@ -268,7 +268,7 @@ ${userMessage}`;
 		for (const toolCall of llmResponse.toolCalls) {
 			const tool = tools.find(t => t.name === toolCall.name);
 			if (!tool) {
-				log.warn('Unknown tool requested in chat', { chatId, toolName: toolCall.name });
+				log.warn({ chatId, toolName: toolCall.name }, 'Unknown tool requested in chat');
 				continue;
 			}
 

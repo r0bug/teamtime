@@ -182,7 +182,7 @@ Use this to understand business performance and identify optimization opportunit
 					return { ...baseResult, success: false, error: 'Unknown analysis type' };
 			}
 		} catch (error) {
-			log.error('Analyze sales patterns error', { error });
+			log.error({ error }, 'Analyze sales patterns error');
 			return {
 				success: false,
 				analysisType: params.analysisType,
@@ -259,7 +259,7 @@ async function analyzeDailySummary(startDate: string, endDate: string, baseResul
 	// Dedupe to latest per day
 	const dailySnapshots = new Map<string, typeof snapshots[0]>();
 	for (const s of snapshots) {
-		const dateKey = typeof s.saleDate === 'string' ? s.saleDate : s.saleDate.toISOString().split('T')[0];
+		const dateKey = s.saleDate;
 		if (!dailySnapshots.has(dateKey)) {
 			dailySnapshots.set(dateKey, s);
 		}
@@ -367,7 +367,7 @@ async function analyzeHourlyVelocity(startDate: string, endDate: string, baseRes
 	let prevDateKey: string | null = null;
 
 	for (const snapshot of snapshots) {
-		const dateKey = typeof snapshot.saleDate === 'string' ? snapshot.saleDate : snapshot.saleDate.toISOString().split('T')[0];
+		const dateKey = snapshot.saleDate;
 		const capturedAt = new Date(snapshot.capturedAt);
 		const hour = capturedAt.getHours();
 		const currentSales = parseFloat(snapshot.totalSales);
@@ -454,7 +454,7 @@ async function analyzeLaborEfficiency(startDate: string, endDate: string, baseRe
 	// Dedupe to latest per day
 	const dailySales = new Map<string, { sales: number; retained: number }>();
 	for (const s of snapshots) {
-		const dateKey = typeof s.saleDate === 'string' ? s.saleDate : s.saleDate.toISOString().split('T')[0];
+		const dateKey = s.saleDate;
 		if (!dailySales.has(dateKey)) {
 			dailySales.set(dateKey, {
 				sales: parseFloat(s.totalSales),
@@ -552,7 +552,7 @@ async function analyzeVendorPerformance(startDate: string, endDate: string, base
 	// Dedupe to latest per day
 	const dailySnapshots = new Map<string, typeof snapshots[0]>();
 	for (const s of snapshots) {
-		const dateKey = typeof s.saleDate === 'string' ? s.saleDate : s.saleDate.toISOString().split('T')[0];
+		const dateKey = s.saleDate;
 		if (!dailySnapshots.has(dateKey)) {
 			dailySnapshots.set(dateKey, s);
 		}

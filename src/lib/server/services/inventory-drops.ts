@@ -72,7 +72,7 @@ export async function createDrop(input: CreateDropInput): Promise<{
 		priority: 10 // Higher priority for new drops
 	});
 
-	log.info('Created drop with processing job', { dropId: drop.id, jobId: job.id });
+	log.info({ dropId: drop.id, jobId: job.id }, 'Created drop with processing job');
 
 	// Process immediately (don't await - let it run in background)
 	processPendingJobs(1).catch(err => {
@@ -240,7 +240,7 @@ export async function createFinalizeTask(
 		.set({ finalizeTaskId: task.id })
 		.where(eq(inventoryDrops.id, dropId));
 
-	log.info('Created finalize task for drop', { taskId: task.id, dropId });
+	log.info({ taskId: task.id, dropId }, 'Created finalize task for drop');
 
 	return task.id;
 }
@@ -278,7 +278,7 @@ export async function retryDrop(dropId: string, userId: string): Promise<string>
 		priority: 5 // Slightly lower priority for retries
 	});
 
-	log.info('Retrying drop with new job', { dropId, jobId: job.id });
+	log.info({ dropId, jobId: job.id }, 'Retrying drop with new job');
 
 	// Process immediately (don't await - let it run in background)
 	processPendingJobs(1).catch(err => {
@@ -307,5 +307,5 @@ export async function cancelDrop(dropId: string): Promise<void> {
 	// Delete the drop (cascade will handle photos)
 	await db.delete(inventoryDrops).where(eq(inventoryDrops.id, dropId));
 
-	log.info('Cancelled drop', { dropId });
+	log.info({ dropId }, 'Cancelled drop');
 }

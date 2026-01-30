@@ -255,7 +255,7 @@ export const cancelTaskTool: AITool<CancelTaskParams, CancelTaskResult> = {
 
 					messageSent = true;
 				} catch (msgError) {
-					log.error('Cancel task - Failed to send message', { error: msgError });
+					log.error({ error: msgError }, 'Cancel task - Failed to send message');
 					// Continue even if messaging fails - the cancellation is still valid
 				}
 			}
@@ -268,7 +268,7 @@ export const cancelTaskTool: AITool<CancelTaskParams, CancelTaskResult> = {
 				messageSent
 			};
 		} catch (error) {
-			log.error('Cancel task tool error', { error });
+			log.error({ error }, 'Cancel task tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

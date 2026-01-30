@@ -131,12 +131,12 @@ export const deleteScheduleTool: AITool<DeleteScheduleParams, DeleteScheduleResu
 			// Delete the shift
 			await db.delete(shifts).where(eq(shifts.id, params.shiftId));
 
-			log.info('Shift deleted', {
+			log.info({
 				shiftId: params.shiftId,
 				userId: shift[0].userId,
 				userName,
 				reason: params.reason
-			});
+			}, 'Shift deleted');
 
 			// TODO: If notifyUser is true, send notification to the user
 			// This could be implemented by calling the sendMessageTool internally
@@ -149,7 +149,7 @@ export const deleteScheduleTool: AITool<DeleteScheduleParams, DeleteScheduleResu
 				shiftTime
 			};
 		} catch (error) {
-			log.error('Delete schedule tool error', { error });
+			log.error({ error }, 'Delete schedule tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

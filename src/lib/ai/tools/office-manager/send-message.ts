@@ -248,7 +248,7 @@ export const sendMessageTool: AITool<SendMessageParams, SendMessageResult> = {
 				recipientName
 			};
 		} catch (error) {
-			log.error('Send message tool error', { error });
+			log.error({ error }, 'Send message tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

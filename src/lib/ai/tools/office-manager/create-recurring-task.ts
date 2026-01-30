@@ -228,7 +228,7 @@ export const createRecurringTaskTool: AITool<CreateRecurringTaskParams, CreateRe
 				recurrenceDescription: formatRecurrence(params.recurrence)
 			};
 		} catch (error) {
-			log.error('Create recurring task tool error', { error });
+			log.error({ error }, 'Create recurring task tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

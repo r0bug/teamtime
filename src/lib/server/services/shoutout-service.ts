@@ -270,7 +270,7 @@ export async function rejectShoutout(
 			userId: shoutout.nominatorId,
 			type: 'new_message', // Reuse existing type
 			title: 'Shoutout Not Approved',
-			message: `Your shoutout for a coworker was not approved${reason ? `: ${reason}` : '.'}`,
+			body: `Your shoutout for a coworker was not approved${reason ? `: ${reason}` : '.'}`,
 			data: { shoutoutId, type: 'shoutout_rejected' }
 		});
 	}
@@ -536,7 +536,7 @@ async function notifyRecipient(
 			userId: recipientId,
 			type: 'new_message', // Reuse existing notification type
 			title: 'You received a shoutout!',
-			message: `${nominatorName} recognized you: "${title}"`,
+			body: `${nominatorName} recognized you: "${title}"`,
 			data: { shoutoutId, type: 'shoutout_received' }
 		});
 	} catch (error) {
@@ -576,7 +576,7 @@ async function notifyManagersAboutPending(
 				userId: manager.id,
 				type: 'new_message',
 				title: 'Shoutout Pending Approval',
-				message: `${nominatorName} wants to recognize ${recipientName}: "${title}"`,
+				body: `${nominatorName} wants to recognize ${recipientName}: "${title}"`,
 				data: { shoutoutId, type: 'shoutout_pending' }
 			});
 		}

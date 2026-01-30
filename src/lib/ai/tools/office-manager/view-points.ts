@@ -227,7 +227,7 @@ export const viewPointsTool: AITool<ViewPointsParams, ViewPointsResult> = {
 
 			return result;
 		} catch (error) {
-			log.error('View points tool error', { error });
+			log.error({ error }, 'View points tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

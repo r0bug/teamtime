@@ -221,7 +221,7 @@ export const sendSMSTool: AITool<SendSMSParams, SendSMSResult> = {
 				messageSid: result.sid
 			};
 		} catch (error) {
-			log.error('Send SMS tool error', { error });
+			log.error({ error }, 'Send SMS tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

@@ -9,7 +9,7 @@ const log = createLogger('ai:tools:create-policy');
 interface CreatePolicyParams {
 	scope: 'global' | 'location' | 'role';
 	locationId?: string;
-	targetRole?: 'admin' | 'user' | 'viewer';
+	targetRole?: 'admin' | 'manager' | 'purchaser' | 'staff';
 	content: string;
 	priority?: number; // 1-100, higher = more important
 }
@@ -39,7 +39,7 @@ export const createPolicyTool: AITool<CreatePolicyParams, CreatePolicyResult> = 
 			},
 			targetRole: {
 				type: 'string',
-				enum: ['admin', 'user', 'viewer'],
+				enum: ['admin', 'manager', 'purchaser', 'staff'],
 				description: 'Target role if scope is "role"'
 			},
 			content: {
@@ -145,7 +145,7 @@ export const createPolicyTool: AITool<CreatePolicyParams, CreatePolicyResult> = 
 				scopeTarget
 			};
 		} catch (error) {
-			log.error('Create policy tool error', { error });
+			log.error({ error }, 'Create policy tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

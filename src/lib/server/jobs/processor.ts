@@ -20,7 +20,7 @@ async function processJob(job: Job): Promise<boolean> {
 	const handler = handlers[job.type as JobType];
 
 	if (!handler) {
-		log.error('No handler registered for job type', { jobId: job.id, jobType: job.type });
+		log.error({ jobId: job.id, jobType: job.type }, 'No handler registered for job type');
 		await failJob(job.id, `No handler registered for job type: ${job.type}`);
 		return false;
 	}
@@ -32,19 +32,19 @@ async function processJob(job: Job): Promise<boolean> {
 		return false;
 	}
 
-	log.info('Processing job', { jobId: job.id, jobType: job.type, attempt: acquired.attempts });
+	log.info({ jobId: job.id, jobType: job.type, attempt: acquired.attempts }, 'Processing job');
 
 	try {
 		const result = await handler(job.payload as JobPayload[JobType]);
 		await completeJob(job.id, result);
-		log.info('Job completed successfully', { jobId: job.id });
+		log.info({ jobId: job.id }, 'Job completed successfully');
 		return true;
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-		log.error('Job failed', {
+		log.error({
 			jobId: job.id,
 			error: errorMessage
-		});
+		}, 'Job failed');
 		await failJob(job.id, errorMessage);
 		return false;
 	}
@@ -85,14 +85,14 @@ export async function runProcessor(options: {
 
 	let iterations = 0;
 
-	log.info('Starting job processor', { batchSize, pollInterval, maxIterations });
+	log.info({ batchSize, pollInterval, maxIterations }, 'Starting job processor');
 
 	while (iterations < maxIterations) {
 		try {
 			const { processed, succeeded, failed } = await processPendingJobs(batchSize);
 
 			if (processed > 0) {
-				log.info('Batch complete', { succeeded, processed, failed });
+				log.info({ succeeded, processed, failed }, 'Batch complete');
 			}
 
 			// If no jobs were found, wait before polling again
@@ -100,9 +100,9 @@ export async function runProcessor(options: {
 				await new Promise(resolve => setTimeout(resolve, pollInterval));
 			}
 		} catch (error) {
-			log.error('Error processing batch', {
+			log.error({
 				error: error instanceof Error ? error.message : String(error)
-			});
+			}, 'Error processing batch');
 			await new Promise(resolve => setTimeout(resolve, pollInterval));
 		}
 

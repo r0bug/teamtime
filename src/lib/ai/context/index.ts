@@ -13,7 +13,8 @@ import { getPacificDateParts, getPacificWeekday, toPacificDateString, toPacificD
 const log = createLogger('ai:context');
 
 // Registry of all context providers with their default priorities
-const providers: AIContextProvider[] = [
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const providers: AIContextProvider<any>[] = [
 	userPermissionsProvider, // First - permissions context (priority 5)
 	memoryProvider,          // Priority 10
 	attendanceProvider,      // Priority 20
@@ -77,7 +78,7 @@ export async function assembleContext(
 
 			// Check if we have room
 			if (totalTokens + tokenEstimate > maxTokens) {
-				log.info('Skipping context module - would exceed token limit', { moduleId: provider.moduleId, tokenEstimate, currentTotal: totalTokens, maxTokens });
+				log.info({ moduleId: provider.moduleId, tokenEstimate, currentTotal: totalTokens, maxTokens }, 'Skipping context module - would exceed token limit');
 				continue;
 			}
 
@@ -106,7 +107,7 @@ export async function assembleContext(
 			}
 		} catch (error) {
 			const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-			log.error('Error loading context module', { moduleId: provider.moduleId, error: errorMsg });
+			log.error({ moduleId: provider.moduleId, error: errorMsg }, 'Error loading context module');
 		}
 	}
 

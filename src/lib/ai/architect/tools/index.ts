@@ -83,9 +83,22 @@ export async function executeArchitectTool(
 		}
 	}
 
+	// Build full execution context with defaults
+	const fullContext = {
+		runId: context.runId || crypto.randomUUID(),
+		agent: 'architect' as const,
+		dryRun: false,
+		config: {
+			provider: 'anthropic' as const,
+			model: 'claude-sonnet-4-20250514'
+		},
+		chatId: context.chatId,
+		userId: context.userId
+	};
+
 	// Execute the tool
 	try {
-		const result = await tool.execute(params, context);
+		const result = await tool.execute(params, fullContext);
 		return {
 			success: true,
 			result,

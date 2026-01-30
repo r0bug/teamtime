@@ -168,7 +168,7 @@ export const tradeShiftsTool: AITool<TradeShiftsParams, TradeShiftsResult> = {
 				shiftDate: shift[0].startTime.toISOString().split('T')[0]
 			};
 		} catch (error) {
-			log.error('Trade shifts tool error', { error });
+			log.error({ error }, 'Trade shifts tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

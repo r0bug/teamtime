@@ -141,8 +141,7 @@ export const writeMemoryTool: AITool<WriteMemoryParams, WriteMemoryResult> = {
 					locationId: params.scope === 'location' ? params.locationId : null,
 					memoryType: params.memoryType,
 					content: params.content.trim(),
-					confidence: String(params.confidence ?? 0.5),
-					source: 'revenue_optimizer'
+					confidence: String(params.confidence ?? 0.5)
 				})
 				.returning({ id: aiMemory.id });
 
@@ -152,7 +151,7 @@ export const writeMemoryTool: AITool<WriteMemoryParams, WriteMemoryResult> = {
 				scopeTarget
 			};
 		} catch (error) {
-			log.error('Write memory tool error', { error });
+			log.error({ error }, 'Write memory tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

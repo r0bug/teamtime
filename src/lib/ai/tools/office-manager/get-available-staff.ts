@@ -181,7 +181,7 @@ export const getAvailableStaffTool: AITool<GetAvailableStaffParams, GetAvailable
 				staff
 			};
 		} catch (error) {
-			log.error('Get available staff tool error', { error });
+			log.error({ error }, 'Get available staff tool error');
 			return {
 				success: false,
 				date: params.date,

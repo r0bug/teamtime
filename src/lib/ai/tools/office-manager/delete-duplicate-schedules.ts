@@ -192,10 +192,10 @@ export const deleteDuplicateSchedulesTool: AITool<DeleteDuplicateSchedulesParams
 			// Delete all duplicates in one batch
 			await db.delete(shifts).where(inArray(shifts.id, idsToDelete));
 
-			log.info('Deleted duplicate schedules', {
+			log.info({
 				deletedCount: idsToDelete.length,
 				duplicateGroups: duplicates.length
-			});
+			}, 'Deleted duplicate schedules');
 
 			return {
 				success: true,
@@ -204,7 +204,7 @@ export const deleteDuplicateSchedulesTool: AITool<DeleteDuplicateSchedulesParams
 				duplicates
 			};
 		} catch (error) {
-			log.error('Delete duplicate schedules tool error', { error });
+			log.error({ error }, 'Delete duplicate schedules tool error');
 			return {
 				success: false,
 				duplicatesFound: 0,

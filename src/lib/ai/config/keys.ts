@@ -17,7 +17,7 @@ export function getAPIKeys(): AIKeysConfig {
 		return JSON.parse(content) as AIKeysConfig;
 	} catch (error) {
 		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-		log.error('Error reading API keys file', { error: errorMsg, keysFile: KEYS_FILE });
+		log.error({ error: errorMsg, keysFile: KEYS_FILE }, 'Error reading API keys file');
 		return {};
 	}
 }
@@ -35,7 +35,7 @@ export function saveAPIKeys(keys: AIKeysConfig): boolean {
 		return true;
 	} catch (error) {
 		const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-		log.error('Error saving API keys file', { error: errorMsg, keysFile: KEYS_FILE });
+		log.error({ error: errorMsg, keysFile: KEYS_FILE }, 'Error saving API keys file');
 		return false;
 	}
 }

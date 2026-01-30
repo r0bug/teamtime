@@ -219,7 +219,7 @@ export const searchFilesTool: AITool<SearchFilesParams, SearchFilesResult> = {
 			};
 		} catch (error) {
 			const errorMsg = error instanceof Error ? error.message : 'Unknown error searching files';
-			log.error('Error searching files', { pattern: params.pattern, error: errorMsg });
+			log.error({ pattern: params.pattern, error: errorMsg }, 'Error searching files');
 			return {
 				success: false,
 				files: [],

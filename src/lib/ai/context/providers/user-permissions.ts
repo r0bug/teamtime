@@ -106,9 +106,10 @@ function getToolPermissionsFromCapabilities(capabilities: PermissionsContext['ca
 	return { allowed, denied };
 }
 
-export const userPermissionsProvider: AIContextProvider = {
+export const userPermissionsProvider: AIContextProvider<PermissionsContext> = {
 	moduleId: 'user_permissions',
 	moduleName: 'User Permissions',
+	description: 'Provides current user permissions and capabilities for the AI agent',
 	priority: 0, // Highest priority - should be first in context
 	agents: ['office_manager'],
 

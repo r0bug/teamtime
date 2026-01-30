@@ -25,7 +25,7 @@ async function processInventoryDrop(
 ): Promise<JobResult['inventory_drop_process']> {
 	const { dropId, userId } = payload;
 
-	log.info('Starting processing for drop', { dropId, userId });
+	log.info({ dropId, userId }, 'Starting processing for drop');
 
 	// Update status to processing
 	await updateProcessingStatus(dropId, 'processing');
@@ -77,10 +77,10 @@ async function processInventoryDrop(
 				}
 			});
 		} catch (error) {
-			log.error('Failed to read image', {
+			log.error({
 				filePath: photo.filePath,
 				error: error instanceof Error ? error.message : String(error)
-			});
+			}, 'Failed to read image');
 		}
 	}
 
@@ -125,7 +125,7 @@ Respond with valid JSON only in this exact format:
   "notes": "Any general observations about the batch"
 }`;
 
-	log.info('Calling Claude API for drop', { dropId, imageCount: imageContents.length });
+	log.info({ dropId, imageCount: imageContents.length }, 'Calling Claude API for drop');
 
 	const response = await anthropic.messages.create({
 		model: 'claude-sonnet-4-20250514',
@@ -189,14 +189,14 @@ Respond with valid JSON only in this exact format:
 	try {
 		await createFinalizeTask(dropId, userId);
 	} catch (error) {
-		log.error('Failed to create finalize task for drop', {
+		log.error({
 			dropId,
 			error: error instanceof Error ? error.message : String(error)
-		});
+		}, 'Failed to create finalize task for drop');
 		// Don't fail the job for this - the processing was successful
 	}
 
-	log.info('Completed processing drop', { dropId, itemCount: items.length });
+	log.info({ dropId, itemCount: items.length }, 'Completed processing drop');
 
 	return {
 		itemCount: items.length,

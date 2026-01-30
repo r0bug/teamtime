@@ -186,7 +186,7 @@ export const createSocialMediaTaskTool: AITool<CreateSocialMediaTaskParams, Crea
 				dueAt: dueAt.toISOString()
 			};
 		} catch (error) {
-			log.error('Create social media task tool error', { error });
+			log.error({ error }, 'Create social media task tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'

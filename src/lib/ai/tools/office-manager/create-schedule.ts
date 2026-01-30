@@ -247,7 +247,7 @@ export const createScheduleTool: AITool<CreateScheduleParams, CreateScheduleResu
 				errors: errors.length > 0 ? errors : undefined
 			};
 		} catch (error) {
-			log.error('Create schedule tool error', { error });
+			log.error({ error }, 'Create schedule tool error');
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : 'Unknown error'
