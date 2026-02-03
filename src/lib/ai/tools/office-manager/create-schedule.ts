@@ -38,7 +38,7 @@ interface CreateScheduleResult {
 
 export const createScheduleTool: AITool<CreateScheduleParams, CreateScheduleResult> = {
 	name: 'create_schedule',
-	description: 'Create multiple shift assignments at once. Use for building a weekly schedule or staffing multiple days. Each assignment specifies a user, date, and shift times.',
+	description: 'Create multiple shift assignments at once. Use for building a weekly schedule or staffing multiple days. Each assignment specifies a user, date, and shift times. IMPORTANT: If specifying locationId, you MUST use the actual UUID from the Business Locations context (e.g., "a1b2c3d4-e5f6-7890-..."), NOT a placeholder like "location-1". If you do not have a valid location UUID, omit the locationId field entirely.',
 	agent: 'office_manager',
 	parameters: {
 		type: 'object',
@@ -150,7 +150,7 @@ export const createScheduleTool: AITool<CreateScheduleParams, CreateScheduleResu
 			if (a.locationId && !isValidUUID(a.locationId)) {
 				return {
 					valid: false,
-					error: `Assignment ${i + 1}: Invalid locationId format "${a.locationId}". Expected a UUID.`
+					error: `Assignment ${i + 1}: Invalid locationId format "${a.locationId}". Expected a UUID. Use the location_id values from the Business Locations context, or omit locationId if the location is unknown.`
 				};
 			}
 		}

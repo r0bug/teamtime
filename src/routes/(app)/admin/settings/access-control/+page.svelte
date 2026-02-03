@@ -17,6 +17,9 @@
 		migrationResult = null;
 		try {
 			const res = await fetch('/api/admin/access-control/migrate', { method: 'POST' });
+			if (!res.ok) {
+				throw new Error(`Server error: ${res.status}`);
+			}
 			const json = await res.json();
 			if (json.success) {
 				migrationResult = { success: true, message: `Migrated ${json.migratedCount} users. Batch: ${json.batchId}` };
@@ -26,7 +29,7 @@
 				migrationResult = { success: false, message: json.error || 'Migration failed' };
 			}
 		} catch (e) {
-			migrationResult = { success: false, message: 'Network error' };
+			migrationResult = { success: false, message: e instanceof Error ? e.message : 'Network error' };
 		}
 		migrationLoading = false;
 	}
@@ -41,6 +44,9 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ action: 'revert_to_default' })
 			});
+			if (!res.ok) {
+				throw new Error(`Server error: ${res.status}`);
+			}
 			const json = await res.json();
 			if (json.success) {
 				migrationResult = { success: true, message: `Reset ${json.revertedCount} users to default` };
@@ -49,7 +55,7 @@
 				migrationResult = { success: false, message: json.error || 'Revert failed' };
 			}
 		} catch (e) {
-			migrationResult = { success: false, message: 'Network error' };
+			migrationResult = { success: false, message: e instanceof Error ? e.message : 'Network error' };
 		}
 		migrationLoading = false;
 	}
@@ -64,6 +70,9 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ action: 'revert_batch', batchId })
 			});
+			if (!res.ok) {
+				throw new Error(`Server error: ${res.status}`);
+			}
 			const json = await res.json();
 			if (json.success) {
 				migrationResult = { success: true, message: `Reverted ${json.revertedCount} users` };
@@ -72,7 +81,7 @@
 				migrationResult = { success: false, message: json.error || 'Revert failed' };
 			}
 		} catch (e) {
-			migrationResult = { success: false, message: 'Network error' };
+			migrationResult = { success: false, message: e instanceof Error ? e.message : 'Network error' };
 		}
 		migrationLoading = false;
 	}
@@ -84,6 +93,9 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ userTypeId })
 			});
+			if (!res.ok) {
+				throw new Error(`Server error: ${res.status}`);
+			}
 			const json = await res.json();
 			if (json.success) {
 				migrationResult = { success: true, message: 'Default user type updated' };
@@ -92,7 +104,7 @@
 				migrationResult = { success: false, message: json.error || 'Failed to update' };
 			}
 		} catch (e) {
-			migrationResult = { success: false, message: 'Network error' };
+			migrationResult = { success: false, message: e instanceof Error ? e.message : 'Network error' };
 		}
 	}
 

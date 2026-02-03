@@ -70,10 +70,10 @@
 		createStep = 1;
 	}
 
-	// Get selected day dates for display (using UTC)
+	// Get selected day dates for display (using local time)
 	function getSelectedDayDates(): { dayIndex: number; date: Date; label: string }[] {
 		return weekDates
-			.map((date, i) => ({ dayIndex: i, date, label: `${dayShort[date.getUTCDay()]} ${date.getUTCMonth() + 1}/${date.getUTCDate()}` }))
+			.map((date, i) => ({ dayIndex: i, date, label: `${dayShort[date.getDay()]} ${date.getMonth() + 1}/${date.getDate()}` }))
 			.filter((_, i) => selectedDays[i]);
 	}
 
@@ -97,11 +97,12 @@
 	// Hours for the grid (6am - 10pm)
 	const hours = Array.from({ length: 17 }, (_, i) => i + 6);
 
-	// Generate week dates (using UTC to match server)
+	// Generate week dates in local time (matches /schedule page behavior)
 	$: weekDates = Array.from({ length: 7 }, (_, i) => {
-		// Parse as UTC midnight to avoid timezone shifts
-		const d = new Date(data.startDate + 'T00:00:00Z');
-		d.setUTCDate(d.getUTCDate() + i);
+		// Parse date components and create in local time to avoid UTC/local mismatch
+		const [year, month, day] = data.startDate.split('-').map(Number);
+		const d = new Date(year, month - 1, day);
+		d.setDate(d.getDate() + i);
 		return d;
 	});
 
@@ -567,8 +568,8 @@
 				<div class="bg-gray-100 border-b border-r p-2 font-medium text-xs text-gray-600"></div>
 				{#each weekDates as date, i}
 					<div class="bg-gray-100 border-b p-2 text-center">
-						<div class="font-medium text-sm">{dayShort[date.getUTCDay()]}</div>
-						<div class="text-lg font-bold">{date.getUTCDate()}</div>
+						<div class="font-medium text-sm">{dayShort[date.getDay()]}</div>
+						<div class="text-lg font-bold">{date.getDate()}</div>
 					</div>
 				{/each}
 
@@ -588,7 +589,7 @@
 						<!-- Hour cells with store hours background -->
 						{#each hours as hour}
 							{@const cellId = `${dayIndex}-${hour}`}
-							{@const isOpen = isWithinStoreHours(date.getUTCDay(), hour, selectedLocation || undefined)}
+							{@const isOpen = isWithinStoreHours(date.getDay(), hour, selectedLocation || undefined)}
 							<div
 								class="hour-row cursor-pointer hover:bg-blue-50 transition-colors {isOpen ? 'store-hours-bg' : 'closed-hours-bg'} {dragOverCell === cellId ? 'drag-over' : ''}"
 								on:click={() => handleCellClick(date, hour)}
@@ -756,8 +757,8 @@
 										on:click={() => selectedDays[i] = !selectedDays[i]}
 										class="p-2 rounded-lg border text-center transition-colors {selectedDays[i] ? 'bg-primary-600 text-white border-primary-600' : 'bg-white border-gray-300 hover:border-primary-400'}"
 									>
-										<div class="text-xs font-medium">{dayShort[date.getUTCDay()]}</div>
-										<div class="text-lg font-bold">{date.getUTCDate()}</div>
+										<div class="text-xs font-medium">{dayShort[date.getDay()]}</div>
+										<div class="text-lg font-bold">{date.getDate()}</div>
 									</button>
 								{/each}
 							</div>

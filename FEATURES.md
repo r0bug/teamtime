@@ -20,6 +20,7 @@ This document provides detailed information about TeamTime features, their imple
 14. [Shoutouts & Recognition](#shoutouts--recognition)
 15. [Metrics & Analytics Module](#metrics--analytics-module)
 16. [Staffing Analytics](#staffing-analytics-extended-correlation-analytics)
+17. [Clock-Out Warning & Demerit System](#clock-out-warning--demerit-system)
 
 ---
 
@@ -1632,4 +1633,108 @@ Staffing analytics computation runs weekly (Sundays) as part of the metrics cron
 
 ---
 
-*Last updated: January 2026*
+## Clock-Out Warning & Demerit System
+
+### Overview
+
+The Clock-Out Warning system automatically detects employees who forget to clock out and sends SMS reminders. Repeated violations escalate to formal demerits with point deductions, creating accountability while giving employees a chance to self-correct.
+
+### Key Features
+
+#### Automatic SMS Reminders
+- Cron job runs every 15 minutes during business hours
+- Detects employees clocked in past their shift end time + grace period
+- Sends SMS reminder: "You are still clocked in. Please clock out at the end of your shift."
+- Records warning for escalation tracking
+
+#### Manager Force Clock-Out
+- Managers can force clock-out employees who forgot
+- Optionally sends SMS notification to employee
+- Records warning with reason
+
+#### Demerit Escalation
+- 2 warnings within 30 days = automatic demerit
+- Demerit deducts 50 points from gamification system
+- Employee receives SMS notification of demerit
+- Demerits expire after 90 days
+
+### Configuration
+
+```typescript
+{
+  WARNING_THRESHOLD_FOR_DEMERIT: 2,    // Warnings before demerit
+  WARNING_LOOKBACK_DAYS: 30,           // Warning count period
+  DEMERIT_POINTS_DEDUCTED: 50,         // Points lost per demerit
+  DEMERIT_EXPIRY_DAYS: 90,             // Demerit expiration
+  GRACE_PERIOD_MINUTES: 30,            // Minutes after shift before warning
+  MAX_HOURS_CLOCKED_IN: 10             // Fallback when no scheduled shift
+}
+```
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/clock/cron` | POST | Trigger clock-out warning check (cron) |
+| `/api/clock/force-out` | POST | Manager force clock-out an employee |
+
+### Database Schema
+
+**`clock_out_warnings` table**:
+- `id`, `user_id`, `time_entry_id`, `warning_type`
+- `issued_by`, `sms_result`, `shift_end_time`
+- `minutes_past_shift_end`, `reason`
+- `escalated_to_demerit`, `demerit_id`, `created_at`
+
+**`demerits` table**:
+- `id`, `user_id`, `type`, `status`
+- `issued_by`, `title`, `description`
+- `points_deducted`, `sms_notified`, `sms_result`
+- `expires_at`, `created_at`
+
+### Warning Types
+
+| Type | Description |
+|------|-------------|
+| `auto_reminder` | Cron sent SMS reminder for overdue clock-out |
+| `force_clockout` | Admin/Manager forced clock-out |
+
+### Demerit Types
+
+| Type | Description |
+|------|-------------|
+| `clock_out_violation` | From repeated clock-out warnings |
+| `attendance` | General attendance issues |
+| `task_performance` | Poor task completion |
+| `policy_violation` | Policy violations |
+| `other` | Other infractions |
+
+### Demerit Statuses
+
+| Status | Description |
+|--------|-------------|
+| `active` | Currently counting against employee |
+| `appealed` | Under review |
+| `overturned` | Removed after successful appeal |
+| `expired` | Past expiration date |
+
+### Cron Setup
+
+```bash
+# Every 15 minutes during business hours (Pacific)
+*/15 16-3 * * * curl -s -H "Authorization: Bearer $CRON_SECRET" https://yourapp.com/api/clock/cron
+```
+
+### Files
+
+**Service**: `src/lib/server/services/clock-out-warning-service.ts`
+
+**API Routes**:
+- `src/routes/api/clock/cron/+server.ts` — Clock-out check cron
+- `src/routes/api/clock/force-out/+server.ts` — Force clock-out
+
+**Schema**: `src/lib/server/db/schema.ts` — `clockOutWarnings`, `demerits` tables
+
+---
+
+*Last updated: February 2026*

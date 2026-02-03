@@ -40,29 +40,43 @@
 
 	// Start a new chat (for sidebar button only)
 	async function startNewChat() {
-		const response = await fetch('/api/office-manager/chats', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({})
-		});
-		const result = await response.json();
-		if (result.success) {
-			currentChatId = result.session.id;
-			currentMessages = [];
-			pendingActions = [];
-			messageInput = '';
-			invalidateAll();
+		try {
+			const response = await fetch('/api/office-manager/chats', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({})
+			});
+			if (!response.ok) {
+				throw new Error(`Server error: ${response.status}`);
+			}
+			const result = await response.json();
+			if (result.success) {
+				currentChatId = result.session.id;
+				currentMessages = [];
+				pendingActions = [];
+				messageInput = '';
+				invalidateAll();
+			}
+		} catch (e) {
+			console.error('Failed to start new chat:', e);
 		}
 	}
 
 	// Load an existing chat
 	async function loadChat(chatId: string) {
-		const response = await fetch(`/api/office-manager/chats/${chatId}`);
-		const result = await response.json();
-		if (result.success) {
-			currentChatId = chatId;
-			currentMessages = result.session.messages || [];
-			pendingActions = result.pendingActions || [];
+		try {
+			const response = await fetch(`/api/office-manager/chats/${chatId}`);
+			if (!response.ok) {
+				throw new Error(`Server error: ${response.status}`);
+			}
+			const result = await response.json();
+			if (result.success) {
+				currentChatId = chatId;
+				currentMessages = result.session.messages || [];
+				pendingActions = result.pendingActions || [];
+			}
+		} catch (e) {
+			console.error('Failed to load chat:', e);
 		}
 	}
 
@@ -71,17 +85,24 @@
 		event.stopPropagation();
 		if (!confirm('Delete this chat?')) return;
 
-		const response = await fetch(`/api/office-manager/chats/${chatId}`, {
-			method: 'DELETE'
-		});
-		const result = await response.json();
-		if (result.success) {
-			if (currentChatId === chatId) {
-				currentChatId = null;
-				currentMessages = [];
-				pendingActions = [];
+		try {
+			const response = await fetch(`/api/office-manager/chats/${chatId}`, {
+				method: 'DELETE'
+			});
+			if (!response.ok) {
+				throw new Error(`Server error: ${response.status}`);
 			}
-			invalidateAll();
+			const result = await response.json();
+			if (result.success) {
+				if (currentChatId === chatId) {
+					currentChatId = null;
+					currentMessages = [];
+					pendingActions = [];
+				}
+				invalidateAll();
+			}
+		} catch (e) {
+			console.error('Failed to delete chat:', e);
 		}
 	}
 
@@ -386,24 +407,32 @@
 
 	// Reject a pending action
 	async function rejectAction(actionId: string) {
-		const response = await fetch(`/api/office-manager/actions/${actionId}/reject`, {
-			method: 'POST'
-		});
-		const result = await response.json();
+		try {
+			const response = await fetch(`/api/office-manager/actions/${actionId}/reject`, {
+				method: 'POST'
+			});
+			if (!response.ok) {
+				throw new Error(`Server error: ${response.status}`);
+			}
+			const result = await response.json();
 
-		if (result.success) {
-			// Remove from pending actions
-			pendingActions = pendingActions.filter(a => a.id !== actionId);
-			// Add result message
-			const rejectMsg: ChatMessage = {
-				id: `reject-${Date.now()}`,
-				role: 'assistant',
-				content: result.message,
-				timestamp: new Date().toISOString()
-			};
-			currentMessages = [...currentMessages, rejectMsg];
-		} else {
-			alert(`Failed to reject action: ${result.error}`);
+			if (result.success) {
+				// Remove from pending actions
+				pendingActions = pendingActions.filter(a => a.id !== actionId);
+				// Add result message
+				const rejectMsg: ChatMessage = {
+					id: `reject-${Date.now()}`,
+					role: 'assistant',
+					content: result.message,
+					timestamp: new Date().toISOString()
+				};
+				currentMessages = [...currentMessages, rejectMsg];
+			} else {
+				alert(`Failed to reject action: ${result.error}`);
+			}
+		} catch (e) {
+			console.error('Failed to reject action:', e);
+			alert(`Failed to reject action: ${e instanceof Error ? e.message : 'Unknown error'}`);
 		}
 	}
 

@@ -54,22 +54,40 @@
 
 			const response = await fetch('/api/uploads', {
 				method: 'POST',
-				body: formData
+				body: formData,
+				credentials: 'same-origin'
 			});
 
-			if (!response.ok) {
-				const data = await response.json();
-				throw new Error(data.error || 'Upload failed');
+			// Handle non-JSON responses (e.g., network errors, proxy errors)
+			const contentType = response.headers.get('content-type');
+			if (!contentType || !contentType.includes('application/json')) {
+				const text = await response.text();
+				console.error('Non-JSON response:', response.status, text.substring(0, 200));
+				throw new Error(`Server error (${response.status})`);
 			}
 
-			const { file: uploadedFile } = await response.json();
-			photos[index] = { ...photo, uploading: false, uploaded: uploadedFile };
+			const data = await response.json();
+
+			if (!response.ok) {
+				throw new Error(data.error || `Upload failed (${response.status})`);
+			}
+
+			if (!data.file) {
+				throw new Error('Server did not return file info');
+			}
+
+			photos[index] = { ...photo, uploading: false, uploaded: data.file };
 			photos = photos;
 		} catch (e) {
-			console.error('Upload error:', e);
+			console.error('Upload error:', e, 'Photo:', photo.file?.name, 'Type:', photo.file?.type, 'Size:', photo.file?.size);
 			photos[index] = { ...photo, uploading: false };
 			photos = photos;
-			error = e instanceof Error ? e.message : 'Failed to upload photo';
+			// Show more specific error for network issues
+			if (e instanceof TypeError && e.message.includes('fetch')) {
+				error = 'Network error - check your connection';
+			} else {
+				error = e instanceof Error ? e.message : 'Failed to upload photo';
+			}
 		}
 	}
 

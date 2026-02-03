@@ -94,6 +94,27 @@ export const shoutoutCategoryEnum = pgEnum('shoutout_category', [
 ]);
 export const shoutoutStatusEnum = pgEnum('shoutout_status', ['pending', 'approved', 'rejected']);
 
+// Clock-Out Warning & Demerit Enums
+export const clockOutWarningTypeEnum = pgEnum('clock_out_warning_type', [
+	'auto_reminder',    // Cron sent SMS reminder for overdue clock-out
+	'force_clockout'    // Admin/Manager forced clock-out
+]);
+
+export const demeritTypeEnum = pgEnum('demerit_type', [
+	'clock_out_violation',  // From repeated clock-out warnings
+	'attendance',           // General attendance issues
+	'task_performance',     // Poor task completion
+	'policy_violation',     // Policy violations
+	'other'                 // Other infractions
+]);
+
+export const demeritStatusEnum = pgEnum('demerit_status', [
+	'active',     // Currently counting against employee
+	'appealed',   // Under review
+	'overturned', // Removed after successful appeal
+	'expired'     // Past expiration date
+]);
+
 // ============================================
 // ACCESS CONTROL TABLES (User Types & Permissions)
 // ============================================
@@ -2555,4 +2576,83 @@ export type StaffingLevelMetric = typeof staffingLevelMetrics.$inferSelect;
 export type NewStaffingLevelMetric = typeof staffingLevelMetrics.$inferInsert;
 export type DayOfWeekMetric = typeof dayOfWeekMetrics.$inferSelect;
 export type NewDayOfWeekMetric = typeof dayOfWeekMetrics.$inferInsert;
+
+// ============================================
+// CLOCK-OUT WARNINGS & DEMERITS MODULE
+// ============================================
+
+// Demerits table - formal infractions tracking
+export const demerits = pgTable('demerits', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+	type: demeritTypeEnum('type').notNull(),
+	status: demeritStatusEnum('status').notNull().default('active'),
+	issuedBy: uuid('issued_by').notNull().references(() => users.id, { onDelete: 'set null' }),
+	title: text('title').notNull(),
+	description: text('description').notNull(),
+	pointsDeducted: integer('points_deducted').notNull().default(0),
+	smsNotified: boolean('sms_notified').notNull().default(false),
+	smsResult: jsonb('sms_result').$type<{ success: boolean; sid?: string; error?: string }>(),
+	expiresAt: timestamp('expires_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Clock-out warnings table - tracks forgotten clock-outs and forced clock-outs
+export const clockOutWarnings = pgTable('clock_out_warnings', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+	timeEntryId: uuid('time_entry_id').notNull().references(() => timeEntries.id, { onDelete: 'cascade' }),
+	warningType: clockOutWarningTypeEnum('warning_type').notNull(),
+	issuedBy: uuid('issued_by').references(() => users.id, { onDelete: 'set null' }), // null for auto
+	smsResult: jsonb('sms_result').$type<{ success: boolean; sid?: string; error?: string }>(),
+	shiftEndTime: timestamp('shift_end_time', { withTimezone: true }),
+	minutesPastShiftEnd: integer('minutes_past_shift_end'),
+	reason: text('reason'),
+	escalatedToDemerit: boolean('escalated_to_demerit').notNull().default(false),
+	demeritId: uuid('demerit_id').references(() => demerits.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Clock-Out Warnings Relations
+export const clockOutWarningsRelations = relations(clockOutWarnings, ({ one }) => ({
+	user: one(users, {
+		fields: [clockOutWarnings.userId],
+		references: [users.id],
+		relationName: 'clockOutWarningUser'
+	}),
+	timeEntry: one(timeEntries, {
+		fields: [clockOutWarnings.timeEntryId],
+		references: [timeEntries.id]
+	}),
+	issuer: one(users, {
+		fields: [clockOutWarnings.issuedBy],
+		references: [users.id],
+		relationName: 'clockOutWarningIssuer'
+	}),
+	demerit: one(demerits, {
+		fields: [clockOutWarnings.demeritId],
+		references: [demerits.id]
+	})
+}));
+
+// Demerits Relations
+export const demeritsRelations = relations(demerits, ({ one, many }) => ({
+	user: one(users, {
+		fields: [demerits.userId],
+		references: [users.id],
+		relationName: 'demeritUser'
+	}),
+	issuer: one(users, {
+		fields: [demerits.issuedBy],
+		references: [users.id],
+		relationName: 'demeritIssuer'
+	}),
+	warnings: many(clockOutWarnings)
+}));
+
+// Clock-Out Warnings & Demerits Types
+export type ClockOutWarning = typeof clockOutWarnings.$inferSelect;
+export type NewClockOutWarning = typeof clockOutWarnings.$inferInsert;
+export type Demerit = typeof demerits.$inferSelect;
+export type NewDemerit = typeof demerits.$inferInsert;
 

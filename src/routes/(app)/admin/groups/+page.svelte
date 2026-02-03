@@ -39,8 +39,11 @@
 		// Fetch members via API
 		try {
 			const response = await fetch(`/api/groups/${group.id}/members`);
-			const data = await response.json();
-			groupMembers = data.members || [];
+			if (!response.ok) {
+				throw new Error(`Failed to fetch members: ${response.status}`);
+			}
+			const result = await response.json();
+			groupMembers = result.members || [];
 		} catch (e) {
 			console.error('Failed to load members', e);
 			groupMembers = [];

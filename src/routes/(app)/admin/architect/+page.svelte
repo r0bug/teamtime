@@ -120,12 +120,19 @@
 
 	// Load an existing chat
 	async function loadChat(chatId: string) {
-		const response = await fetch(`/api/architect/chats/${chatId}`);
-		const result = await response.json();
-		if (result.success) {
-			currentChatId = chatId;
-			currentMessages = result.session.messages;
-			activeTab = 'chat';
+		try {
+			const response = await fetch(`/api/architect/chats/${chatId}`);
+			if (!response.ok) {
+				throw new Error(`Server error: ${response.status}`);
+			}
+			const result = await response.json();
+			if (result.success) {
+				currentChatId = chatId;
+				currentMessages = result.session.messages;
+				activeTab = 'chat';
+			}
+		} catch (e) {
+			console.error('Failed to load chat:', e);
 		}
 	}
 
@@ -143,15 +150,24 @@
 		// Create chat if needed
 		let chatId = currentChatId;
 		if (!chatId) {
-			const response = await fetch('/api/architect/chats', {
-				method: 'POST'
-			});
-			const result = await response.json();
-			if (result.success) {
-				chatId = result.session.id;
-				currentChatId = chatId;
-				currentMessages = [];
-			} else {
+			try {
+				const response = await fetch('/api/architect/chats', {
+					method: 'POST'
+				});
+				if (!response.ok) {
+					throw new Error(`Server error: ${response.status}`);
+				}
+				const result = await response.json();
+				if (result.success) {
+					chatId = result.session.id;
+					currentChatId = chatId;
+					currentMessages = [];
+				} else {
+					isLoading = false;
+					return;
+				}
+			} catch (e) {
+				console.error('Failed to create chat:', e);
 				isLoading = false;
 				return;
 			}
@@ -175,6 +191,9 @@
 			});
 
 			clearTimeout(timeoutId);
+			if (!response.ok) {
+				throw new Error(`Server error: ${response.status}`);
+			}
 			const result = await response.json();
 
 			if (result.success) {

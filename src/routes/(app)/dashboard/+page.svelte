@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import type { PageData } from './$types';
 	import RecentShoutouts from '$lib/components/RecentShoutouts.svelte';
+	import WhosWorking from '$lib/components/WhosWorking.svelte';
 
 	export let data: PageData;
 
@@ -13,6 +14,7 @@
 	$: dropStats = data.dropStats;
 	$: userIsPurchaser = data.userIsPurchaser;
 	$: gamification = data.gamification;
+	$: whosWorking = data.whosWorking;
 
 	let clockLoading = false;
 
@@ -307,4 +309,16 @@
 			</a>
 		</div>
 	</div>
+
+	<!-- Who's Working Section -->
+	{#if whosWorking}
+		<div class="mt-6">
+			<WhosWorking
+				clockedIn={whosWorking.clockedIn}
+				scheduledToday={whosWorking.scheduledToday}
+				staffDetails={whosWorking.staffDetails}
+				viewerRole={whosWorking.viewerRole}
+			/>
+		</div>
+	{/if}
 </div>

@@ -10,7 +10,34 @@ const log = createLogger('api:uploads');
 
 const UPLOAD_DIR = './uploads';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_TYPES = [
+	'image/jpeg',
+	'image/jpg', // Some mobile browsers report this
+	'image/png',
+	'image/webp',
+	'image/gif',
+	'image/heic', // iPhone photos
+	'image/heif' // iPhone photos
+];
+
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif'];
+
+function isValidImageFile(file: File): boolean {
+	// Check MIME type first
+	if (file.type && ALLOWED_TYPES.includes(file.type.toLowerCase())) {
+		return true;
+	}
+	// Fall back to extension check (some mobile browsers don't set MIME type correctly)
+	const ext = path.extname(file.name).toLowerCase();
+	if (ALLOWED_EXTENSIONS.includes(ext)) {
+		return true;
+	}
+	// Also accept if it starts with 'image/' (permissive for mobile)
+	if (file.type && file.type.startsWith('image/')) {
+		return true;
+	}
+	return false;
+}
 
 export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!locals.user) {
@@ -22,12 +49,17 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		const file = formData.get('file') as File;
 
 		if (!file) {
+			log.warn('No file in form data');
 			return json({ error: 'No file provided' }, { status: 400 });
 		}
 
-		// Validate file type
-		if (!ALLOWED_TYPES.includes(file.type)) {
-			return json({ error: 'Invalid file type. Only JPEG, PNG, WebP, and GIF are allowed.' }, { status: 400 });
+		// Log file details for debugging
+		log.info({ fileName: file.name, fileType: file.type, fileSize: file.size }, 'Upload attempt');
+
+		// Validate file type (more permissive for mobile)
+		if (!isValidImageFile(file)) {
+			log.warn({ fileType: file.type, fileName: file.name }, 'Invalid file type rejected');
+			return json({ error: `Invalid file type: ${file.type || 'unknown'}. Only images are allowed.` }, { status: 400 });
 		}
 
 		// Validate file size
@@ -63,7 +95,20 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			}
 		});
 	} catch (error) {
-		log.error({ error: error instanceof Error ? error.message : String(error) }, 'Upload error');
-		return json({ error: 'Upload failed' }, { status: 500 });
+		const errorMessage = error instanceof Error ? error.message : String(error);
+		log.error({ error: errorMessage, stack: error instanceof Error ? error.stack : undefined }, 'Upload error');
+
+		// Provide more specific error messages
+		if (errorMessage.includes('ENOSPC')) {
+			return json({ error: 'Server storage is full' }, { status: 507 });
+		}
+		if (errorMessage.includes('EACCES') || errorMessage.includes('EPERM')) {
+			return json({ error: 'Server permission error' }, { status: 500 });
+		}
+		if (errorMessage.includes('payload') || errorMessage.includes('body') || errorMessage.includes('size')) {
+			return json({ error: 'File too large for upload' }, { status: 413 });
+		}
+
+		return json({ error: 'Upload failed. Please try again.' }, { status: 500 });
 	}
 };
