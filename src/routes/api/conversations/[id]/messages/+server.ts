@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, conversations, conversationParticipants, messages, messagePhotos, users, notifications } from '$lib/server/db';
 import { eq, and, desc, lt, isNull } from 'drizzle-orm';
+import { sanitizeMessage, sanitizeUrl } from '$lib/server/utils/sanitize';
 
 // Get messages (excludes thread replies - only shows top-level messages)
 export const GET: RequestHandler = async ({ locals, params, url }) => {
@@ -132,13 +133,16 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		return json({ error: 'Message content or photos required' }, { status: 400 });
 	}
 
+	// Sanitize content to prevent XSS attacks
+	const sanitizedContent = content ? sanitizeMessage(content) : null;
+
 	// Create message
 	const [newMessage] = await db
 		.insert(messages)
 		.values({
 			conversationId: params.id,
 			senderId: locals.user.id,
-			content: content || '[Photo]'
+			content: sanitizedContent || '[Photo]'
 		})
 		.returning();
 
@@ -187,7 +191,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 				userId: p.userId,
 				type: 'new_message',
 				title: `New message from ${locals.user.name}`,
-				body: content ? content.substring(0, 100) : '[Photo]',
+				body: sanitizedContent ? sanitizedContent.substring(0, 100) : '[Photo]',
 				data: { conversationId: params.id, messageId: newMessage.id }
 			});
 		}

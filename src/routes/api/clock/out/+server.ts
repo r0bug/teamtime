@@ -8,8 +8,9 @@ import {
 } from '$lib/server/services/task-rules';
 import { awardClockOutPoints } from '$lib/server/services/points-service';
 import { checkAndAwardAchievements } from '$lib/server/services/achievements-service';
+import { auditClockEvent } from '$lib/server/services/audit-service';
 
-export const POST: RequestHandler = async ({ locals, request }) => {
+export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
 	if (!locals.user) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
@@ -108,6 +109,17 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	} catch (err) {
 		console.error('Error awarding clock-out points:', err);
 	}
+
+	// Audit log the clock out event
+	await auditClockEvent({
+		userId: locals.user.id,
+		timeEntryId: entry.id,
+		action: 'clock_out',
+		locationId: locationId || undefined,
+		latitude: lat,
+		longitude: lng,
+		ipAddress: getClientAddress()
+	});
 
 	return json({
 		success: true,

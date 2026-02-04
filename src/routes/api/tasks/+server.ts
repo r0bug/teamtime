@@ -3,12 +3,15 @@ import type { RequestHandler } from './$types';
 import { db, tasks, users, notifications, auditLogs } from '$lib/server/db';
 import { eq, and, or, desc, isNull } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { sanitizeTitle, sanitizeDescription } from '$lib/server/utils/sanitize';
+import { requireAuth, requirePermission } from '$lib/server/auth/require-permission';
 
 // Get tasks
-export const GET: RequestHandler = async ({ locals, url }) => {
-	if (!locals.user) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+export const GET: RequestHandler = async (event) => {
+	const authError = requireAuth(event);
+	if (authError) return authError;
+
+	const { locals, url } = event;
 
 	const status = url.searchParams.get('status');
 	const assignedTo = url.searchParams.get('assignedTo');
@@ -16,9 +19,12 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	const conditions = [];
 
+	// User is guaranteed non-null by requireAuth check
+	const user = locals.user!;
+
 	// Admins and managers can see all tasks, others only see their own
-	if (!isManager(locals.user)) {
-		conditions.push(eq(tasks.assignedTo, locals.user.id));
+	if (!isManager(user)) {
+		conditions.push(eq(tasks.assignedTo, user.id));
 	} else if (assignedTo) {
 		conditions.push(eq(tasks.assignedTo, assignedTo));
 	}
@@ -45,15 +51,15 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	return json({ tasks: taskList });
 };
 
-// Create task (admin/manager only)
-export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
-	if (!locals.user) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+// Create task (admin/manager only, or users with create_task permission)
+export const POST: RequestHandler = async (event) => {
+	// Check permission to create tasks
+	const permError = requirePermission(event, 'create_task');
+	if (permError) return permError;
 
-	if (!isManager(locals.user)) {
-		return json({ error: 'Forbidden' }, { status: 403 });
-	}
+	const { locals, request, getClientAddress } = event;
+	// User is guaranteed non-null by requirePermission check
+	const user = locals.user!;
 
 	const body = await request.json();
 	const { title, description, assignedTo, priority, dueAt, photoRequired, notesRequired, templateId } = body;
@@ -62,11 +68,15 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 		return json({ error: 'Title is required' }, { status: 400 });
 	}
 
+	// Sanitize user input to prevent XSS
+	const sanitizedTitle = sanitizeTitle(title);
+	const sanitizedDescription = description ? sanitizeDescription(description) : null;
+
 	const [newTask] = await db
 		.insert(tasks)
 		.values({
-			title,
-			description: description || null,
+			title: sanitizedTitle,
+			description: sanitizedDescription,
 			assignedTo: assignedTo || null,
 			priority: priority || 'medium',
 			dueAt: dueAt ? new Date(dueAt) : null,
@@ -75,7 +85,7 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 			notesRequired: notesRequired || false,
 			source: 'manual',
 			templateId: templateId || null,
-			createdBy: locals.user.id
+			createdBy: user.id
 		})
 		.returning();
 
@@ -85,7 +95,7 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 			userId: assignedTo,
 			type: 'task_assigned',
 			title: 'New Task Assigned',
-			body: `You have been assigned: ${title}`,
+			body: `You have been assigned: ${sanitizedTitle}`,
 			data: { taskId: newTask.id }
 		});
 	}
@@ -101,11 +111,11 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 
 	// Audit log
 	await db.insert(auditLogs).values({
-		userId: locals.user.id,
+		userId: user.id,
 		action: 'create',
 		entityType: 'task',
 		entityId: newTask.id,
-		afterData: { title, assignedTo, priority },
+		afterData: { title: sanitizedTitle, assignedTo, priority },
 		ipAddress: getClientAddress()
 	});
 

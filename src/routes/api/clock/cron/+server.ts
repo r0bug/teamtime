@@ -23,32 +23,39 @@ const log = createLogger('api:clock:cron');
 // In production, this should be configured or use a specific system account
 const SYSTEM_USER_ID_FALLBACK = '00000000-0000-0000-0000-000000000000';
 
-export const GET: RequestHandler = async ({ request, url }) => {
+export const GET: RequestHandler = async ({ request }) => {
 	// Verify cron secret
 	const cronSecret = env.CRON_SECRET;
 
+	// SECURITY: Only accept header-based authentication - query params can leak in logs
 	if (!cronSecret) {
-		log.warn('CRON_SECRET not configured');
-		return json({ error: 'Cron not configured' }, { status: 500 });
-	}
+		// In development, allow without secret
+		if (process.env.NODE_ENV !== 'production') {
+			log.warn('CRON_SECRET not configured - allowing unauthenticated access in development');
+		} else {
+			log.error('CRON_SECRET environment variable must be set in production');
+			return json({ error: 'Cron not configured' }, { status: 500 });
+		}
+	} else {
+		// Check Authorization header only (no query params for security)
+		const authHeader = request.headers.get('Authorization');
+		const cronSecretHeader = request.headers.get('X-Cron-Secret');
 
-	// Check Authorization header or query param
-	const authHeader = request.headers.get('Authorization');
-	const querySecret = url.searchParams.get('secret');
+		let authenticated = false;
 
-	let authenticated = false;
+		if (authHeader) {
+			// Bearer token
+			const token = authHeader.replace(/^Bearer\s+/i, '');
+			authenticated = token === cronSecret;
+		} else if (cronSecretHeader) {
+			// Alternative header for services that don't support Bearer auth
+			authenticated = cronSecretHeader === cronSecret;
+		}
 
-	if (authHeader) {
-		// Bearer token
-		const token = authHeader.replace(/^Bearer\s+/i, '');
-		authenticated = token === cronSecret;
-	} else if (querySecret) {
-		authenticated = querySecret === cronSecret;
-	}
-
-	if (!authenticated) {
-		log.warn('Invalid cron authentication attempt');
-		return json({ error: 'Unauthorized' }, { status: 401 });
+		if (!authenticated) {
+			log.warn('Invalid cron authentication attempt');
+			return json({ error: 'Unauthorized' }, { status: 401 });
+		}
 	}
 
 	log.info('Clock-out cron job starting');

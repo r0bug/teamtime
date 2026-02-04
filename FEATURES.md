@@ -21,6 +21,8 @@ This document provides detailed information about TeamTime features, their imple
 15. [Metrics & Analytics Module](#metrics--analytics-module)
 16. [Staffing Analytics](#staffing-analytics-extended-correlation-analytics)
 17. [Clock-Out Warning & Demerit System](#clock-out-warning--demerit-system)
+18. [Security Hardening](#security-hardening)
+19. [Toast Notifications](#toast-notifications)
 
 ---
 
@@ -1734,6 +1736,267 @@ The Clock-Out Warning system automatically detects employees who forget to clock
 - `src/routes/api/clock/force-out/+server.ts` — Force clock-out
 
 **Schema**: `src/lib/server/db/schema.ts` — `clockOutWarnings`, `demerits` tables
+
+---
+
+## Security Hardening
+
+### Overview
+
+TeamTime includes comprehensive security hardening features to protect against common web application vulnerabilities including brute force attacks, XSS, clickjacking, and unauthorized access.
+
+### Rate Limiting
+
+#### Login Rate Limiting
+Protects against brute force attacks on authentication endpoints:
+
+- **Per-IP Limits**: 5 login attempts per minute per IP address
+- **Account Lockouts**: After 10 failed attempts, account is locked for 15 minutes
+- **Sliding Window**: Uses in-memory sliding window algorithm with database persistence
+- **2FA Protection**: Rate limiting also applies to 2FA verification attempts
+
+**Configuration**:
+```typescript
+{
+  MAX_ATTEMPTS_PER_MINUTE: 5,        // Requests per minute per IP
+  MAX_FAILED_ATTEMPTS: 10,           // Before account lockout
+  LOCKOUT_DURATION_MINUTES: 15,      // Lockout duration
+  WINDOW_SIZE_MS: 60000              // Sliding window size (1 minute)
+}
+```
+
+**Admin Actions**:
+- View failed login attempts in audit logs
+- Manually unlock accounts via database or admin panel
+
+### Security Headers
+
+HTTP security headers are added to all responses via `hooks.server.ts`:
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `Content-Security-Policy` | Self + Google Maps/Fonts | Prevents XSS and content injection |
+| `X-Frame-Options` | DENY | Prevents clickjacking |
+| `X-Content-Type-Options` | nosniff | Prevents MIME-type sniffing |
+| `Strict-Transport-Security` | max-age=31536000 | Forces HTTPS |
+| `Referrer-Policy` | strict-origin-when-cross-origin | Controls referrer information |
+| `Permissions-Policy` | Limited | Restricts browser features |
+
+**CSP Configuration**:
+```
+default-src 'self';
+script-src 'self' 'unsafe-inline' maps.googleapis.com;
+style-src 'self' 'unsafe-inline' fonts.googleapis.com;
+img-src 'self' data: blob: maps.googleapis.com maps.gstatic.com;
+font-src 'self' fonts.gstatic.com;
+connect-src 'self' maps.googleapis.com;
+frame-ancestors 'none';
+```
+
+### XSS Protection
+
+User-generated content is sanitized using `src/lib/server/utils/sanitize.ts`:
+
+**Functions**:
+- `escapeHtml()` — Escapes HTML special characters
+- `stripHtml()` — Removes all HTML tags
+- `sanitizeXss()` — Removes dangerous patterns while preserving structure
+- `sanitizeUserInput()` — General user input sanitization
+- `sanitizeMessage()` — Message-specific sanitization
+- `sanitizeTitle()` — Title/subject sanitization
+- `sanitizeUrl()` — URL sanitization with protocol whitelist
+
+**Protected Areas**:
+- Task descriptions and notes
+- Message content and titles
+- Pricing justifications
+- User-submitted forms
+
+### Cron Endpoint Security
+
+Cron endpoints use header-based authentication only (no query parameter secrets):
+
+**Before** (insecure):
+```bash
+curl "https://app.com/api/tasks/cron?secret=CRON_SECRET"
+```
+
+**After** (secure):
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://app.com/api/tasks/cron
+```
+
+**Protected Endpoints**:
+- `/api/tasks/cron`
+- `/api/ai/cron`
+- `/api/points/cron`
+- `/api/clock/cron`
+- `/api/metrics/cron`
+
+### Permission Middleware
+
+Granular permission enforcement via `src/lib/server/auth/require-permission.ts`:
+
+**Functions**:
+- `requireAuth()` — Returns 401 if not authenticated
+- `requirePermission(permission)` — Checks specific permission
+- `requireManager()` — Returns 403 if not manager/admin
+- `requireAdmin()` — Returns 403 if not admin
+- `requireOwnerOrManager(userId)` — Owner of resource or manager
+
+**Usage Example**:
+```typescript
+export async function GET({ locals }) {
+  const authCheck = requireAuth(locals);
+  if (authCheck) return authCheck;
+
+  const permCheck = requirePermission('view_all_schedules', locals);
+  if (permCheck) return permCheck;
+
+  // Proceed with authorized logic
+}
+```
+
+### Audit Logging
+
+Comprehensive audit logging via `src/lib/server/services/audit-service.ts`:
+
+**Logged Actions** (40+ action types):
+- Authentication: login success/failure, logout, 2FA verification
+- Clock events: clock in/out, manual corrections
+- Tasks: creation, completion, cancellation, assignment
+- Messaging: message sent, message deleted
+- Purchases: request created, approved, rejected
+- Admin actions: user created, permissions changed, settings modified
+
+**Audit Fields**:
+- `userId` — Who performed the action
+- `action` — Action type (enum)
+- `targetType` — Entity type affected
+- `targetId` — Entity ID affected
+- `details` — JSON with additional context
+- `ipAddress` — Request IP address
+- `userAgent` — Browser/client info
+- `timestamp` — When action occurred
+
+**Query API**:
+```typescript
+const logs = await queryAuditLogs({
+  userId: 'user-id',
+  actions: ['login_success', 'clock_in'],
+  startDate: new Date('2026-01-01'),
+  limit: 100
+});
+```
+
+### ESLint Configuration
+
+Code quality enforcement via `eslint.config.js`:
+
+**Rules Enforced**:
+- TypeScript strict mode
+- No `eval()`, `new Function()`, or `javascript:` URLs
+- Unused variables detection (with underscore exceptions)
+- Prefer `const` over `let`
+- Strict equality (`===`)
+- XSS warning for Svelte `@html` usage
+
+**Run ESLint**:
+```bash
+npm run lint        # Check for issues
+npm run lint:fix    # Auto-fix where possible
+```
+
+### Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `login_attempts` | Failed login attempt tracking |
+| `account_lockouts` | Account lockout records |
+| `audit_logs` | Comprehensive audit trail |
+
+### Files
+
+**Rate Limiter**: `src/lib/server/auth/rate-limiter.ts`
+
+**Security Headers**: `src/hooks.server.ts`
+
+**XSS Sanitization**: `src/lib/server/utils/sanitize.ts`
+
+**Permission Middleware**: `src/lib/server/auth/require-permission.ts`
+
+**Audit Service**: `src/lib/server/services/audit-service.ts`
+
+**ESLint Config**: `eslint.config.js`
+
+---
+
+## Toast Notifications
+
+### Overview
+
+TeamTime provides a toast notification system for user feedback on async operations. Toasts appear in the bottom-right corner and auto-dismiss after a configurable duration.
+
+### Toast Types
+
+| Type | Default Duration | Use Case |
+|------|------------------|----------|
+| `success` | 3s | Operation completed successfully |
+| `error` | 5s | Operation failed |
+| `warning` | 4s | Attention needed |
+| `info` | 3.5s | Informational message |
+
+### Usage
+
+**Import and use**:
+```typescript
+import { toasts } from '$lib/stores/toast';
+
+// Convenience methods
+toasts.success('Changes saved');
+toasts.error('Failed to save changes');
+toasts.warning('Connection unstable');
+toasts.info('New message received');
+
+// With options
+toasts.success('Task completed', {
+  title: 'Success',
+  duration: 5000,
+  dismissible: true
+});
+```
+
+**In form actions**:
+```typescript
+import { showToast } from '$lib/stores/toast';
+
+showToast('success', 'Record created', { title: 'Done' });
+```
+
+### Features
+
+- **Auto-dismiss**: Toasts disappear after duration
+- **Manual dismiss**: Click X to close early
+- **Progress bar**: Visual countdown to auto-dismiss
+- **Stacking**: Up to 5 toasts at once (oldest removed first)
+- **Animations**: Slide-in and fade-out transitions
+- **Accessible**: Uses `aria-live` for screen readers
+
+### Configuration
+
+**Maximum toasts**: 5 (oldest removed when exceeded)
+
+**Custom duration**: Pass `duration: number` in options (0 = no auto-dismiss)
+
+**Non-dismissible**: Pass `dismissible: false` in options
+
+### Files
+
+**Store**: `src/lib/stores/toast.ts`
+
+**Component**: `src/lib/components/ToastContainer.svelte`
+
+**Integration**: Included in `src/routes/+layout.svelte`
 
 ---
 

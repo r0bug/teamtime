@@ -3,16 +3,15 @@ import type { RequestHandler } from './$types';
 import { db, users, auditLogs } from '$lib/server/db';
 import { eq, ilike, or, desc } from 'drizzle-orm';
 import { hashPin, validatePinFormat } from '$lib/server/auth/pin';
+import { requirePermission } from '$lib/server/auth/require-permission';
+import { sanitizeName, sanitizeEmail } from '$lib/server/utils/sanitize';
 
-// Get all users (manager only)
-export const GET: RequestHandler = async ({ locals, url }) => {
-	if (!locals.user) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+// Get all users (manager only, or users with view_users permission)
+export const GET: RequestHandler = async (event) => {
+	const permError = requirePermission(event, 'view_users');
+	if (permError) return permError;
 
-	if (locals.user.role !== 'manager') {
-		return json({ error: 'Forbidden' }, { status: 403 });
-	}
+	const { locals, url } = event;
 
 	const search = url.searchParams.get('search') || '';
 	const role = url.searchParams.get('role');
@@ -66,16 +65,12 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	return json({ users: userList });
 };
 
-// Create new user (manager only)
-export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
-	if (!locals.user) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+// Create new user (manager only, or users with create_user permission)
+export const POST: RequestHandler = async (event) => {
+	const permError = requirePermission(event, 'create_user');
+	if (permError) return permError;
 
-	if (locals.user.role !== 'manager') {
-		return json({ error: 'Forbidden' }, { status: 403 });
-	}
-
+	const { locals, request, getClientAddress } = event;
 	const body = await request.json();
 	const { email, username, name, phone, role, pin } = body;
 
@@ -99,15 +94,21 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 		return json({ error: 'Email or username already exists' }, { status: 400 });
 	}
 
+	// Sanitize input
+	const sanitizedEmail = sanitizeEmail(email);
+	const sanitizedName = sanitizeName(name);
+	const sanitizedUsername = username.toLowerCase().trim().slice(0, 50);
+	const sanitizedPhone = phone ? phone.replace(/[^0-9+\-\s()]/g, '').slice(0, 20) : null;
+
 	// Create user
 	const pinHash = await hashPin(pin);
 	const [newUser] = await db
 		.insert(users)
 		.values({
-			email: email.toLowerCase(),
-			username: username.toLowerCase(),
-			name,
-			phone: phone || null,
+			email: sanitizedEmail,
+			username: sanitizedUsername,
+			name: sanitizedName,
+			phone: sanitizedPhone,
 			role: role || 'staff',
 			pinHash,
 			isActive: true
@@ -123,9 +124,9 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 			createdAt: users.createdAt
 		});
 
-	// Audit log
+	// Audit log (user is guaranteed non-null by requirePermission check)
 	await db.insert(auditLogs).values({
-		userId: locals.user.id,
+		userId: locals.user!.id,
 		action: 'create',
 		entityType: 'user',
 		entityId: newUser.id,

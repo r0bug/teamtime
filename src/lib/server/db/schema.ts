@@ -2656,3 +2656,63 @@ export type NewClockOutWarning = typeof clockOutWarnings.$inferInsert;
 export type Demerit = typeof demerits.$inferSelect;
 export type NewDemerit = typeof demerits.$inferInsert;
 
+// ============================================
+// SECURITY MODULE - Rate Limiting & Login Attempts
+// ============================================
+
+// Login attempt result enum
+export const loginAttemptResultEnum = pgEnum('login_attempt_result', ['success', 'invalid_credentials', 'account_locked', 'account_disabled', '2fa_required', '2fa_failed']);
+
+// Login Attempts - Track all login attempts for security monitoring and account lockout
+export const loginAttempts = pgTable('login_attempts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	email: text('email').notNull(), // Track by email even if user doesn't exist
+	userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+	ipAddress: text('ip_address').notNull(),
+	userAgent: text('user_agent'),
+	result: loginAttemptResultEnum('result').notNull(),
+	failureReason: text('failure_reason'),
+	attemptedAt: timestamp('attempted_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Account Lockouts - Track locked accounts
+export const accountLockouts = pgTable('account_lockouts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	email: text('email').notNull(),
+	userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+	lockedAt: timestamp('locked_at', { withTimezone: true }).notNull().defaultNow(),
+	lockedUntil: timestamp('locked_until', { withTimezone: true }).notNull(),
+	reason: text('reason').notNull(),
+	failedAttempts: integer('failed_attempts').notNull(),
+	unlockedAt: timestamp('unlocked_at', { withTimezone: true }),
+	unlockedBy: uuid('unlocked_by').references(() => users.id, { onDelete: 'set null' })
+});
+
+// Login Attempts Relations
+export const loginAttemptsRelations = relations(loginAttempts, ({ one }) => ({
+	user: one(users, {
+		fields: [loginAttempts.userId],
+		references: [users.id]
+	})
+}));
+
+// Account Lockouts Relations
+export const accountLockoutsRelations = relations(accountLockouts, ({ one }) => ({
+	user: one(users, {
+		fields: [accountLockouts.userId],
+		references: [users.id],
+		relationName: 'accountLockoutUser'
+	}),
+	unlockedByUser: one(users, {
+		fields: [accountLockouts.unlockedBy],
+		references: [users.id],
+		relationName: 'accountLockoutUnlocker'
+	})
+}));
+
+// Security Types
+export type LoginAttempt = typeof loginAttempts.$inferSelect;
+export type NewLoginAttempt = typeof loginAttempts.$inferInsert;
+export type AccountLockout = typeof accountLockouts.$inferSelect;
+export type NewAccountLockout = typeof accountLockouts.$inferInsert;
+

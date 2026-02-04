@@ -230,7 +230,7 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-87 tables organized across domains:
+89 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries
 - **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules
