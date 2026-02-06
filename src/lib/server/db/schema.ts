@@ -1022,6 +1022,9 @@ export const aiMemory = pgTable('ai_memory', {
 	observationCount: integer('observation_count').notNull().default(1),
 	lastObservedAt: timestamp('last_observed_at', { withTimezone: true }).notNull().defaultNow(),
 
+	// Phase 0.5: Track when memory was last consumed by Office Manager
+	lastReadAt: timestamp('last_read_at', { withTimezone: true }),
+
 	// Lifecycle
 	isActive: boolean('is_active').notNull().default(true),
 	expiresAt: timestamp('expires_at', { withTimezone: true }),
@@ -1051,6 +1054,24 @@ export const aiPolicyNotes = pgTable('ai_policy_notes', {
 	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Phase 0.8: AI Token Usage - tracks token spend per agent per run for dashboard
+export const aiTokenUsage = pgTable('ai_token_usage', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	agent: aiAgentEnum('agent').notNull(),
+	runId: uuid('run_id').notNull(),
+	provider: aiProviderEnum('provider').notNull(),
+	model: text('model').notNull(),
+	inputTokens: integer('input_tokens').notNull().default(0),
+	outputTokens: integer('output_tokens').notNull().default(0),
+	costCents: integer('cost_cents').notNull().default(0),
+	toolsUsed: jsonb('tools_used').$type<string[]>().default([]),
+	actionsTaken: integer('actions_taken').notNull().default(0),
+	wasSkipped: boolean('was_skipped').notNull().default(false), // Pre-flight gating skip
+	skipReason: text('skip_reason'),
+	durationMs: integer('duration_ms'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
 // ============================================
@@ -2715,4 +2736,99 @@ export type LoginAttempt = typeof loginAttempts.$inferSelect;
 export type NewLoginAttempt = typeof loginAttempts.$inferInsert;
 export type AccountLockout = typeof accountLockouts.$inferSelect;
 export type NewAccountLockout = typeof accountLockouts.$inferInsert;
+
+// ============================================
+// SHIFT REQUESTS (Broadcast Shift Responses)
+// ============================================
+
+export const shiftRequestStatusEnum = pgEnum('shift_request_status', ['open', 'filled', 'cancelled']);
+export const shiftResponseStatusEnum = pgEnum('shift_response_status', ['accepted', 'declined']);
+
+export const shiftRequests = pgTable('shift_requests', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	shiftId: uuid('shift_id').references(() => shifts.id, { onDelete: 'cascade' }),
+	title: text('title').notNull(),
+	description: text('description'),
+	requestedDate: date('requested_date').notNull(),
+	startTime: timestamp('start_time', { withTimezone: true }).notNull(),
+	endTime: timestamp('end_time', { withTimezone: true }).notNull(),
+	locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
+	status: shiftRequestStatusEnum('status').notNull().default('open'),
+	filledBy: uuid('filled_by').references(() => users.id, { onDelete: 'set null' }),
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export const shiftRequestResponses = pgTable('shift_request_responses', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	requestId: uuid('request_id')
+		.notNull()
+		.references(() => shiftRequests.id, { onDelete: 'cascade' }),
+	userId: uuid('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	status: shiftResponseStatusEnum('status').notNull(),
+	note: text('note'),
+	respondedAt: timestamp('responded_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	uniqueResponse: unique().on(table.requestId, table.userId)
+}));
+
+// Shift Request Relations
+export const shiftRequestsRelations = relations(shiftRequests, ({ one, many }) => ({
+	shift: one(shifts, {
+		fields: [shiftRequests.shiftId],
+		references: [shifts.id]
+	}),
+	location: one(locations, {
+		fields: [shiftRequests.locationId],
+		references: [locations.id]
+	}),
+	filledByUser: one(users, {
+		fields: [shiftRequests.filledBy],
+		references: [users.id],
+		relationName: 'shiftRequestFilledBy'
+	}),
+	createdByUser: one(users, {
+		fields: [shiftRequests.createdBy],
+		references: [users.id],
+		relationName: 'shiftRequestCreatedBy'
+	}),
+	responses: many(shiftRequestResponses)
+}));
+
+export const shiftRequestResponsesRelations = relations(shiftRequestResponses, ({ one }) => ({
+	request: one(shiftRequests, {
+		fields: [shiftRequestResponses.requestId],
+		references: [shiftRequests.id]
+	}),
+	user: one(users, {
+		fields: [shiftRequestResponses.userId],
+		references: [users.id]
+	})
+}));
+
+// Shift Request Types
+export type ShiftRequest = typeof shiftRequests.$inferSelect;
+export type NewShiftRequest = typeof shiftRequests.$inferInsert;
+export type ShiftRequestResponse = typeof shiftRequestResponses.$inferSelect;
+export type NewShiftRequestResponse = typeof shiftRequestResponses.$inferInsert;
+
+// ============================================
+// GAMIFICATION CONFIG (Database-driven game mechanics)
+// ============================================
+
+export const gamificationConfig = pgTable('gamification_config', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	key: text('key').notNull().unique(),
+	value: text('value').notNull(),
+	category: text('category').notNull(), // 'points', 'streaks', 'levels', 'achievements'
+	description: text('description'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type GamificationConfig = typeof gamificationConfig.$inferSelect;
+export type NewGamificationConfig = typeof gamificationConfig.$inferInsert;
 

@@ -113,6 +113,27 @@
       "when": 1769851266399,
       "tag": "0015_freezing_vivisector",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1770207890355,
+      "tag": "0016_amazing_slayback",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1770363324748,
+      "tag": "0017_magical_captain_cross",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1770364220376,
+      "tag": "0018_noisy_bug",
+      "breakpoints": true
     }
   ]
 }

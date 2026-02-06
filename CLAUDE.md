@@ -57,7 +57,7 @@ src/
 │   │   └── providers/         # LLM integrations
 │   │
 │   ├── server/
-│   │   ├── db/schema.ts       # 48 tables, all data models (2400+ lines)
+│   │   ├── db/schema.ts       # 93 tables, all data models (2800+ lines)
 │   │   ├── auth/              # Lucia + granular permissions
 │   │   ├── services/          # Business logic layer
 │   │   └── jobs/              # Background task processing
@@ -73,7 +73,7 @@ src/
 │   │   ├── inventory/         # AI inventory drops
 │   │   └── ...
 │   │
-│   ├── api/                   # REST API (64+ endpoints)
+│   ├── api/                   # REST API (100+ endpoints)
 │   └── login/, logout/, etc.  # Public auth routes
 
 tests/
@@ -84,7 +84,7 @@ tests/
 
 ### Key Patterns
 
-1. **Schema-First Development:** `src/lib/server/db/schema.ts` defines all 48 tables - read this to understand the data model
+1. **Schema-First Development:** `src/lib/server/db/schema.ts` defines all 93 tables - read this to understand the data model
 
 2. **Permission System:** Beyond roles, uses custom user types with granular action-level permissions. See `src/lib/server/auth/permissions.ts`
 
@@ -98,11 +98,11 @@ tests/
 
 | Agent | Schedule | Purpose |
 |-------|----------|---------|
-| **Office Manager** | Every 15min (7am-7pm) | Attendance, tasks, messaging (22+ tools) |
-| **Revenue Optimizer** | Nightly | Pattern analysis, policy creation |
+| **Office Manager** | Every 15min (7am-7pm) | Attendance, tasks, messaging (22+ tools). Pre-flight gating skips LLM when nothing actionable. |
+| **Revenue Optimizer** | Weekly (conditional) | Pattern analysis, policy creation. Skips if insufficient data. |
 | **Ada (Architect)** | On-demand | Code analysis, ADR generation |
 
-AI config lives in database + `src/lib/ai/config/`. Admin panel at `/admin/ai` for tool toggles.
+AI config lives in database + `src/lib/ai/config/`. Admin panel at `/admin/ai` for tool toggles. Token usage dashboard at `/admin/ai/usage`.
 
 ### Authentication Flow
 
@@ -118,7 +118,7 @@ PostgreSQL with Drizzle ORM. Schema file is the source of truth:
 - `drizzle/` - Generated migrations
 - `drizzle.config.ts` - ORM configuration
 
-51 tables covering: users, sessions, time entries, tasks, inventory, pricing, expenses, messaging (with group chats and threads), gamification (10 levels, 17 achievement types), AI system, audit logs.
+93 tables covering: users, sessions, time entries, tasks, inventory, pricing, expenses, messaging (with group chats and threads), gamification (10 levels, 17 achievement types, DB-configurable), AI system (token usage tracking), shift requests, audit logs, security (login attempts, account lockouts).
 
 ### Group Chat & Threads
 
@@ -158,13 +158,27 @@ CRON_SECRET                 # AI trigger authentication
 - **Test setup:** `tests/setup.ts` for globals, `tests/mocks/` for SvelteKit mocks
 - Coverage: v8 provider with HTML reports
 
+## Backup & Infrastructure
+
+- **Backup script:** `scripts/backup.sh` — Automated pg_dump + uploads tar + rsync to remote
+- **Restore script:** `scripts/restore.sh` — Disaster recovery from backup
+- **Health endpoint:** `GET /api/health` — Returns DB/disk/uptime status (no auth required)
+- **CI/CD:** `.github/workflows/ci.yml` — Checkout, type check, test, build on push to main
+- **Logging:** Pino structured logging via `$lib/server/logger` with request logging in hooks
+- **Error handling:** `$lib/server/error-handler.ts` (server) + `hooks.client.ts` (client)
+
+## Module System
+
+Admins can enable/disable system modules via `/admin/settings`. Disabled modules are hidden from navigation and routes redirect to dashboard. Module state is stored in `appSettings` table as JSON under key `enabled_modules`.
+
 ## Key Files to Understand First
 
-1. `src/lib/server/db/schema.ts` - Complete data model
-2. `src/hooks.server.ts` - Request lifecycle, auth, permissions
+1. `src/lib/server/db/schema.ts` - Complete data model (93 tables)
+2. `src/hooks.server.ts` - Request lifecycle, auth, permissions, security headers
 3. `src/lib/ai/types.ts` - AI system interfaces
-4. `README.md` - Feature overview
-5. `FEATURES.md` - Detailed feature documentation
+4. `src/lib/server/error-handler.ts` - Centralized error handling
+5. `README.md` - Feature overview
+6. `FEATURES.md` - Detailed feature documentation
 
 ## Timezone Handling
 

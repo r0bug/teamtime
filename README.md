@@ -28,6 +28,8 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - Assign one-off or recurring tasks with photo requirements
 - Event-triggered tasks (e.g., "Opening Procedure" on first clock-in)
 - **Advanced assignment rules** with 7 trigger types and 5 assignment methods
+- **7 preset templates** for common rule patterns (opening/closing till, mid-shift check, etc.)
+- **Auto till count at clock-in** — one-click setup wizard on cash count admin page
 - Chain tasks (trigger new task on completion of another)
 - Scheduled tasks via cron expressions
 - Priority levels and due date tracking
@@ -66,7 +68,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - **Streak system** with multipliers up to 1.5x for consistent performance
 - **17 achievements** across 5 categories (attendance, tasks, pricing, sales, special)
 - **Public leaderboards** (weekly/monthly) for team competition
-- **Admin pricing grading** with slider-based scoring (1-5) affecting points
+- **Admin pricing grading** with slider-based scoring (1-5) affecting points — supports **bulk grading** up to 50 items at once
 - **Daily sales attribution** based on shift hours worked
 - **Shoutouts & Recognition** — Peer nominations (with manager approval) and manager awards
 - **8 award types** with configurable point values (25-100 pts)
@@ -207,7 +209,7 @@ src/
 
 ## API Overview
 
-TeamTime exposes **70+ REST endpoints** organized by domain:
+TeamTime exposes **100+ REST endpoints** organized by domain:
 
 - `/api/clock/in`, `/api/clock/out` — Time tracking (triggers task rules + points)
 - `/api/tasks`, `/api/tasks/[id]/complete` — Task management (awards points)
@@ -230,7 +232,7 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-89 tables organized across domains:
+94 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries
 - **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules

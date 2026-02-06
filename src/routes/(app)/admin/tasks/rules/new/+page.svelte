@@ -20,6 +20,143 @@
 		{ value: 5, label: 'Fri' },
 		{ value: 6, label: 'Sat' }
 	];
+
+	// Preset templates
+	const presets = [
+		{
+			id: 'opening_till',
+			name: 'Opening Till Count',
+			description: 'Cash count when staff clocks in',
+			icon: '💰',
+			triggerType: 'clock_in',
+			assignmentType: 'clocked_in_user',
+			taskType: 'cash_count',
+			defaults: {}
+		},
+		{
+			id: 'closing_till',
+			name: 'Closing Till Count',
+			description: 'Cash count at closing time',
+			icon: '🔒',
+			triggerType: 'closing_shift',
+			assignmentType: 'clocked_in_user',
+			taskType: 'cash_count',
+			defaults: { triggerTime: '17:00' }
+		},
+		{
+			id: 'first_in_opening',
+			name: 'First-In Opening Tasks',
+			description: 'Tasks for first person at location',
+			icon: '🔑',
+			triggerType: 'first_clock_in',
+			assignmentType: 'clocked_in_user',
+			taskType: 'template',
+			defaults: {}
+		},
+		{
+			id: 'last_out_closing',
+			name: 'Last-Out Closing Tasks',
+			description: 'Tasks for last person at location',
+			icon: '🚪',
+			triggerType: 'last_clock_out',
+			assignmentType: 'clocked_in_user',
+			taskType: 'template',
+			defaults: {}
+		},
+		{
+			id: 'mid_shift',
+			name: 'Mid-Shift Check',
+			description: 'Task X hours into shift',
+			icon: '⏰',
+			triggerType: 'time_into_shift',
+			assignmentType: 'clocked_in_user',
+			taskType: 'template',
+			defaults: { hoursIntoShift: '4' }
+		},
+		{
+			id: 'daily_scheduled',
+			name: 'Daily Scheduled Task',
+			description: 'Recurring task at specific time',
+			icon: '📅',
+			triggerType: 'schedule',
+			assignmentType: 'least_tasks',
+			taskType: 'template',
+			defaults: { cronExpression: '0 9 * * 1-5' }
+		},
+		{
+			id: 'post_task',
+			name: 'Post-Task Follow-Up',
+			description: 'Chain task after another completes',
+			icon: '🔗',
+			triggerType: 'task_completed',
+			assignmentType: 'clocked_in_user',
+			taskType: 'template',
+			defaults: {}
+		}
+	];
+
+	let activePreset: string | null = null;
+	let formElement: HTMLFormElement;
+
+	function applyPreset(preset: typeof presets[0]) {
+		activePreset = preset.id;
+		taskType = preset.taskType;
+		triggerType = preset.triggerType;
+		assignmentType = preset.assignmentType;
+
+		// Set name field
+		requestAnimationFrame(() => {
+			const nameInput = formElement?.querySelector<HTMLInputElement>('#name');
+			if (nameInput && !nameInput.value) {
+				nameInput.value = preset.name;
+			}
+
+			// Set defaults for trigger-specific fields
+			if (preset.defaults.triggerTime) {
+				const el = formElement?.querySelector<HTMLInputElement>('#triggerTime');
+				if (el) el.value = preset.defaults.triggerTime;
+			}
+			if (preset.defaults.hoursIntoShift) {
+				const el = formElement?.querySelector<HTMLInputElement>('#hoursIntoShift');
+				if (el) el.value = preset.defaults.hoursIntoShift;
+			}
+			if (preset.defaults.cronExpression) {
+				const el = formElement?.querySelector<HTMLInputElement>('#cronExpression');
+				if (el) el.value = preset.defaults.cronExpression;
+			}
+
+			// Scroll to form
+			formElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		});
+	}
+
+	function getTriggerBadgeColor(trigger: string): string {
+		switch (trigger) {
+			case 'clock_in': return 'bg-green-100 text-green-700';
+			case 'clock_out': return 'bg-red-100 text-red-700';
+			case 'first_clock_in': return 'bg-emerald-100 text-emerald-700';
+			case 'last_clock_out': return 'bg-orange-100 text-orange-700';
+			case 'closing_shift': return 'bg-purple-100 text-purple-700';
+			case 'time_into_shift': return 'bg-blue-100 text-blue-700';
+			case 'task_completed': return 'bg-indigo-100 text-indigo-700';
+			case 'schedule': return 'bg-yellow-100 text-yellow-700';
+			default: return 'bg-gray-100 text-gray-700';
+		}
+	}
+
+	function getTriggerLabel(trigger: string): string {
+		switch (trigger) {
+			case 'clock_in': return 'Clock In';
+			case 'clock_out': return 'Clock Out';
+			case 'first_clock_in': return 'First Clock-In';
+			case 'last_clock_out': return 'Last Clock-Out';
+			case 'closing_shift': return 'Closing Shift';
+			case 'time_into_shift': return 'Time Into Shift';
+			case 'task_completed': return 'Task Completed';
+			case 'schedule': return 'Schedule';
+			default: return trigger;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -39,6 +176,41 @@
 		<p class="text-gray-600 mt-1">Configure automatic task creation and assignment</p>
 	</div>
 
+	<!-- Preset Templates -->
+	<div class="card mb-6">
+		<div class="card-header">
+			<h2 class="font-semibold">Start from Preset</h2>
+		</div>
+		<div class="card-body">
+			<p class="text-sm text-gray-600 mb-4">
+				Pick a common pattern to pre-fill the form, then customize as needed.
+			</p>
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+				{#each presets as preset}
+					<button
+						type="button"
+						on:click={() => applyPreset(preset)}
+						class="text-left p-3 rounded-lg border-2 transition-all hover:shadow-md {activePreset === preset.id ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:border-gray-300'}"
+					>
+						<div class="flex items-start gap-2">
+							<span class="text-xl">{preset.icon}</span>
+							<div class="flex-1 min-w-0">
+								<p class="font-medium text-gray-900 text-sm">{preset.name}</p>
+								<p class="text-xs text-gray-500 mt-0.5">{preset.description}</p>
+								<span class="inline-block mt-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded {getTriggerBadgeColor(preset.triggerType)}">
+									{getTriggerLabel(preset.triggerType)}
+								</span>
+							</div>
+						</div>
+					</button>
+				{/each}
+			</div>
+			<p class="text-xs text-gray-400 mt-3 text-center">
+				Or configure manually below
+			</p>
+		</div>
+	</div>
+
 	{#if form?.error}
 		<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
 			{form.error}
@@ -46,6 +218,7 @@
 	{/if}
 
 	<form
+		bind:this={formElement}
 		method="POST"
 		use:enhance={() => {
 			loading = true;

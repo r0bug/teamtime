@@ -38,6 +38,7 @@ interface DatabaseUserAttributes {
 	email: string;
 	username: string;
 	role: 'admin' | 'manager' | 'purchaser' | 'staff';
+	userTypeId: string | null;
 	name: string;
 	phone: string | null;
 	isActive: boolean;

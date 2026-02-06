@@ -110,7 +110,7 @@
 					class="w-full aspect-video bg-gray-100 rounded-lg overflow-hidden mb-3 cursor-zoom-in"
 				>
 					<img
-						src={decision.photos[selectedPhotoIndex].filePath}
+						src="{decision.photos[selectedPhotoIndex].filePath}?w=800"
 						alt={decision.itemDescription}
 						class="w-full h-full object-contain"
 					/>
@@ -125,9 +125,10 @@
 								class="flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors {selectedPhotoIndex === index ? 'border-primary-500' : 'border-transparent hover:border-gray-300'}"
 							>
 								<img
-									src={photo.filePath}
+									src="{photo.filePath}?w=128"
 									alt="Thumbnail {index + 1}"
 									class="w-full h-full object-cover"
+									loading="lazy"
 								/>
 							</button>
 						{/each}

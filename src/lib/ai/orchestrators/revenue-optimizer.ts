@@ -1,6 +1,6 @@
 // Revenue Optimizer Orchestrator - Runs the nightly analysis AI agent
-import { db, aiConfig, aiActions, aiCooldowns } from '$lib/server/db';
-import { eq, and, gte } from 'drizzle-orm';
+import { db, aiConfig, aiActions, aiCooldowns, aiTokenUsage, timeEntries, aiMemory } from '$lib/server/db';
+import { eq, and, gte, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { getProvider } from '../providers';
 import { assembleContext, formatContextForPrompt } from '../context';
@@ -11,6 +11,9 @@ import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('ai:orchestrator:revenue-optimizer');
 const AGENT: AIAgent = 'revenue_optimizer';
+
+// Phase 0.4: Maximum write_memory calls per run to prevent memory spam
+const MAX_MEMORY_WRITES_PER_RUN = 3;
 
 interface RunConfig {
 	forceRun?: boolean;
@@ -65,8 +68,43 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 		const isDryRun = agentConfig.dryRunMode;
 		log.info({ runId, mode: isDryRun ? 'DRY_RUN' : 'LIVE', provider: agentConfig.provider, model: agentConfig.model }, 'Run mode configured');
 
-		// Assemble context - Revenue Optimizer needs more context for analysis
-		const context = await assembleContext(AGENT, agentConfig.maxTokensContext || 8000);
+		// Phase 0.4: Data threshold check - only run if there's meaningful new data
+		if (!config.forceRun) {
+			const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+			// Check for minimum time entries today
+			const recentEntriesResult = await db
+				.select({ count: sql<number>`count(*)` })
+				.from(timeEntries)
+				.where(gte(timeEntries.clockIn, oneDayAgo));
+			const recentEntries = Number(recentEntriesResult[0]?.count || 0);
+
+			if (recentEntries < 3) {
+				log.info({ runId, recentEntries }, 'Skipped: insufficient data for analysis (< 3 time entries)');
+				return createResult(runId, startedAt, 0, 0, 0, ['Skipped: insufficient data for analysis'], 0);
+			}
+
+			// Check if we already ran successfully in the past 7 days
+			const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+			const recentRunsResult = await db
+				.select({ count: sql<number>`count(*)` })
+				.from(aiActions)
+				.where(and(
+					eq(aiActions.agent, AGENT),
+					gte(aiActions.createdAt, sevenDaysAgo),
+					eq(aiActions.executed, true)
+				));
+			const recentRuns = Number(recentRunsResult[0]?.count || 0);
+
+			if (recentRuns > 0) {
+				log.info({ runId, recentRuns }, 'Skipped: already ran successfully within past 7 days');
+				return createResult(runId, startedAt, 0, 0, 0, ['Skipped: already ran within 7 days'], 0);
+			}
+		}
+
+		// Phase 0.4: Reduced context limit from 8000 to 3000 - focus on deltas
+		const effectiveMaxTokens = Math.min(agentConfig.maxTokensContext || 8000, 3000);
+		const context = await assembleContext(AGENT, effectiveMaxTokens);
 		contextTokens = context.totalTokens;
 		log.info({ runId, contextTokens, modulesCount: context.modules.length }, 'Context assembled');
 
@@ -123,8 +161,29 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 		// Execute tool calls - Revenue Optimizer can take more actions
 		if (response.toolCalls && response.toolCalls.length > 0) {
 			const maxActions = config.maxActions || 10; // Higher limit for batch analysis
+			let memoryWriteCount = 0; // Phase 0.4: Track write_memory calls
 
 			for (const toolCall of response.toolCalls.slice(0, maxActions)) {
+				// Phase 0.4: Cap write_memory calls to prevent memory spam
+				if (toolCall.name === 'write_memory') {
+					memoryWriteCount++;
+					if (memoryWriteCount > MAX_MEMORY_WRITES_PER_RUN) {
+						log.info({ runId, memoryWriteCount }, 'Skipping write_memory: cap reached');
+						await db.insert(aiActions).values({
+							agent: AGENT,
+							runId,
+							runStartedAt: startedAt,
+							provider: agentConfig.provider,
+							model: agentConfig.model,
+							toolName: toolCall.name,
+							toolParams: toolCall.params,
+							executed: false,
+							blockedReason: `Memory write cap reached (${MAX_MEMORY_WRITES_PER_RUN} per run)`
+						});
+						actionsLogged++;
+						continue;
+					}
+				}
 				const tool = tools.find(t => t.name === toolCall.name);
 				if (!tool) {
 					log.warn({ runId, toolName: toolCall.name }, 'Unknown tool requested');
@@ -237,7 +296,25 @@ export async function runRevenueOptimizer(config: RunConfig = {}): Promise<AIRun
 		errors.push(errorMsg);
 	}
 
-	return createResult(runId, startedAt, contextTokens, actionsLogged, actionsExecuted, errors, totalCostCents);
+	// Phase 0.8: Log token usage for dashboard
+	const result = createResult(runId, startedAt, contextTokens, actionsLogged, actionsExecuted, errors, totalCostCents);
+	try {
+		await db.insert(aiTokenUsage).values({
+			agent: AGENT,
+			runId,
+			provider: 'anthropic',
+			model: 'unknown',
+			inputTokens: 0,
+			outputTokens: 0,
+			costCents: totalCostCents,
+			actionsTaken: actionsExecuted,
+			wasSkipped: false,
+			durationMs: result.completedAt.getTime() - result.startedAt.getTime()
+		});
+	} catch (e) {
+		log.warn({ error: e instanceof Error ? e.message : 'unknown' }, 'Failed to log token usage');
+	}
+	return result;
 }
 
 function createResult(

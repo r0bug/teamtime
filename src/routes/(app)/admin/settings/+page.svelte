@@ -12,6 +12,31 @@
 	$: managersCanResetPins = data.settings['managers_can_reset_pins'] === 'true';
 	$: siteTitle = data.settings['site_title'] || 'TeamTime';
 
+	// Module toggle state
+	$: enabledModulesRaw = data.settings['enabled_modules'];
+	$: enabledModules = (() => {
+		try { return enabledModulesRaw ? JSON.parse(enabledModulesRaw) : {}; } catch { return {}; }
+	})();
+
+	const moduleList = [
+		{ key: 'tasks', label: 'Tasks', desc: 'Task management and assignment' },
+		{ key: 'schedule', label: 'Schedule', desc: 'Shift scheduling and calendar' },
+		{ key: 'messages', label: 'Messages', desc: 'Team messaging and threads' },
+		{ key: 'expenses', label: 'Expenses', desc: 'Expense tracking and ATM withdrawals' },
+		{ key: 'leaderboard', label: 'Leaderboard', desc: 'Points leaderboard and rankings' },
+		{ key: 'achievements', label: 'Achievements', desc: 'Achievement badges and streaks' },
+		{ key: 'sales', label: 'Sales', desc: 'Sales data and reporting' },
+		{ key: 'pricing', label: 'Pricing', desc: 'Item pricing workflow' },
+		{ key: 'inventory', label: 'Inventory', desc: 'Inventory drops and processing' },
+		{ key: 'ebay', label: 'eBay', desc: 'eBay listing tasks' },
+		{ key: 'notifications', label: 'Notifications', desc: 'Push and email notifications' },
+		{ key: 'reports', label: 'Reports', desc: 'Reporting and analytics' }
+	];
+
+	function isModuleEnabled(key: string): boolean {
+		return enabledModules[key] !== false; // Default to enabled
+	}
+
 	let editingSiteTitle = false;
 	let siteTitleInput = '';
 
@@ -219,6 +244,40 @@
 						</p>
 					</div>
 				</div>
+			</div>
+		</div>
+
+		<!-- Module Toggles -->
+		<div class="card mt-6">
+			<div class="card-header">
+				<h2 class="font-semibold">Module Settings</h2>
+				<p class="text-sm text-gray-500 mt-1">Enable or disable system modules. Disabled modules are hidden from navigation.</p>
+			</div>
+			<div class="card-body divide-y">
+				{#each moduleList as mod}
+					<div class="flex items-center justify-between py-3">
+						<div>
+							<h3 class="font-medium text-sm">{mod.label}</h3>
+							<p class="text-xs text-gray-500">{mod.desc}</p>
+						</div>
+						<form method="POST" action="?/toggleModule" use:enhance={() => {
+							return async ({ update }) => {
+								await update();
+								await invalidateAll();
+							};
+						}}>
+							<input type="hidden" name="module" value={mod.key} />
+							<button
+								type="submit"
+								class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 {isModuleEnabled(mod.key) ? 'bg-primary-600' : 'bg-gray-200'}"
+							>
+								<span
+									class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {isModuleEnabled(mod.key) ? 'translate-x-5' : 'translate-x-0'}"
+								/>
+							</button>
+						</form>
+					</div>
+				{/each}
 			</div>
 		</div>
 

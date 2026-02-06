@@ -4,6 +4,7 @@ import { db, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { getUserPermissions } from '$lib/server/auth/permissions';
 import { dev } from '$app/environment';
+import { createLogger } from '$lib/server/logger';
 
 /**
  * Security headers to prevent common web vulnerabilities
@@ -53,7 +54,10 @@ const cspDirectives = [
 	...(dev ? [] : ['upgrade-insecure-requests'])
 ];
 
+const log = createLogger('http');
+
 export const handle: Handle = async ({ event, resolve }) => {
+	const requestStart = Date.now();
 	const sessionId = event.cookies.get(lucia.sessionCookieName);
 
 	if (!sessionId) {
@@ -111,7 +115,22 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	event.locals.session = session;
 
-	return addSecurityHeaders(await resolve(event));
+	const response = addSecurityHeaders(await resolve(event));
+
+	// Request logging (skip static assets and HMR in dev)
+	const path = event.url.pathname;
+	if (!path.startsWith('/_app/') && !path.startsWith('/@') && !path.includes('.')) {
+		const duration = Date.now() - requestStart;
+		log.info({
+			method: event.request.method,
+			path,
+			status: response.status,
+			duration,
+			userId: event.locals.user?.id
+		}, `${event.request.method} ${path} ${response.status} ${duration}ms`);
+	}
+
+	return response;
 };
 
 /**

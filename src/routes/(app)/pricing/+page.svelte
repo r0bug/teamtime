@@ -79,9 +79,10 @@
 					<div class="w-16 h-16 flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden">
 						{#if decision.thumbnail}
 							<img
-								src={decision.thumbnail}
+								src="{decision.thumbnail}?w=128"
 								alt={decision.itemDescription}
 								class="w-full h-full object-cover"
+								loading="lazy"
 							/>
 						{:else}
 							<div class="w-full h-full flex items-center justify-center text-gray-400">

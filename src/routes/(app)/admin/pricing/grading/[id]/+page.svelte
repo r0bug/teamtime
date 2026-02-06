@@ -151,9 +151,10 @@
 							class="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:ring-2 hover:ring-primary-500 transition-all"
 						>
 							<img
-								src={photo.filePath}
+								src="{photo.filePath}?w=256"
 								alt={photo.originalName}
 								class="w-full h-full object-cover"
+								loading="lazy"
 							/>
 						</button>
 					{/each}

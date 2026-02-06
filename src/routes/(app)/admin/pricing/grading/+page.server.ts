@@ -32,7 +32,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		: await baseQuery
 				.where(isNull(pricingGrades.id))
 				.orderBy(desc(pricingDecisions.pricedAt))
-				.limit(50);
+				.limit(100);
 
 	// Get stats
 	const [stats] = await db

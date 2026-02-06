@@ -1,13 +1,19 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 
 	export let data: PageData;
+	export let form: ActionData;
 
 	// Modal state
 	let showCreateModal = false;
 	let creating = false;
 	let error = '';
+
+	// Auto setup state
+	let showAutoSetup = false;
+	let selectedAutoConfigId = '';
 
 	// New config form
 	let newConfig = {
@@ -27,6 +33,9 @@
 			{ name: 'pennies', label: 'Pennies', type: 'integer' as const, multiplier: 0.01, required: false, order: 10 }
 		]
 	};
+
+	$: activeConfigs = data.configs.filter((c) => c.isActive);
+	$: configLookup = Object.fromEntries(data.configs.map((c) => [c.id, c.name]));
 
 	function formatDate(date: Date | string) {
 		return new Date(date).toLocaleDateString('en-US', {
@@ -134,6 +143,138 @@
 			</svg>
 			New Config
 		</button>
+	</div>
+
+	<!-- Auto Till Count Setup Section -->
+	<div class="card mb-6 border-2 border-primary-200 bg-primary-50/30">
+		<div class="card-body">
+			<div class="flex items-start justify-between">
+				<div class="flex items-start gap-3">
+					<div class="p-2 rounded-lg bg-primary-100">
+						<svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+						</svg>
+					</div>
+					<div>
+						<h2 class="text-lg font-semibold text-gray-900">Auto Till Count at Clock-In</h2>
+						<p class="text-sm text-gray-600 mt-1">
+							Automatically assign a cash count task when staff clocks in. This uses the existing task assignment system.
+						</p>
+					</div>
+				</div>
+				{#if !showAutoSetup}
+					<button
+						on:click={() => { showAutoSetup = true; selectedAutoConfigId = activeConfigs[0]?.id || ''; }}
+						class="btn-primary text-sm"
+						disabled={activeConfigs.length === 0}
+					>
+						Setup Auto Till Count
+					</button>
+				{/if}
+			</div>
+
+			{#if activeConfigs.length === 0 && !showAutoSetup}
+				<p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3 mt-3">
+					Create an active cash count config first before setting up auto-assignment.
+				</p>
+			{/if}
+
+			{#if showAutoSetup}
+				<form method="POST" action="?/setupAutoCount" use:enhance={() => {
+					return async ({ update }) => {
+						await update();
+						showAutoSetup = false;
+					};
+				}} class="mt-4 p-4 bg-white rounded-lg border border-gray-200">
+					<h3 class="font-medium text-gray-900 mb-3">Quick Setup</h3>
+
+					{#if form?.error}
+						<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-3">
+							{form.error}
+						</div>
+					{/if}
+
+					<div class="mb-4">
+						<label for="autoConfigSelect" class="block text-sm font-medium text-gray-700 mb-1">
+							Cash Count Config
+						</label>
+						<select
+							id="autoConfigSelect"
+							name="cashCountConfigId"
+							bind:value={selectedAutoConfigId}
+							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+							required
+						>
+							{#each activeConfigs as config}
+								<option value={config.id}>{config.name}{config.locationName ? ` (${config.locationName})` : ''}</option>
+							{/each}
+						</select>
+						<p class="text-xs text-gray-500 mt-1">
+							When any staff member clocks in, they'll receive a cash count task using this config.
+						</p>
+					</div>
+
+					<div class="flex gap-3">
+						<button type="button" on:click={() => showAutoSetup = false} class="btn-secondary text-sm">
+							Cancel
+						</button>
+						<button type="submit" class="btn-primary text-sm">
+							Create Auto-Assignment Rule
+						</button>
+					</div>
+				</form>
+			{/if}
+
+			{#if form?.success}
+				<div class="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+					Auto till count rule created successfully.
+				</div>
+			{/if}
+
+			<!-- Existing auto-assignment rules -->
+			{#if data.autoRules.length > 0}
+				<div class="mt-4">
+					<h3 class="text-sm font-medium text-gray-700 mb-2">Active Auto-Assignment Rules</h3>
+					<div class="space-y-2">
+						{#each data.autoRules as rule}
+							<div class="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
+								<div class="flex items-center gap-3">
+									<span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full {rule.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}">
+										{rule.isActive ? 'Active' : 'Inactive'}
+									</span>
+									<div>
+										<p class="text-sm font-medium text-gray-900">{rule.name}</p>
+										<p class="text-xs text-gray-500">
+											Config: {configLookup[rule.cashCountConfigId || ''] || 'Unknown'}
+											{#if rule.triggerCount > 0}
+												&middot; Triggered {rule.triggerCount} time{rule.triggerCount !== 1 ? 's' : ''}
+											{/if}
+											{#if rule.lastTriggeredAt}
+												&middot; Last: {formatDate(rule.lastTriggeredAt)}
+											{/if}
+										</p>
+									</div>
+								</div>
+								<div class="flex items-center gap-2">
+									<form method="POST" action="?/toggleAutoRule" use:enhance>
+										<input type="hidden" name="ruleId" value={rule.id} />
+										<button type="submit" class="text-sm text-primary-600 hover:text-primary-700">
+											{rule.isActive ? 'Disable' : 'Enable'}
+										</button>
+									</form>
+									<form method="POST" action="?/deleteAutoRule" use:enhance>
+										<input type="hidden" name="ruleId" value={rule.id} />
+										<button type="submit" class="text-sm text-red-600 hover:text-red-700">
+											Delete
+										</button>
+									</form>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		</div>
 	</div>
 
 	<!-- Configurations -->

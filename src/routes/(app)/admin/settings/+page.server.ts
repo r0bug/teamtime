@@ -48,6 +48,46 @@ async function toggleSetting(locals: App.Locals, key: string) {
 }
 
 export const actions: Actions = {
+	toggleModule: async ({ request, locals }) => {
+		if (!isManager(locals.user)) {
+			return fail(403, { error: 'Unauthorized' });
+		}
+
+		const formData = await request.formData();
+		const moduleKey = formData.get('module')?.toString();
+		if (!moduleKey) return fail(400, { error: 'Module key required' });
+
+		// Load current module settings
+		const [current] = await db
+			.select()
+			.from(appSettings)
+			.where(eq(appSettings.key, 'enabled_modules'))
+			.limit(1);
+
+		let modules: Record<string, boolean> = {};
+		if (current) {
+			try { modules = JSON.parse(current.value); } catch { /* empty */ }
+		}
+
+		// Toggle the module
+		modules[moduleKey] = modules[moduleKey] === false ? true : false;
+
+		const newValue = JSON.stringify(modules);
+		if (current) {
+			await db
+				.update(appSettings)
+				.set({ value: newValue, updatedAt: new Date() })
+				.where(eq(appSettings.key, 'enabled_modules'));
+		} else {
+			await db.insert(appSettings).values({
+				key: 'enabled_modules',
+				value: newValue
+			});
+		}
+
+		return { success: true };
+	},
+
 	toggle2FA: async ({ locals }) => {
 		return toggleSetting(locals, '2fa_enabled');
 	},

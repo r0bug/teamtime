@@ -50,12 +50,20 @@ const EXPLICIT_DELIBERATE_PATTERNS = [
 ];
 
 // Patterns that suggest quick/simple questions
+// Phase 0.6: Expanded quick patterns to catch more simple queries
 const QUICK_PATTERNS = [
-	/^(what|how|why|when|where|can|is|are|do|does)\s+.{0,50}\?$/i,
-	/\b(explain|clarify|define)\b.*\b(term|concept|meaning)\b/i,
+	/^(what|how|why|when|where|can|is|are|do|does)\s+.{0,80}\?$/i,
+	/\b(explain|clarify|define)\b.*\b(term|concept|meaning|convention|pattern)\b/i,
 	/\bquick\s+question\b/i,
-	/\bjust\s+(wondering|curious)\b/i,
-	/\bbrief(ly)?\b/i
+	/\bjust\s+(wondering|curious|checking)\b/i,
+	/\bbrief(ly)?\b/i,
+	/\bwhat\s+(does|is|are)\b/i,
+	/\bwhere\s+(is|are|can)\b/i,
+	/\bshow\s+me\b/i,
+	/\blist\s+(the|all)\b/i,
+	/\bhow\s+do\s+(I|we|you)\b/i,
+	/\bwhat\s+file\b/i,
+	/\bwhich\s+(file|component|service)\b/i
 ];
 
 // Complexity indicators that push toward standard/deliberate
@@ -130,11 +138,12 @@ export function detectConsultationTier(
 		};
 	}
 
+	// Phase 0.6: Improved tier selection - default to quick/standard, not deliberate
 	// Check if this is a simple/quick question
 	if (matchesAny(message, QUICK_PATTERNS)) {
 		// But verify it doesn't have complexity indicators
 		const complexityCount = countMatches(message, COMPLEXITY_INDICATORS);
-		if (complexityCount === 0) {
+		if (complexityCount <= 1) {
 			return {
 				tier: 'quick',
 				reason: 'Simple question detected',
@@ -149,8 +158,8 @@ export function detectConsultationTier(
 	// Message length heuristic
 	const wordCount = message.split(/\s+/).length;
 
-	// Short messages with low complexity → quick
-	if (wordCount < 30 && complexityCount === 0) {
+	// Short messages with low complexity → quick (expanded threshold)
+	if (wordCount < 50 && complexityCount === 0) {
 		return {
 			tier: 'quick',
 			reason: 'Brief message with low complexity',
@@ -158,7 +167,16 @@ export function detectConsultationTier(
 		};
 	}
 
-	// Default to standard tier for normal architectural discussion
+	// Medium messages or single complexity indicator → standard
+	if (wordCount < 100 || complexityCount <= 1) {
+		return {
+			tier: 'standard',
+			reason: 'Standard architectural discussion',
+			triggers: ['default']
+		};
+	}
+
+	// Default to standard tier for everything else (never auto-deliberate)
 	return {
 		tier: 'standard',
 		reason: 'Standard architectural discussion',

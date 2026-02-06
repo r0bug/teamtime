@@ -780,6 +780,37 @@ Location determination priority:
 3. User's primary location
 4. No location (rules won't match)
 
+### Preset Templates
+
+The new rule form (`/admin/tasks/rules/new`) includes 7 preset cards for common patterns:
+
+| Preset | Trigger | Assignment | Task Type |
+|--------|---------|------------|-----------|
+| Opening Till Count | `clock_in` | Triggering User | Cash Count |
+| Closing Till Count | `closing_shift` | Triggering User | Cash Count |
+| First-In Opening Tasks | `first_clock_in` | Triggering User | Template |
+| Last-Out Closing Tasks | `last_clock_out` | Triggering User | Template |
+| Mid-Shift Check | `time_into_shift` | Triggering User | Template |
+| Daily Scheduled Task | `schedule` | Least Tasks | Template |
+| Post-Task Follow-Up | `task_completed` | Triggering User | Template |
+
+Clicking a preset pre-fills the form (trigger type, assignment type, task type, name, and defaults like 4 hours for mid-shift). Admin can customize before saving.
+
+### Auto Till Count at Clock-In
+
+**URL**: Admin → Cash Counts (`/admin/cash-counts`)
+
+A dedicated "Setup Auto Till Count" section at the top of the cash count management page:
+
+1. Click "Setup Auto Till Count"
+2. Select an active cash count config from the dropdown
+3. Click "Create Auto-Assignment Rule"
+4. System creates a `taskAssignmentRule` with `triggerType: clock_in` and `assignmentType: clocked_in_user`
+
+**Status display**: Shows existing auto-assignment rules with enable/disable/delete controls, trigger count, and last triggered date.
+
+**How it works**: When any staff member clocks in, the clock-in API calls `processRulesForTrigger('clock_in', context)`, which picks up the rule and auto-creates a cash count task assigned to the clocked-in user.
+
 ### Configuration
 
 **URL**: Admin → Tasks → Rules (`/admin/tasks/rules`)
@@ -787,12 +818,13 @@ Location determination priority:
 **Create a Rule**:
 1. Go to Admin → Tasks → Rules
 2. Click "New Rule"
-3. Select trigger type
-4. Configure trigger-specific settings (e.g., time into shift hours)
-5. Set conditions (location, days, time window)
-6. Choose assignment type
-7. Select task template OR cash count config
-8. Save and enable
+3. Optionally pick a preset template to pre-fill the form
+4. Select trigger type
+5. Configure trigger-specific settings (e.g., time into shift hours)
+6. Set conditions (location, days, time window)
+7. Choose assignment type
+8. Select task template OR cash count config
+9. Save and enable
 
 ### Cron Setup
 
@@ -991,7 +1023,7 @@ Consecutive work days with on-time clock-in and no task failures build a streak:
 ### Admin Features
 
 #### Pricing Grading (`/admin/pricing/grading`)
-- Queue of ungraded pricing decisions
+- Queue of ungraded pricing decisions (up to 100 shown)
 - Stats showing graded/ungraded counts
 - Detail view with photos and justification
 - Slider-based grading (1-5) for:
@@ -1000,6 +1032,19 @@ Consecutive work days with on-time clock-in and no task failures build a streak:
   - Photo Quality (30% weight)
 - Optional feedback field
 - Points auto-calculated and awarded
+
+#### Bulk Pricing Grading
+- **Multi-select**: Select individual items or "Select All" ungraded items
+- **Floating action bar**: Appears at bottom when items are selected with:
+  - Count badge showing selected items
+  - Three grade sliders matching individual grading UI
+  - Real-time overall grade preview and points preview
+  - Optional shared feedback field
+  - "Grade Selected" submit button
+- **API**: `POST /api/admin/pricing/bulk-grade` — grades up to 50 items at once
+- Skips already-graded items without error
+- Awards points and updates user stats for each graded item
+- Checks and awards achievements after grading
 
 ### Staff Feedback Features
 

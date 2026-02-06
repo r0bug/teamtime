@@ -721,6 +721,12 @@ export async function deliberateConsultation(
 	totalCostCents += primaryResponse.costCents;
 	totalTokens += primaryResponse.inputTokens + primaryResponse.outputTokens;
 
+	// Phase 0.7: Include tool results from primary in review context
+	// This prevents the review model from re-fetching the same files
+	const primaryToolContext = primaryResponse.toolCalls?.length
+		? `\n\n## Files and Data Retrieved During Analysis\n(The following data was already fetched by the primary analysis - no need to re-read these files)\n${primaryResponse.toolCalls.map(tc => `- Tool: ${tc.name}, Params: ${JSON.stringify(tc.params)}`).join('\n')}`
+		: '';
+
 	// Step 2: Peer review (try, but don't fail if unavailable)
 	let reviewResponse: LLMCallResult | undefined;
 	try {
@@ -737,7 +743,7 @@ Do not be contrarian for its own sake. If the proposal is good, say so and add v
 ${userPrompt}
 
 ## Proposed Solution
-${primaryResponse.content}
+${primaryResponse.content}${primaryToolContext}
 
 Please review this architectural recommendation.`;
 

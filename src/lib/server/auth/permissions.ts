@@ -33,8 +33,7 @@ export async function getUserPermissions(user: User): Promise<UserPermissions> {
 	};
 
 	// Get user's custom type if they have one
-	// Note: userTypeId column may not exist yet - handle gracefully
-	const userTypeId = (user as User & { userTypeId?: string | null }).userTypeId;
+	const userTypeId = user.userTypeId;
 
 	if (!userTypeId) {
 		// No custom type - user will rely on role-based fallback

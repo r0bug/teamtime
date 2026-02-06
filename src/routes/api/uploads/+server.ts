@@ -5,8 +5,13 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '$lib/server/logger';
+import sharp from 'sharp';
 
 const log = createLogger('api:uploads');
+
+// HEIC/HEIF formats that need conversion to JPEG for browser compatibility
+const NEEDS_CONVERSION = ['image/heic', 'image/heif'];
+const HEIC_EXTENSIONS = ['.heic', '.heif'];
 
 const UPLOAD_DIR = './uploads';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -76,13 +81,36 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		}
 
 		// Generate unique filename
-		const ext = path.extname(file.name) || '.jpg';
+		let ext = path.extname(file.name).toLowerCase() || '.jpg';
+		let buffer = Buffer.from(await file.arrayBuffer());
+		let mimeType = file.type;
+		let sizeBytes = file.size;
+
+		// Convert HEIC/HEIF to JPEG for browser compatibility
+		const needsConversion = NEEDS_CONVERSION.includes(file.type.toLowerCase()) ||
+			HEIC_EXTENSIONS.includes(ext);
+
+		if (needsConversion) {
+			try {
+				log.info({ fileName: file.name }, 'Converting HEIC/HEIF to JPEG');
+				buffer = await sharp(buffer)
+					.jpeg({ quality: 90 })
+					.toBuffer();
+				ext = '.jpg';
+				mimeType = 'image/jpeg';
+				sizeBytes = buffer.length;
+				log.info({ originalSize: file.size, convertedSize: sizeBytes }, 'HEIC conversion complete');
+			} catch (conversionError) {
+				log.error({ error: conversionError }, 'HEIC conversion failed, saving original');
+				// Fall back to saving original if conversion fails
+			}
+		}
+
 		const filename = `${uuidv4()}${ext}`;
 		const filePath = path.join(uploadPath, filename);
 		const relativePath = path.join(dateDir, filename);
 
 		// Write file
-		const buffer = Buffer.from(await file.arrayBuffer());
 		await writeFile(filePath, buffer);
 
 		return json({
@@ -90,8 +118,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			file: {
 				filePath: `/uploads/${relativePath}`,
 				originalName: file.name,
-				mimeType: file.type,
-				sizeBytes: file.size
+				mimeType: mimeType,
+				sizeBytes: sizeBytes
 			}
 		});
 	} catch (error) {

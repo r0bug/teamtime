@@ -1,17 +1,37 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
+	import { onMount, onDestroy } from 'svelte';
 	import type { LayoutData } from './$types';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import InstallPrompt from '$lib/components/InstallPrompt.svelte';
+	import GlobalSearch from '$lib/components/GlobalSearch.svelte';
+	import ShortcutHelp from '$lib/components/ShortcutHelp.svelte';
+	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
+	import { registerDefaultShortcuts, handleKeydown as shortcutKeydown } from '$lib/stores/shortcuts';
 
 	export let data: LayoutData;
+
+	onMount(() => {
+		registerDefaultShortcuts();
+		if (browser) {
+			window.addEventListener('keydown', shortcutKeydown);
+		}
+	});
+
+	onDestroy(() => {
+		if (browser) {
+			window.removeEventListener('keydown', shortcutKeydown);
+		}
+	});
 
 	$: user = data.user;
 	$: isAdmin = user?.role === 'admin';
 	$: isManager = user?.role === 'manager' || user?.role === 'admin';
 	$: isPurchaser = user?.role === 'purchaser' || isManager;
 	$: canListOnEbay = data.canListOnEbay || isManager;
+	$: modules = data.enabledModules || {};
+	$: mod = (key: string) => modules[key] !== false; // Default to enabled
 
 	// Mobile menu state
 	let mobileMenuOpen = false;
@@ -51,17 +71,17 @@
 
 	$: navItems = [
 		{ href: '/dashboard', label: 'Home', icon: 'home', show: true },
-		{ href: '/schedule', label: 'Schedule', icon: 'calendar', show: true },
-		{ href: '/tasks', label: 'Tasks', icon: 'clipboard', show: true },
-		{ href: '/messages', label: 'Messages', icon: 'chat', show: true },
-		{ href: '/leaderboard', label: 'Leaderboard', icon: 'trophy', show: true },
-		{ href: '/achievements', label: 'Achievements', icon: 'star', show: true },
-		{ href: '/sales', label: 'Sales', icon: 'chart', show: true },
+		{ href: '/schedule', label: 'Schedule', icon: 'calendar', show: mod('schedule') },
+		{ href: '/tasks', label: 'Tasks', icon: 'clipboard', show: mod('tasks') },
+		{ href: '/messages', label: 'Messages', icon: 'chat', show: mod('messages') },
+		{ href: '/leaderboard', label: 'Leaderboard', icon: 'trophy', show: mod('leaderboard') },
+		{ href: '/achievements', label: 'Achievements', icon: 'star', show: mod('achievements') },
+		{ href: '/sales', label: 'Sales', icon: 'chart', show: mod('sales') },
 		{ href: '/info', label: 'Info', icon: 'info', show: true },
-		{ href: '/pricing', label: 'Pricing', icon: 'tag', show: true },
-		{ href: '/inventory/drops', label: 'Drops', icon: 'box', show: isPurchaser },
-		{ href: '/ebay/tasks', label: 'eBay Tasks', icon: 'globe', show: canListOnEbay },
-		{ href: '/expenses', label: 'Expenses', icon: 'dollar', show: isPurchaser },
+		{ href: '/pricing', label: 'Pricing', icon: 'tag', show: mod('pricing') },
+		{ href: '/inventory/drops', label: 'Drops', icon: 'box', show: isPurchaser && mod('inventory') },
+		{ href: '/ebay/tasks', label: 'eBay Tasks', icon: 'globe', show: canListOnEbay && mod('ebay') },
+		{ href: '/expenses', label: 'Expenses', icon: 'dollar', show: isPurchaser && mod('expenses') },
 		{ href: '/admin/office-manager/chat', label: 'Office Manager', icon: 'office-chat', show: isManager }
 	].filter(item => item.show);
 
@@ -108,6 +128,7 @@
 			items: [
 				{ href: '/admin/ai', label: 'AI Dashboard', icon: 'brain', show: isAdmin },
 				{ href: '/admin/ai/actions', label: 'AI Actions', icon: 'activity', show: isAdmin },
+				{ href: '/admin/ai/usage', label: 'Token Usage', icon: 'chart', show: isAdmin },
 				{ href: '/admin/architect', label: 'Ada (Architect)', icon: 'architect', show: isAdmin }
 			].filter(item => item.show)
 		},
@@ -509,6 +530,11 @@
 
 <!-- PWA Install Prompt Component - displays above bottom nav on mobile -->
 <InstallPrompt />
+
+<!-- Global overlays -->
+<ConnectionStatus />
+<GlobalSearch />
+<ShortcutHelp />
 
 <style>
 	/* Ensure sidebar nav scrolls properly */

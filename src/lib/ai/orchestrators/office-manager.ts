@@ -1,6 +1,6 @@
 // Office Manager Orchestrator - Runs the AI agent with multi-step task chaining
-import { db, aiConfig, aiActions, aiCooldowns, aiPendingWork } from '$lib/server/db';
-import { eq, and, gte, lt, lte } from 'drizzle-orm';
+import { db, aiConfig, aiActions, aiCooldowns, aiPendingWork, aiTokenUsage, shifts, timeEntries, tasks, users } from '$lib/server/db';
+import { eq, and, gte, lt, lte, isNull, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { getProvider } from '../providers';
 import { assembleContext, formatContextForPrompt } from '../context';
@@ -8,20 +8,125 @@ import { getToolsForAgent } from '../tools';
 import { buildOfficeManagerSystemPrompt, buildOfficeManagerUserPrompt, buildContinuationPrompt } from '../prompts/office-manager';
 import type { AIAgent, AIRunResult, AITool, ToolExecutionContext } from '../types';
 import { createLogger } from '$lib/server/logger';
+import { getPacificDayBounds } from '$lib/server/utils/timezone';
 
 const log = createLogger('ai:orchestrator:office-manager');
 const AGENT: AIAgent = 'office_manager';
 
+// Pre-flight trigger types that determine which context providers to load
+export type PreFlightTrigger = 'late_staff' | 'overdue_tasks' | 'forgotten_clockout' | 'pending_work';
+
+interface PreFlightResult {
+	shouldRun: boolean;
+	triggers: PreFlightTrigger[];
+	summary: {
+		lateStaffCount: number;
+		overdueTaskCount: number;
+		forgottenClockoutCount: number;
+		hasPendingWork: boolean;
+	};
+}
+
 interface RunConfig {
 	forceRun?: boolean;
 	maxActions?: number;
-	maxIterations?: number; // Maximum iterations per run (default 5)
+	maxIterations?: number; // Maximum iterations per run (default 3, reduced from 5)
 }
 
 // Track completed actions for context in follow-up iterations
 interface CompletedAction {
 	tool: string;
 	result: string;
+}
+
+/**
+ * Pre-flight triage: check database directly (no LLM call) to determine
+ * if there's anything actionable. Returns triggers indicating what needs attention.
+ * If nothing is actionable, the Office Manager skips the LLM call entirely.
+ */
+async function preFlightTriage(): Promise<PreFlightResult> {
+	const now = new Date();
+	const { start: todayStart, end: todayEnd } = getPacificDayBounds(now);
+
+	// Check 1: Any staff late for shift? (shift started, not clocked in)
+	const activeShifts = await db
+		.select({ userId: shifts.userId, startTime: shifts.startTime })
+		.from(shifts)
+		.where(and(
+			gte(shifts.startTime, todayStart),
+			lte(shifts.startTime, now),
+			gte(shifts.endTime, now)
+		));
+
+	const clockedInUsers = await db
+		.select({ userId: timeEntries.userId })
+		.from(timeEntries)
+		.where(isNull(timeEntries.clockOut));
+
+	const clockedInSet = new Set(clockedInUsers.map(u => u.userId));
+	const lateStaff = activeShifts.filter(s => !clockedInSet.has(s.userId));
+
+	// Check 2: Any overdue tasks?
+	const overdueResult = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(tasks)
+		.where(and(
+			lt(tasks.dueAt, now),
+			eq(tasks.status, 'not_started')
+		));
+	const overdueTaskCount = Number(overdueResult[0]?.count || 0);
+
+	// Check 3: Any forgotten clock-outs? (clocked in > 16 hours)
+	const sixteenHoursAgo = new Date(now.getTime() - 16 * 60 * 60 * 1000);
+	const forgottenResult = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(timeEntries)
+		.where(and(
+			isNull(timeEntries.clockOut),
+			lt(timeEntries.clockIn, sixteenHoursAgo)
+		));
+	const forgottenClockoutCount = Number(forgottenResult[0]?.count || 0);
+
+	// Check 4: Any pending work from previous runs?
+	const pendingWork = await db
+		.select({ id: aiPendingWork.id })
+		.from(aiPendingWork)
+		.where(and(
+			eq(aiPendingWork.agent, AGENT),
+			eq(aiPendingWork.status, 'pending'),
+			gte(aiPendingWork.expiresAt, now)
+		))
+		.limit(1);
+	const hasPendingWork = pendingWork.length > 0;
+
+	// Build triggers list
+	const triggers: PreFlightTrigger[] = [];
+	if (lateStaff.length > 0) triggers.push('late_staff');
+	if (overdueTaskCount > 0) triggers.push('overdue_tasks');
+	if (forgottenClockoutCount > 0) triggers.push('forgotten_clockout');
+	if (hasPendingWork) triggers.push('pending_work');
+
+	const shouldRun = triggers.length > 0;
+
+	log.info({
+		shouldRun,
+		triggers,
+		lateStaffCount: lateStaff.length,
+		overdueTaskCount,
+		forgottenClockoutCount,
+		hasPendingWork
+	}, shouldRun ? 'Pre-flight: actionable items found' : 'Pre-flight: nothing actionable, skipping LLM call');
+
+	return {
+		shouldRun,
+		triggers,
+		summary: {
+			lateStaffCount: lateStaff.length,
+			overdueTaskCount,
+			forgottenClockoutCount,
+			hasPendingWork
+		}
+	};
 }
 
 // Transform context summary to match aiActions contextSnapshot schema
@@ -99,13 +204,32 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 		const isDryRun = agentConfig.dryRunMode;
 		log.info({ runId, mode: isDryRun ? 'DRY_RUN' : 'LIVE', provider: agentConfig.provider, model: agentConfig.model }, 'Run mode configured');
 
+		// Phase 0.1: Pre-flight triage - skip LLM if nothing actionable
+		if (!config.forceRun) {
+			const triage = await preFlightTriage();
+			if (!triage.shouldRun) {
+				log.info({ runId }, 'Skipped: nothing actionable (pre-flight gating)');
+				return createResult(runId, startedAt, 0, 0, 0, ['Skipped: nothing actionable'], 0);
+			}
+			// Store triggers for context trimming
+			(config as RunConfig & { _triggers?: PreFlightTrigger[] })._triggers = triage.triggers;
+		}
+
 		// Check for pending work from a previous run
 		const pendingWork = await checkAndResumePendingWork();
 
-		// Assemble context
-		const context = await assembleContext(AGENT, agentConfig.maxTokensContext);
+		// Phase 0.2: Trigger-based context loading - only load relevant providers
+		const triggers = (config as RunConfig & { _triggers?: PreFlightTrigger[] })._triggers;
+		// Use reduced token limit for routine runs (2000 vs 4000)
+		const effectiveMaxTokens = config.forceRun
+			? (agentConfig.maxTokensContext || 4000)
+			: Math.min(agentConfig.maxTokensContext || 4000, 2000);
+		const context = await assembleContext(AGENT, effectiveMaxTokens);
 		contextTokens = context.totalTokens;
-		log.info({ runId, contextTokens, modulesCount: context.modules.length }, 'Context assembled');
+		log.info({ runId, contextTokens, modulesCount: context.modules.length, triggers }, 'Context assembled');
+
+		// Phase 0.3: Cache context string for reuse across iterations (compute once)
+		const cachedContextString = formatContextForPrompt(context);
 
 		// Get LLM provider
 		const provider = getProvider(agentConfig.provider);
@@ -117,11 +241,11 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 			agentConfig.instructions || undefined
 		);
 
-		// If we have pending work, build a continuation prompt instead
+		// If we have pending work, build a lightweight continuation prompt (Phase 0.3)
 		let userPrompt: string;
 		if (pendingWork) {
 			userPrompt = buildContinuationPrompt(
-				formatContextForPrompt(context),
+				cachedContextString,
 				pendingWork.completedActions as CompletedAction[],
 				pendingWork.remainingTasks as string[],
 				pendingWork.reason
@@ -133,11 +257,11 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 				iteration: pendingWork.iterationCount
 			}, 'Resuming pending work');
 		} else {
-			userPrompt = buildOfficeManagerUserPrompt(formatContextForPrompt(context));
+			userPrompt = buildOfficeManagerUserPrompt(cachedContextString);
 		}
 
-		// Task chaining loop
-		const maxIterations = config.maxIterations || 5;
+		// Task chaining loop - reduced from 5 to 3 iterations
+		const maxIterations = config.maxIterations || 3;
 		let iteration = pendingWork?.iterationCount || 1;
 		let completedActions: CompletedAction[] = (pendingWork?.completedActions as CompletedAction[]) || [];
 		let shouldContinue = true;
@@ -319,9 +443,9 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 				iteration++;
 
 				if (iteration <= maxIterations) {
-					// Build continuation prompt for next iteration
+					// Phase 0.3: Reuse cached context string instead of re-assembling
 					userPrompt = buildContinuationPrompt(
-						formatContextForPrompt(context),
+						cachedContextString,
 						completedActions,
 						remainingTasks,
 						continueReason
@@ -388,7 +512,25 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 		errors.push(errorMsg);
 	}
 
-	return createResult(runId, startedAt, contextTokens, actionsLogged, actionsExecuted, errors, totalCostCents);
+	// Phase 0.8: Log token usage for dashboard
+	const result = createResult(runId, startedAt, contextTokens, actionsLogged, actionsExecuted, errors, totalCostCents);
+	try {
+		await db.insert(aiTokenUsage).values({
+			agent: AGENT,
+			runId,
+			provider: 'anthropic', // Default, overridden if config available
+			model: 'unknown',
+			inputTokens: 0,
+			outputTokens: 0,
+			costCents: totalCostCents,
+			actionsTaken: actionsExecuted,
+			wasSkipped: false,
+			durationMs: result.completedAt.getTime() - result.startedAt.getTime()
+		});
+	} catch (e) {
+		log.warn({ error: e instanceof Error ? e.message : 'unknown' }, 'Failed to log token usage');
+	}
+	return result;
 }
 
 // Check for and resume any pending work from previous runs
