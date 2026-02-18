@@ -24,6 +24,16 @@ This document provides detailed information about TeamTime features, their imple
 18. [Late Arrival Warning System](#late-arrival-warning-system)
 19. [Security Hardening](#security-hardening)
 20. [Toast Notifications](#toast-notifications)
+21. [Global Search](#global-search)
+22. [Keyboard Shortcuts](#keyboard-shortcuts)
+23. [Connection Status Indicator](#connection-status-indicator)
+24. [CSV Export](#csv-export)
+25. [Shift Requests](#shift-requests)
+26. [Bulk Operations](#bulk-operations)
+27. [Module System](#module-system)
+28. [AI Token Usage Dashboard](#ai-token-usage-dashboard)
+29. [Gamification Admin Config](#gamification-admin-config)
+30. [Dashboard Enhancements](#dashboard-enhancements)
 
 ---
 
@@ -2127,6 +2137,295 @@ showToast('success', 'Record created', { title: 'Done' });
 **Component**: `src/lib/components/ToastContainer.svelte`
 
 **Integration**: Included in `src/routes/+layout.svelte`
+
+---
+
+## Global Search
+
+### Overview
+
+TeamTime includes a global search feature that allows users to quickly find people, tasks, and other records across the platform using a unified search interface.
+
+### Access
+
+**Shortcut**: `Ctrl+K` (or `Cmd+K` on Mac)
+
+### Features
+
+- **Unified Search**: Search across users, tasks, and other entities from one input
+- **Keyboard Navigation**: Arrow keys to navigate results, Enter to select, Escape to close
+- **Real-time Results**: Debounced search queries as you type (minimum 2 characters)
+- **Categorized Results**: Results grouped by type (users, tasks, etc.) with icons
+- **Quick Navigation**: Select a result to navigate directly to its detail page
+
+### Implementation
+
+**Component**: `src/lib/components/GlobalSearch.svelte`
+
+**API**: `GET /api/search?q={query}` — Returns matching records across entity types
+
+**Integration**: Rendered in `src/routes/(app)/+layout.svelte`, toggled via `showGlobalSearch` store
+
+---
+
+## Keyboard Shortcuts
+
+### Overview
+
+TeamTime provides keyboard shortcuts for power users to navigate quickly without touching the mouse. Includes both single-key and two-key sequence shortcuts.
+
+### Available Shortcuts
+
+| Shortcut | Action | Category |
+|----------|--------|----------|
+| `Ctrl+K` | Open global search | Global |
+| `?` | Show shortcut help | Global |
+| `Escape` | Close modal/panel | Global |
+| `g h` | Go to Home/Dashboard | Navigation |
+| `g t` | Go to Tasks | Navigation |
+| `g m` | Go to Messages | Navigation |
+| `g s` | Go to Schedule | Navigation |
+| `g l` | Go to Leaderboard | Navigation |
+
+### Implementation
+
+- **Store**: `src/lib/stores/shortcuts.ts` — Shortcut registry with sequence key support
+- **Help Panel**: `src/lib/components/ShortcutHelp.svelte` — Overlay showing all shortcuts
+- Shortcuts are disabled when typing in inputs, textareas, or content-editable elements
+
+---
+
+## Connection Status Indicator
+
+### Overview
+
+A real-time connection status indicator that monitors the user's network connectivity and displays visual feedback when offline or reconnecting.
+
+### Behavior
+
+- **Online**: Indicator hidden (no visual noise)
+- **Offline**: Red banner appears with "You are offline" message
+- **Reconnecting**: Shows reconnection attempt status
+
+### Implementation
+
+**Component**: `src/lib/components/ConnectionStatus.svelte`
+
+**Integration**: Included in root layout (`src/routes/(app)/+layout.svelte`)
+
+Uses browser `navigator.onLine` API with `online`/`offline` event listeners.
+
+---
+
+## CSV Export
+
+### Overview
+
+Managers and admins can export data to CSV or JSON format for payroll integration and external analysis.
+
+### Supported Export Types
+
+| Type | Description | Access |
+|------|-------------|--------|
+| `time-entries` | Clock in/out records with hours worked | Manager+ |
+| `tasks` | Task completion records | Manager+ |
+
+### Usage
+
+**API**: `GET /api/export/{type}?format=csv&start=YYYY-MM-DD&end=YYYY-MM-DD`
+
+**Parameters**:
+- `type` — Export type (`time-entries`, `tasks`)
+- `format` — Output format (`csv` or `json`, default: `csv`)
+- `start` — Start date filter
+- `end` — End date filter
+
+**Response**: File download with appropriate Content-Type and Content-Disposition headers.
+
+### Files
+
+**API**: `src/routes/api/export/[type]/+server.ts`
+
+**Service**: `src/lib/server/services/export-service.ts`
+
+---
+
+## Shift Requests
+
+### Overview
+
+Shift Requests enable managers to broadcast open shifts to all staff. Employees can accept or decline available shifts, and the first acceptance fills the request.
+
+### Workflow
+
+1. Manager creates a shift request with date, time, and location
+2. Request appears as "open" to all staff
+3. Employees view open requests and respond (accept/decline) with optional note
+4. First acceptance fills the request; status changes to "filled"
+5. Manager can cancel unfilled requests
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/shifts/requests` | GET | List shift requests (filter by status) |
+| `/api/shifts/requests` | POST | Create shift request (Manager+) |
+| `/api/shifts/requests/[id]/respond` | POST | Accept or decline a request |
+
+### Database Schema
+
+- `shift_requests` — Request metadata with status tracking
+- `shift_request_responses` — Individual user responses (unique per request+user)
+
+### Files
+
+**API**: `src/routes/api/shifts/requests/+server.ts`, `src/routes/api/shifts/requests/[id]/respond/+server.ts`
+
+**Schema**: `src/lib/server/db/schema.ts` — `shiftRequests`, `shiftRequestResponses` tables
+
+---
+
+## Bulk Operations
+
+### Overview
+
+Admin bulk operations allow managers to perform actions on multiple records simultaneously, reducing repetitive work.
+
+### Available Bulk Operations
+
+#### Bulk User Management
+- **API**: `POST /api/admin/users/bulk`
+- Perform batch operations on multiple users (activate, deactivate, change role)
+- Requires admin permissions
+
+#### Bulk Task Operations
+- **API**: `POST /api/tasks/bulk`
+- Assign, cancel, or update multiple tasks at once
+- Requires manager+ permissions
+
+#### Bulk Pricing Grading
+- **API**: `POST /api/admin/pricing/bulk-grade`
+- Grade up to 50 pricing decisions at once with shared grade values
+- Awards points and checks achievements for each graded item
+- See [Gamification System → Bulk Pricing Grading](#bulk-pricing-grading) for details
+
+### Files
+
+**API Routes**: `src/routes/api/admin/users/bulk/+server.ts`, `src/routes/api/tasks/bulk/+server.ts`, `src/routes/api/admin/pricing/bulk-grade/+server.ts`
+
+---
+
+## Module System
+
+### Overview
+
+The Module System allows administrators to enable or disable major platform modules via the settings page. Disabled modules are hidden from navigation and their routes redirect to the dashboard.
+
+### Access
+
+**URL**: Admin → Settings (`/admin/settings`)
+
+### How It Works
+
+- Module state is stored in the `appSettings` table as a JSON value under key `enabled_modules`
+- On each request, `hooks.server.ts` reads enabled modules and passes them to the layout
+- Navigation items for disabled modules are hidden
+- Routes for disabled modules redirect to `/dashboard`
+
+### Configurable Modules
+
+Modules that can be toggled include major features like gamification, metrics, expenses, inventory, and others. The exact list is defined in the admin settings page.
+
+### Files
+
+**Admin UI**: `src/routes/(app)/admin/settings/+page.svelte`, `src/routes/(app)/admin/settings/+page.server.ts`
+
+**Layout Integration**: `src/routes/(app)/+layout.server.ts`, `src/routes/(app)/+layout.svelte`
+
+---
+
+## AI Token Usage Dashboard
+
+### Overview
+
+The AI Token Usage Dashboard provides visibility into AI agent costs, run frequency, and efficiency. Tracks token consumption across all three agents with daily, weekly, and monthly breakdowns.
+
+### Access
+
+**URL**: Admin → AI → Usage (`/admin/ai/usage`)
+
+### Features
+
+- **Cost Summary**: Total cost by agent for daily, weekly, and monthly periods
+- **Run Statistics**: Total runs, skipped runs (pre-flight gating savings), and actions taken
+- **Efficiency Metrics**: Shows how pre-flight gating reduces unnecessary LLM calls
+- **Recent Actions**: Timeline of recent AI actions with details
+
+### Files
+
+**Page**: `src/routes/(app)/admin/ai/usage/+page.svelte`, `src/routes/(app)/admin/ai/usage/+page.server.ts`
+
+**Schema**: `src/lib/server/db/schema.ts` — `aiTokenUsage`, `aiActions` tables
+
+---
+
+## Gamification Admin Config
+
+### Overview
+
+The Gamification Config page allows administrators to tune game mechanics (point values, streak thresholds, level requirements) from the database without code changes.
+
+### Access
+
+**URL**: Admin → Gamification (`/admin/gamification`)
+
+### Features
+
+- View and edit gamification parameters grouped by category (points, streaks, levels, achievements)
+- Changes take effect immediately
+- Key-value configuration stored in `gamification_config` table
+
+### Files
+
+**Page**: `src/routes/(app)/admin/gamification/+page.svelte`, `src/routes/(app)/admin/gamification/+page.server.ts`
+
+**Schema**: `src/lib/server/db/schema.ts` — `gamificationConfig` table
+
+---
+
+## Dashboard Enhancements
+
+### Who's Working Widget
+
+Real-time display of currently clocked-in staff on the dashboard:
+- Shows name, clock-in time, and duration
+- Location information when available
+- Click to view staff detail panel
+
+**Component**: `src/lib/components/WhosWorking.svelte`
+
+### Staff Detail Panel
+
+Slide-out panel showing detailed information about a staff member:
+- Current status (clocked in/out)
+- Today's time entries
+- Recent task completions
+- Points and level info
+- Quick actions (send message, assign task)
+
+**Component**: `src/lib/components/StaffDetailPanel.svelte`
+
+### Skeleton Loader
+
+Loading placeholder component used across dashboard widgets for a polished loading experience.
+
+**Component**: `src/lib/components/SkeletonLoader.svelte`
+
+### Swipeable Cards
+
+Touch-friendly swipeable card component for mobile interactions, used in task lists and notifications.
+
+**Component**: `src/lib/components/SwipeableCard.svelte`
 
 ---
 

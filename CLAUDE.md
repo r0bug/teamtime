@@ -57,7 +57,7 @@ src/
 │   │   └── providers/         # LLM integrations
 │   │
 │   ├── server/
-│   │   ├── db/schema.ts       # 93 tables, all data models (2800+ lines)
+│   │   ├── db/schema.ts       # 95 tables, all data models (2800+ lines)
 │   │   ├── auth/              # Lucia + granular permissions
 │   │   ├── services/          # Business logic layer
 │   │   └── jobs/              # Background task processing
@@ -118,7 +118,7 @@ PostgreSQL with Drizzle ORM. Schema file is the source of truth:
 - `drizzle/` - Generated migrations
 - `drizzle.config.ts` - ORM configuration
 
-93 tables covering: users, sessions, time entries, tasks, inventory, pricing, expenses, messaging (with group chats and threads), gamification (10 levels, 17 achievement types, DB-configurable), AI system (token usage tracking), shift requests, audit logs, security (login attempts, account lockouts).
+95 tables covering: users, sessions, time entries, tasks, inventory, pricing, expenses, messaging (with group chats and threads), gamification (10 levels, 17 achievement types, DB-configurable), AI system (token usage tracking), shift requests, audit logs, security (login attempts, account lockouts).
 
 ### Group Chat & Threads
 
