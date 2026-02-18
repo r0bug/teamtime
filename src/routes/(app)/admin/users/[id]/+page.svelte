@@ -230,7 +230,7 @@
 						id="newPin"
 						name="newPin"
 						required
-						pattern="\d{4,8}"
+						pattern={'\\d{4,8}'}
 						inputmode="numeric"
 						class="input font-mono tracking-widest"
 						placeholder="Enter 4-8 digit PIN"

@@ -237,9 +237,9 @@ describe('Notification Functions', () => {
 
 	describe('Mark Notification Read', () => {
 		it('should require authentication', async () => {
-			const { POST } = await import('../../src/routes/api/notifications/[id]/read/+server');
-			const response = await callHandler(POST as any, {
-				method: 'POST',
+			const { PUT } = await import('../../src/routes/api/notifications/[id]/read/+server');
+			const response = await callHandler(PUT as any, {
+				method: 'PUT',
 				params: { id: generateTestUUID() }
 			});
 			assertUnauthorized(response);

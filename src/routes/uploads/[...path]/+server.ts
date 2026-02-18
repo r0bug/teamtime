@@ -78,7 +78,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			// Write cache async — don't block response
 			writeFile(thumbPath, thumbBuffer).catch(() => {});
 
-			return new Response(thumbBuffer, {
+			return new Response(new Uint8Array(thumbBuffer), {
 				headers: {
 					'Content-Type': 'image/jpeg',
 					'Cache-Control': 'public, max-age=31536000, immutable'

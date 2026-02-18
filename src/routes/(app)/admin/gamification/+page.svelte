@@ -35,7 +35,8 @@
 		return key.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 	}
 
-	let activeTab: 'points' | 'streaks' | 'levels' = 'points';
+	const tabOptions = ['points', 'streaks', 'levels'] as const;
+	let activeTab: typeof tabOptions[number] = 'points';
 	let saveSuccess = false;
 </script>
 
@@ -46,7 +47,7 @@
 
 	<!-- Tabs -->
 	<div class="flex space-x-1 mb-6 bg-gray-100 rounded-lg p-1">
-		{#each ['points', 'streaks', 'levels'] as tab}
+		{#each tabOptions as tab}
 			<button
 				class="flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors {activeTab === tab ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'}"
 				on:click={() => activeTab = tab}

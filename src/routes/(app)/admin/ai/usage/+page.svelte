@@ -30,7 +30,8 @@
 		return formatCents(totalCost / totalActions);
 	}
 
-	let activeTab: 'overview' | 'runs' | 'tools' = 'overview';
+	const tabs = ['overview', 'runs', 'tools'] as const;
+	let activeTab: typeof tabs[number] = 'overview';
 </script>
 
 <svelte:head>
@@ -84,7 +85,7 @@
 	<!-- Tabs -->
 	<div class="border-b">
 		<nav class="flex gap-4">
-			{#each ['overview', 'runs', 'tools'] as tab}
+			{#each tabs as tab}
 				<button
 					class="pb-2 px-1 border-b-2 text-sm font-medium transition-colors"
 					class:border-blue-500={activeTab === tab}

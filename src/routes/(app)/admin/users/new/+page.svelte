@@ -121,7 +121,7 @@
 								id="pin"
 								name="pin"
 								required
-								pattern="\d{4,8}"
+								pattern={'\\d{4,8}'}
 								inputmode="numeric"
 								bind:value={pin}
 								class="input font-mono tracking-widest"

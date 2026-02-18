@@ -82,7 +82,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 		// Generate unique filename
 		let ext = path.extname(file.name).toLowerCase() || '.jpg';
-		let buffer = Buffer.from(await file.arrayBuffer());
+		let buffer: Buffer = Buffer.from(await file.arrayBuffer()) as Buffer;
 		let mimeType = file.type;
 		let sizeBytes = file.size;
 
