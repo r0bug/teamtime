@@ -21,8 +21,9 @@ This document provides detailed information about TeamTime features, their imple
 15. [Metrics & Analytics Module](#metrics--analytics-module)
 16. [Staffing Analytics](#staffing-analytics-extended-correlation-analytics)
 17. [Clock-Out Warning & Demerit System](#clock-out-warning--demerit-system)
-18. [Security Hardening](#security-hardening)
-19. [Toast Notifications](#toast-notifications)
+18. [Late Arrival Warning System](#late-arrival-warning-system)
+19. [Security Hardening](#security-hardening)
+20. [Toast Notifications](#toast-notifications)
 
 ---
 
@@ -400,7 +401,7 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 
 **Triggers**: Runs on a 15-minute cron schedule during business hours (7 AM - 7 PM).
 
-**Available Tools** (33 total):
+**Available Tools** (44 total):
 
 *Communication:*
 - `send_message` — Send direct messages to users or all staff (with cooldowns)
@@ -412,6 +413,7 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 *Task Management:*
 - `create_task` — Create follow-up tasks (with cooldowns)
 - `cancel_task` — Cancel tasks with accountability tracking and user notification
+- `complete_task` — Mark tasks as completed on behalf of users, with points and achievements
 - `delete_task` — Permanently delete tasks with audit logging
 - `create_recurring_task` — Create recurring task templates
 - `create_cash_count_task` — Create cash count tasks
@@ -432,10 +434,22 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 - `trade_shifts` — Facilitate shift trades between users
 - `get_available_staff` — Query staff availability and clock-in status
 
+*Sales & Metrics:*
+- `view_sales` — View daily sales snapshots and vendor breakdowns
+- `run_sales_scraper` — Run NRS daily vendor sales scraper for a specific date
+- `query_metrics` — Query computed metrics data
+- `get_vendor_correlations` — Analyze vendor-employee sales correlations
+- `analyze_staffing_patterns` — Analyze staffing level impact on sales
+
 *Points & Recognition:*
 - `view_points` — Query user points, level, streak, and leaderboard position
 - `award_points` — Award bonus points with reason
 - `give_shoutout` — Create public recognition
+
+*Chat & History:*
+- `review_past_chats` — Review previous Office Manager conversations
+- `get_chat_details` — Get detailed chat transcript
+- `continue_work` — Resume work from a previous conversation
 
 *Inventory:*
 - `process_inventory_photos` — Process inventory batch photos
@@ -464,6 +478,20 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 - Track accountability (counts as missed or not)
 - Automatic notification to assigned user
 - Full audit logging
+
+**Task Completion Features**:
+- Mark tasks complete on behalf of users via AI chat
+- Credits the assigned user (or a specified user) for points
+- Awards task points via gamification system and checks achievements
+- Sends notification message to the assigned user
+- Full audit logging with completion metadata
+
+**Sales Scraper Integration**:
+- Run the NRS daily vendor sales scraper from AI chat
+- Validates dates (not future, not older than 90 days)
+- Executes Python scraper via `execFile` (no shell injection)
+- 30-second timeout, 3 runs/hour rate limit
+- Imports vendor sales data directly into `salesSnapshots` table
 
 **Configuration** (Admin → AI → Office Manager):
 - Enable/disable agent
@@ -1751,6 +1779,7 @@ The Clock-Out Warning system automatically detects employees who forget to clock
 | Type | Description |
 |------|-------------|
 | `clock_out_violation` | From repeated clock-out warnings |
+| `late_arrival` | From repeated late arrivals |
 | `attendance` | General attendance issues |
 | `task_performance` | Poor task completion |
 | `policy_violation` | Policy violations |
@@ -1781,6 +1810,62 @@ The Clock-Out Warning system automatically detects employees who forget to clock
 - `src/routes/api/clock/force-out/+server.ts` — Force clock-out
 
 **Schema**: `src/lib/server/db/schema.ts` — `clockOutWarnings`, `demerits` tables
+
+---
+
+## Late Arrival Warning System
+
+### Overview
+
+The Late Arrival Warning system automatically detects employees who haven't clocked in after their shift starts and sends SMS reminders. Repeated late arrivals escalate to formal demerits with point deductions, mirroring the Clock-Out Warning system structure.
+
+### Key Features
+
+#### Automatic SMS Reminders
+- Cron job runs every 15 minutes during business hours (shares cron with clock-out warnings)
+- Detects employees whose shift started more than 10 minutes ago with no clock-in
+- Sends SMS: "You are {N} minutes late for your shift. Please clock in as soon as possible or notify your manager."
+- One warning per shift per day (prevents duplicate SMS)
+
+#### Demerit Escalation
+- 3 late arrival warnings within 30 days = automatic demerit
+- Demerit deducts 50 points from gamification system
+- Employee receives SMS notification of demerit
+- Demerits expire after 90 days
+
+### Configuration
+
+```typescript
+{
+  GRACE_PERIOD_MINUTES: 10,            // Wait 10 min past shift start
+  WARNING_THRESHOLD_FOR_DEMERIT: 3,    // Warnings before demerit
+  WARNING_LOOKBACK_DAYS: 30,           // Warning count period
+  DEMERIT_POINTS_DEDUCTED: 50,         // Points lost per demerit
+  DEMERIT_EXPIRY_DAYS: 90              // Demerit expiration
+}
+```
+
+### Database Schema
+
+**`late_arrival_warnings` table**:
+- `id`, `user_id`, `shift_id`, `warning_type`
+- `shift_start_time`, `minutes_late`, `sms_result`
+- `escalated_to_demerit`, `demerit_id`, `created_at`
+
+### Warning Types
+
+| Type | Description |
+|------|-------------|
+| `auto_reminder` | Cron sent SMS reminder for late arrival |
+| `escalated` | Warning that triggered a demerit |
+
+### Files
+
+**Service**: `src/lib/server/services/late-arrival-warning-service.ts`
+
+**Cron**: `src/routes/api/clock/cron/+server.ts` — Runs both clock-out and late arrival checks
+
+**Schema**: `src/lib/server/db/schema.ts` — `lateArrivalWarnings` table
 
 ---
 

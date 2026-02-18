@@ -13,6 +13,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { checkOverdueClockOuts } from '$lib/server/services/clock-out-warning-service';
+import { checkLateArrivals } from '$lib/server/services/late-arrival-warning-service';
 import { db, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { createLogger } from '$lib/server/logger';
@@ -76,14 +77,16 @@ export const GET: RequestHandler = async ({ request }) => {
 		log.warn({ error: err }, 'Failed to find admin user, using fallback system user ID');
 	}
 
-	// Run the check
-	const result = await checkOverdueClockOuts(systemUserId);
+	// Run the checks
+	const clockOutResult = await checkOverdueClockOuts(systemUserId);
+	const lateArrivalResult = await checkLateArrivals(systemUserId);
 
-	log.info(result, 'Clock-out cron job completed');
+	log.info({ clockOutResult, lateArrivalResult }, 'Clock cron job completed');
 
 	return json({
 		success: true,
 		timestamp: new Date().toISOString(),
-		...result
+		clockOutWarnings: clockOutResult,
+		lateArrivals: lateArrivalResult
 	});
 };

@@ -2,6 +2,7 @@
 export { sendMessageTool } from './send-message';
 export { createTaskTool } from './create-task';
 export { cancelTaskTool } from './cancel-task';
+export { completeTaskTool } from './complete-task';
 export { deleteTaskTool } from './delete-task';
 export { listTaskRulesTool } from './list-task-rules';
 export { toggleTaskRuleTool } from './toggle-task-rule';
@@ -33,6 +34,7 @@ export { giveShoutoutTool } from './give-shoutout';
 export { queryMetricsTool } from './query-metrics';
 export { getVendorCorrelationsTool } from './get-vendor-correlations';
 export { analyzeStaffingPatternsTool } from './analyze-staffing-patterns';
+export { runSalesScraperTool } from './run-sales-scraper';
 export {
 	viewUserPermissionsTool,
 	grantTemporaryPermissionTool,
@@ -47,6 +49,7 @@ export {
 import { sendMessageTool } from './send-message';
 import { createTaskTool } from './create-task';
 import { cancelTaskTool } from './cancel-task';
+import { completeTaskTool } from './complete-task';
 import { deleteTaskTool } from './delete-task';
 import { listTaskRulesTool } from './list-task-rules';
 import { toggleTaskRuleTool } from './toggle-task-rule';
@@ -78,6 +81,7 @@ import { giveShoutoutTool } from './give-shoutout';
 import { queryMetricsTool } from './query-metrics';
 import { getVendorCorrelationsTool } from './get-vendor-correlations';
 import { analyzeStaffingPatternsTool } from './analyze-staffing-patterns';
+import { runSalesScraperTool } from './run-sales-scraper';
 import { permissionTools } from './permission-tools';
 import type { AITool } from '../../types';
 
@@ -101,6 +105,7 @@ export const officeManagerTools: AITool<any, any>[] = [
 	sendMessageTool,
 	createTaskTool,
 	cancelTaskTool,
+	completeTaskTool,
 	deleteTaskTool,
 	sendSMSTool,
 	scheduleSMSTool,
@@ -121,6 +126,8 @@ export const officeManagerTools: AITool<any, any>[] = [
 	listTaskRulesTool,
 	toggleTaskRuleTool,
 	createTaskRuleTool,
+	// Sales scraper
+	runSalesScraperTool,
 	// Gamification & recognition tools
 	awardPointsTool,
 	giveShoutoutTool,

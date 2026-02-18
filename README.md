@@ -22,6 +22,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - Real-time "who's working where" visibility
 - Automatic shift matching and overtime tracking
 - **Clock-out warning system** with SMS reminders and demerit escalation
+- **Late arrival detection** with automated SMS alerts and demerit escalation
 - Export to CSV for payroll integration
 
 ### Task Management
@@ -78,7 +79,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 
 Three specialized AI agents run in the background:
 
-**Office Manager** — Monitors attendance, flags missing staff, creates/cancels tasks, sends proactive messages, views schedules, manages permissions, and awards recognition. **36 tools available** including points management (view_points, award_points, give_shoutout), schedule management (create_schedule, update_schedule, copy_schedule, delete_schedule), task rule management (list_task_rules, toggle_task_rule, create_task_rule, delete_task), SMS scheduling (schedule_sms, view_scheduled_sms, cancel_scheduled_sms), and metrics/analytics (query_metrics, get_vendor_correlations, analyze_staffing_patterns). Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours.
+**Office Manager** — Monitors attendance, flags missing staff, creates/cancels/completes tasks, sends proactive messages, views schedules, manages permissions, runs sales scraper, and awards recognition. **44 tools available** including points management (view_points, award_points, give_shoutout), schedule management (create_schedule, update_schedule, copy_schedule, delete_schedule), task rule management (list_task_rules, toggle_task_rule, create_task_rule, delete_task), SMS scheduling (schedule_sms, view_scheduled_sms, cancel_scheduled_sms), sales import (run_sales_scraper, view_sales), and metrics/analytics (query_metrics, get_vendor_correlations, analyze_staffing_patterns). Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours.
 
 **Revenue Optimizer** — Analyzes patterns across scheduling, task completion, and expenses. Writes long-term observations and creates policies for the Office Manager to follow. 4 specialized tools. Runs nightly.
 
@@ -240,7 +241,7 @@ All endpoints require authentication except static files. Role-based authorizati
 - **Inventory**: inventory_drops, inventory_drop_photos, inventory_drop_items
 - **Expenses**: atm_withdrawals, withdrawal_allocations, purchase_requests
 - **Messaging**: conversations, messages, message_photos, groups, group_members, thread_participants
-- **Gamification**: point_transactions, user_stats, achievements, user_achievements, leaderboard_snapshots, team_goals, shoutouts, award_types, demerits, clock_out_warnings
+- **Gamification**: point_transactions, user_stats, achievements, user_achievements, leaderboard_snapshots, team_goals, shoutouts, award_types, demerits, clock_out_warnings, late_arrival_warnings
 - **Metrics & Analytics**: sales_snapshots, vendor_employee_correlations, metric_definitions, metric_data_points, metric_reports, worker_pair_performance, worker_impact_metrics, staffing_level_metrics, day_of_week_metrics
 - **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes, ai_tool_config, ai_tool_keywords, ai_context_config, ai_context_keywords
 - **Admin**: app_settings, audit_logs, info_posts

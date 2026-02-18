@@ -100,8 +100,15 @@ export const clockOutWarningTypeEnum = pgEnum('clock_out_warning_type', [
 	'force_clockout'    // Admin/Manager forced clock-out
 ]);
 
+// Late Arrival Warning Enums
+export const lateArrivalWarningTypeEnum = pgEnum('late_arrival_warning_type', [
+	'auto_reminder',    // Cron sent SMS reminder for late arrival
+	'escalated'         // Escalated to demerit
+]);
+
 export const demeritTypeEnum = pgEnum('demerit_type', [
 	'clock_out_violation',  // From repeated clock-out warnings
+	'late_arrival',         // From repeated late arrivals
 	'attendance',           // General attendance issues
 	'task_performance',     // Poor task completion
 	'policy_violation',     // Policy violations
@@ -2676,6 +2683,30 @@ export type ClockOutWarning = typeof clockOutWarnings.$inferSelect;
 export type NewClockOutWarning = typeof clockOutWarnings.$inferInsert;
 export type Demerit = typeof demerits.$inferSelect;
 export type NewDemerit = typeof demerits.$inferInsert;
+
+// Late arrival warnings table - tracks late arrivals and SMS notifications
+export const lateArrivalWarnings = pgTable('late_arrival_warnings', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+	shiftId: uuid('shift_id').notNull().references(() => shifts.id, { onDelete: 'cascade' }),
+	warningType: lateArrivalWarningTypeEnum('warning_type').notNull(),
+	shiftStartTime: timestamp('shift_start_time', { withTimezone: true }).notNull(),
+	minutesLate: integer('minutes_late').notNull(),
+	smsResult: jsonb('sms_result').$type<{ success: boolean; sid?: string; error?: string }>(),
+	escalatedToDemerit: boolean('escalated_to_demerit').notNull().default(false),
+	demeritId: uuid('demerit_id').references(() => demerits.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Late Arrival Warnings Relations
+export const lateArrivalWarningsRelations = relations(lateArrivalWarnings, ({ one }) => ({
+	user: one(users, { fields: [lateArrivalWarnings.userId], references: [users.id] }),
+	shift: one(shifts, { fields: [lateArrivalWarnings.shiftId], references: [shifts.id] }),
+	demerit: one(demerits, { fields: [lateArrivalWarnings.demeritId], references: [demerits.id] })
+}));
+
+export type LateArrivalWarning = typeof lateArrivalWarnings.$inferSelect;
+export type NewLateArrivalWarning = typeof lateArrivalWarnings.$inferInsert;
 
 // ============================================
 // SECURITY MODULE - Rate Limiting & Login Attempts

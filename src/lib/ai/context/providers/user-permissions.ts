@@ -77,27 +77,53 @@ function getCapabilitiesForRole(role: string, permissions: UserPermissions | nul
 
 function getToolPermissionsFromCapabilities(capabilities: PermissionsContext['capabilities']) {
 	const toolDefs = [
+		// Read-only tools (always allowed)
 		{ tool: 'view_schedule', allowed: true },
 		{ tool: 'get_available_staff', allowed: true },
 		{ tool: 'review_past_chats', allowed: true },
 		{ tool: 'get_chat_details', allowed: true },
+		{ tool: 'view_sales', allowed: true },
+		{ tool: 'view_points', allowed: true },
+		{ tool: 'query_metrics', allowed: true },
+		{ tool: 'get_vendor_correlations', allowed: true },
+		{ tool: 'analyze_staffing_patterns', allowed: true },
+		{ tool: 'view_scheduled_sms', allowed: true },
+		{ tool: 'get_my_permissions', allowed: true },
+		// Any user tools
+		{ tool: 'send_message', allowed: true },
+		{ tool: 'give_shoutout', allowed: true },
+		{ tool: 'process_inventory_photos', allowed: true },
+		{ tool: 'continue_work', allowed: true },
+		// Manager+ required
 		{ tool: 'list_grantable_user_types', allowed: capabilities.canAccessAdmin, reason: 'Requires manager role' },
 		{ tool: 'list_grantable_permissions', allowed: capabilities.canAccessAdmin, reason: 'Requires manager role' },
 		{ tool: 'create_task', allowed: capabilities.canCreateTasks, reason: 'Requires manager role' },
 		{ tool: 'cancel_task', allowed: capabilities.canCancelTasks, reason: 'Requires manager role' },
+		{ tool: 'complete_task', allowed: capabilities.canCancelTasks, reason: 'Requires manager role' },
+		{ tool: 'delete_task', allowed: capabilities.canCancelTasks, reason: 'Requires manager role' },
 		{ tool: 'create_recurring_task', allowed: capabilities.canCreateTasks, reason: 'Requires manager role' },
 		{ tool: 'create_cash_count_task', allowed: capabilities.canCreateTasks, reason: 'Requires manager role' },
+		{ tool: 'create_social_media_task', allowed: capabilities.canCreateTasks, reason: 'Requires manager role' },
 		{ tool: 'trade_shifts', allowed: capabilities.canManageShifts, reason: 'Requires manager role' },
 		{ tool: 'create_schedule', allowed: capabilities.canCreateSchedule, reason: 'Requires manager role' },
-		{ tool: 'send_message', allowed: true },
+		{ tool: 'update_schedule', allowed: capabilities.canManageShifts, reason: 'Requires manager role' },
+		{ tool: 'copy_schedule', allowed: capabilities.canManageShifts, reason: 'Requires manager role' },
+		{ tool: 'delete_schedule', allowed: capabilities.canManageShifts, reason: 'Requires manager role' },
+		{ tool: 'delete_duplicate_schedules', allowed: capabilities.canManageShifts, reason: 'Requires manager role' },
 		{ tool: 'send_sms', allowed: capabilities.canSendSMS, reason: 'Requires manager role' },
+		{ tool: 'schedule_sms', allowed: capabilities.canSendSMS, reason: 'Requires manager role' },
+		{ tool: 'cancel_scheduled_sms', allowed: capabilities.canSendSMS, reason: 'Requires manager role' },
+		{ tool: 'list_task_rules', allowed: capabilities.canCreateTasks, reason: 'Requires manager role' },
+		{ tool: 'toggle_task_rule', allowed: capabilities.canCreateTasks, reason: 'Requires manager role' },
+		{ tool: 'create_task_rule', allowed: capabilities.canCreateTasks, reason: 'Requires manager role' },
+		{ tool: 'award_points', allowed: capabilities.canAccessAdmin, reason: 'Requires manager role' },
+		{ tool: 'run_sales_scraper', allowed: capabilities.canAccessAdmin, reason: 'Requires manager role' },
 		{ tool: 'view_user_permissions', allowed: capabilities.canAccessAdmin, reason: 'Requires manager role' },
+		{ tool: 'view_pending_approvals', allowed: capabilities.canAccessAdmin, reason: 'Requires manager role' },
+		// Admin required
 		{ tool: 'grant_temporary_permission', allowed: capabilities.canManagePermissions, reason: 'Requires admin role' },
 		{ tool: 'change_user_type_temporarily', allowed: capabilities.canManagePermissions, reason: 'Requires admin role' },
-		{ tool: 'rollback_permission_change', allowed: capabilities.canManagePermissions, reason: 'Requires admin role' },
-		{ tool: 'view_pending_approvals', allowed: capabilities.canAccessAdmin, reason: 'Requires manager role' },
-		{ tool: 'process_inventory_photos', allowed: true },
-		{ tool: 'continue_work', allowed: true }
+		{ tool: 'rollback_permission_change', allowed: capabilities.canManagePermissions, reason: 'Requires admin role' }
 	];
 
 	const allowed = toolDefs.filter(t => t.allowed).map(t => t.tool);
