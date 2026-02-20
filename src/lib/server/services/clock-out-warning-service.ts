@@ -10,12 +10,15 @@ import {
 	clockOutWarnings,
 	demerits,
 	users,
-	timeEntries
+	timeEntries,
+	shifts,
+	appSettings
 } from '$lib/server/db';
 import { createLogger } from '$lib/server/logger';
-import { eq, and, gte, isNull, count, desc } from 'drizzle-orm';
+import { eq, and, gte, lte, isNull, count, desc } from 'drizzle-orm';
 import { awardPoints, POINT_VALUES } from './points-service';
 import { sendSMS, formatPhoneToE164 } from '$lib/server/twilio';
+import { toPacificTimeString } from '$lib/server/utils/timezone';
 import type { ClockOutWarning, Demerit } from '$lib/server/db/schema';
 
 const log = createLogger('services:clock-out-warning');
@@ -39,6 +42,8 @@ export const CLOCK_OUT_WARNING_CONFIG = {
 
 export const SMS_MESSAGES = {
 	autoReminder: 'Reminder: You are still clocked in. Please clock out at the end of your shift.',
+	autoReminderInteractive: (shiftEndTime: Date) =>
+		`Your shift ended at ${toPacificTimeString(shiftEndTime)}. Still working? Reply YES to clock out, or tell us why you're still in.`,
 	forceClockout: (managerName: string) =>
 		`${managerName} has clocked you out. Please remember to clock out at the end of your shift.`,
 	demeritIssued: (warningCount: number) =>
@@ -418,6 +423,36 @@ export async function forceClockOut(
 }
 
 // ============================================================================
+// CONFIG LOADING
+// ============================================================================
+
+/**
+ * Load clock-out config from appSettings with fallback to hardcoded defaults
+ */
+export async function loadClockOutConfig(): Promise<{ gracePeriodMinutes: number; maxHoursClockedIn: number }> {
+	try {
+		const [setting] = await db
+			.select({ value: appSettings.value })
+			.from(appSettings)
+			.where(eq(appSettings.key, 'clock_out_grace_period_minutes'))
+			.limit(1);
+
+		const gracePeriodMinutes = setting ? parseInt(setting.value, 10) : CLOCK_OUT_WARNING_CONFIG.GRACE_PERIOD_MINUTES;
+
+		return {
+			gracePeriodMinutes: isNaN(gracePeriodMinutes) ? CLOCK_OUT_WARNING_CONFIG.GRACE_PERIOD_MINUTES : gracePeriodMinutes,
+			maxHoursClockedIn: CLOCK_OUT_WARNING_CONFIG.MAX_HOURS_CLOCKED_IN
+		};
+	} catch (err) {
+		log.warn({ error: err }, 'Failed to load clock-out config from appSettings, using defaults');
+		return {
+			gracePeriodMinutes: CLOCK_OUT_WARNING_CONFIG.GRACE_PERIOD_MINUTES,
+			maxHoursClockedIn: CLOCK_OUT_WARNING_CONFIG.MAX_HOURS_CLOCKED_IN
+		};
+	}
+}
+
+// ============================================================================
 // CRON CHECK FUNCTION
 // ============================================================================
 
@@ -443,8 +478,8 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 	};
 
 	const now = new Date();
-	const gracePeriodMs = CLOCK_OUT_WARNING_CONFIG.GRACE_PERIOD_MINUTES * 60 * 1000;
-	const maxHoursMs = CLOCK_OUT_WARNING_CONFIG.MAX_HOURS_CLOCKED_IN * 60 * 60 * 1000;
+	const config = await loadClockOutConfig();
+	const gracePeriodMs = config.gracePeriodMinutes * 60 * 1000;
 
 	// Find all active time entries (not clocked out)
 	const activeEntries = await db
@@ -467,6 +502,12 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 
 	log.info({ activeEntriesCount: activeEntries.length }, 'Checking overdue clock-outs');
 
+	// Get today's date boundaries for shift lookup
+	const todayStart = new Date(now);
+	todayStart.setHours(0, 0, 0, 0);
+	const todayEnd = new Date(now);
+	todayEnd.setHours(23, 59, 59, 999);
+
 	for (const { timeEntry, user } of activeEntries) {
 		result.checked++;
 
@@ -481,18 +522,41 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 			const clockInTime = new Date(timeEntry.clockIn);
 			const hoursClocked = (now.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
 
-			// TODO: Get scheduled shift end time if available
-			// For now, use the fallback of 10+ hours
 			let shouldWarn = false;
 			let minutesPastShiftEnd: number | undefined;
 			let shiftEndTime: Date | undefined;
+			let hasShift = false;
 
-			// Check if clocked in too long (fallback when no shift data)
-			if (hoursClocked >= CLOCK_OUT_WARNING_CONFIG.MAX_HOURS_CLOCKED_IN) {
-				shouldWarn = true;
-				// Estimate shift end as clock in + 8 hours
-				shiftEndTime = new Date(clockInTime.getTime() + 8 * 60 * 60 * 1000);
-				minutesPastShiftEnd = Math.floor((now.getTime() - shiftEndTime.getTime()) / (1000 * 60));
+			// Look up today's shift for this user
+			const [userShift] = await db
+				.select({ endTime: shifts.endTime })
+				.from(shifts)
+				.where(
+					and(
+						eq(shifts.userId, user.id),
+						gte(shifts.startTime, todayStart),
+						lte(shifts.startTime, todayEnd)
+					)
+				)
+				.orderBy(desc(shifts.endTime))
+				.limit(1);
+
+			if (userShift) {
+				hasShift = true;
+				shiftEndTime = new Date(userShift.endTime);
+				const timePastShiftEnd = now.getTime() - shiftEndTime.getTime();
+
+				if (timePastShiftEnd > gracePeriodMs) {
+					shouldWarn = true;
+					minutesPastShiftEnd = Math.floor(timePastShiftEnd / (1000 * 60));
+				}
+			} else {
+				// Fallback: no shift scheduled, warn after MAX_HOURS_CLOCKED_IN
+				if (hoursClocked >= config.maxHoursClockedIn) {
+					shouldWarn = true;
+					shiftEndTime = new Date(clockInTime.getTime() + 8 * 60 * 60 * 1000);
+					minutesPastShiftEnd = Math.floor((now.getTime() - shiftEndTime.getTime()) / (1000 * 60));
+				}
 			}
 
 			if (!shouldWarn) {
@@ -500,12 +564,15 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 				continue;
 			}
 
-			// Send SMS reminder
+			// Send SMS reminder — interactive if we have actual shift data
 			let smsResult: { success: boolean; sid?: string; error?: string } | undefined;
 			if (user.phone) {
 				const formatted = formatPhoneToE164(user.phone);
 				if (formatted) {
-					smsResult = await sendSMS(formatted, SMS_MESSAGES.autoReminder);
+					const message = hasShift && shiftEndTime
+						? SMS_MESSAGES.autoReminderInteractive(shiftEndTime)
+						: SMS_MESSAGES.autoReminder;
+					smsResult = await sendSMS(formatted, message);
 				}
 			}
 
@@ -532,6 +599,7 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 					userId: user.id,
 					timeEntryId: timeEntry.id,
 					hoursClocked: hoursClocked.toFixed(1),
+					hasShift,
 					smsSent: smsResult?.success ?? false,
 					demeritIssued: !!demerit
 				},

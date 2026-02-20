@@ -104,6 +104,40 @@ export const actions: Actions = {
 		return toggleSetting(locals, 'managers_can_reset_pins');
 	},
 
+	updateClockOutGracePeriod: async ({ request, locals }) => {
+		if (!isManager(locals.user)) {
+			return fail(403, { error: 'Unauthorized' });
+		}
+
+		const formData = await request.formData();
+		const minutes = parseInt(formData.get('gracePeriod')?.toString() ?? '', 10);
+
+		if (isNaN(minutes) || minutes < 0 || minutes > 480) {
+			return fail(400, { error: 'Grace period must be between 0 and 480 minutes' });
+		}
+
+		const key = 'clock_out_grace_period_minutes';
+		const [existing] = await db
+			.select()
+			.from(appSettings)
+			.where(eq(appSettings.key, key))
+			.limit(1);
+
+		if (existing) {
+			await db
+				.update(appSettings)
+				.set({ value: String(minutes), updatedAt: new Date() })
+				.where(eq(appSettings.key, key));
+		} else {
+			await db.insert(appSettings).values({
+				key,
+				value: String(minutes)
+			});
+		}
+
+		return { success: true };
+	},
+
 	updateSiteTitle: async ({ request, locals }) => {
 		if (!isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });

@@ -1726,11 +1726,20 @@ The Clock-Out Warning system automatically detects employees who forget to clock
 
 ### Key Features
 
-#### Automatic SMS Reminders
+#### Smart SMS Reminders with Shift Lookup
 - Cron job runs every 15 minutes during business hours
-- Detects employees clocked in past their shift end time + grace period
-- Sends SMS reminder: "You are still clocked in. Please clock out at the end of your shift."
+- Looks up each user's scheduled shift from the `shifts` table
+- If shift exists: warns when `now > shiftEnd + gracePeriod` with interactive SMS
+- If no shift: falls back to warning after 10+ hours clocked in (generic SMS)
+- **Interactive SMS**: "Your shift ended at 5:00 PM. Still working? Reply YES to clock out, or tell us why you're still in."
+- **Auto clock-out on YES reply**: Inbound webhook processes YES/Y/YEAH/YEP replies to auto-clock out the user, award points, and audit the event
+- **Reason capture**: Any other reply is logged as the employee's reason and acknowledged
 - Records warning for escalation tracking
+
+#### Admin-Configurable Grace Period
+- Grace period is configurable via Admin → Settings → Attendance & Clock-Out
+- Stored in `appSettings` as `clock_out_grace_period_minutes` (default: 30 minutes)
+- No restart required — config is loaded from DB on each cron run
 
 #### Manager Force Clock-Out
 - Managers can force clock-out employees who forgot
@@ -1769,7 +1778,9 @@ The Clock-Out Warning system automatically detects employees who forget to clock
 - `id`, `user_id`, `time_entry_id`, `warning_type`
 - `issued_by`, `sms_result`, `shift_end_time`
 - `minutes_past_shift_end`, `reason`
-- `escalated_to_demerit`, `demerit_id`, `created_at`
+- `escalated_to_demerit`, `demerit_id`
+- `user_reply`, `replied_at` — tracks SMS reply text and timestamp
+- `created_at`
 
 **`demerits` table**:
 - `id`, `user_id`, `type`, `status`
@@ -2415,6 +2426,7 @@ Full SMS management dashboard at `/admin/sms` with four tabs:
 - **Opt-out detection** — STOP/UNSUBSCRIBE messages flagged and counted
 - **User matching** — links inbound phone numbers to known staff
 - **Webhook endpoint** — `/api/sms/webhook/inbound` receives Twilio inbound POSTs
+- **Clock-out reply handling** — YES/Y/YEAH/YEP replies to clock-out warnings auto-clock the user out, award points, and respond with confirmation TwiML; other replies are logged as the user's reason
 
 ### Scheduled Jobs Tab
 - **Job queue stats** — pending, running, completed, failed, cancelled counts

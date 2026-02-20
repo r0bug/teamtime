@@ -134,6 +134,13 @@
       "when": 1770364220376,
       "tag": "0018_noisy_bug",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1771582620085,
+      "tag": "0019_nifty_genesis",
+      "breakpoints": true
     }
   ]
 }

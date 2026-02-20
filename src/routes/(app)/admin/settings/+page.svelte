@@ -11,6 +11,7 @@
 	$: showLaborCost = data.settings['show_labor_cost'] === 'true';
 	$: managersCanResetPins = data.settings['managers_can_reset_pins'] === 'true';
 	$: siteTitle = data.settings['site_title'] || 'TeamTime';
+	$: clockOutGracePeriod = parseInt(data.settings['clock_out_grace_period_minutes'] || '30', 10);
 
 	// Module toggle state
 	$: enabledModulesRaw = data.settings['enabled_modules'];
@@ -243,6 +244,43 @@
 							{/if}
 						</p>
 					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Attendance & Clock-Out Settings -->
+		<div class="card mt-6">
+			<div class="card-header">
+				<h2 class="font-semibold">Attendance & Clock-Out</h2>
+			</div>
+			<div class="card-body">
+				<div class="py-4">
+					<form method="POST" action="?/updateClockOutGracePeriod" use:enhance={() => {
+						return async ({ update }) => {
+							await update();
+							await invalidateAll();
+						};
+					}} class="space-y-3">
+						<div>
+							<label for="gracePeriod" class="font-medium text-sm">Clock-Out Grace Period (minutes)</label>
+							<p class="text-xs text-gray-500 mt-1">
+								How many minutes after a shift ends before an auto-reminder SMS is sent. Users with no scheduled shift get reminded after 10 hours.
+							</p>
+						</div>
+						<div class="flex items-center space-x-3">
+							<input
+								type="number"
+								id="gracePeriod"
+								name="gracePeriod"
+								value={clockOutGracePeriod}
+								min="0"
+								max="480"
+								class="input w-24"
+							/>
+							<span class="text-sm text-gray-500">minutes</span>
+							<button type="submit" class="btn-primary text-sm">Save</button>
+						</div>
+					</form>
 				</div>
 			</div>
 		</div>

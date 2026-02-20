@@ -35,6 +35,9 @@ export { queryMetricsTool } from './query-metrics';
 export { getVendorCorrelationsTool } from './get-vendor-correlations';
 export { analyzeStaffingPatternsTool } from './analyze-staffing-patterns';
 export { runSalesScraperTool } from './run-sales-scraper';
+export { clockUserTool } from './clock-user';
+export { createTimeEntryTool } from './create-time-entry';
+export { editTimeEntryTool } from './edit-time-entry';
 export {
 	viewUserPermissionsTool,
 	grantTemporaryPermissionTool,
@@ -82,6 +85,9 @@ import { queryMetricsTool } from './query-metrics';
 import { getVendorCorrelationsTool } from './get-vendor-correlations';
 import { analyzeStaffingPatternsTool } from './analyze-staffing-patterns';
 import { runSalesScraperTool } from './run-sales-scraper';
+import { clockUserTool } from './clock-user';
+import { createTimeEntryTool } from './create-time-entry';
+import { editTimeEntryTool } from './edit-time-entry';
 import { permissionTools } from './permission-tools';
 import type { AITool } from '../../types';
 
@@ -118,6 +124,10 @@ export const officeManagerTools: AITool<any, any>[] = [
 	createScheduleTool,
 	updateScheduleTool,
 	copyScheduleTool,
+	// Time entry management tools
+	clockUserTool,
+	createTimeEntryTool,
+	editTimeEntryTool,
 	createCashCountTaskTool,
 	createSocialMediaTaskTool,
 	processInventoryPhotosTool,

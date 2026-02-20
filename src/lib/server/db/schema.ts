@@ -2670,6 +2670,8 @@ export const clockOutWarnings = pgTable('clock_out_warnings', {
 	reason: text('reason'),
 	escalatedToDemerit: boolean('escalated_to_demerit').notNull().default(false),
 	demeritId: uuid('demerit_id').references(() => demerits.id, { onDelete: 'set null' }),
+	userReply: text('user_reply'),
+	repliedAt: timestamp('replied_at', { withTimezone: true }),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 

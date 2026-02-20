@@ -240,6 +240,8 @@ CREATE TABLE clock_out_warnings (
   reason TEXT,
   escalated_to_demerit BOOLEAN NOT NULL DEFAULT false,
   demerit_id UUID REFERENCES demerits(id) ON DELETE SET NULL,
+  user_reply TEXT,
+  replied_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```

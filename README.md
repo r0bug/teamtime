@@ -21,7 +21,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - GPS-verified clock in/out from any device
 - Real-time "who's working where" visibility
 - Automatic shift matching and overtime tracking
-- **Clock-out warning system** with SMS reminders and demerit escalation
+- **Smart clock-out reminders** — uses actual shift data with configurable grace period, interactive SMS ("Reply YES to clock out"), and auto-clock-out on reply
 - **Late arrival detection** with automated SMS alerts and demerit escalation
 - Export to CSV for payroll integration
 
@@ -78,7 +78,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 ### SMS System
 - **Twilio integration** for outbound SMS with delivery tracking
 - **Delivery status webhooks** — real-time queued/sent/delivered/failed tracking
-- **Inbound reply capture** — see staff replies and STOP opt-outs
+- **Inbound reply processing** — auto-clock-out on YES reply to shift-end reminders, logs other replies as reasons
 - **SMS admin dashboard** at `/admin/sms` with config status, test sender, delivery log, and reply history
 - **Phone number validation** — auto-normalizes to E.164 on profile save
 - **Scheduled SMS** — AI Office Manager can schedule future messages via job queue
@@ -87,7 +87,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 
 Three specialized AI agents run in the background:
 
-**Office Manager** — Monitors attendance, flags missing staff, creates/cancels/completes tasks, sends proactive messages, views schedules, manages permissions, runs sales scraper, and awards recognition. **44 tools available** including points management (view_points, award_points, give_shoutout), schedule management (create_schedule, update_schedule, copy_schedule, delete_schedule), task rule management (list_task_rules, toggle_task_rule, create_task_rule, delete_task), SMS scheduling (schedule_sms, view_scheduled_sms, cancel_scheduled_sms), sales import (run_sales_scraper, view_sales), and metrics/analytics (query_metrics, get_vendor_correlations, analyze_staffing_patterns). Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours.
+**Office Manager** — Monitors attendance, flags missing staff, creates/cancels/completes tasks, sends proactive messages, views schedules, manages permissions, runs sales scraper, and awards recognition. **47 tools available** including points management (view_points, award_points, give_shoutout), schedule management (create_schedule, update_schedule, copy_schedule, delete_schedule), task rule management (list_task_rules, toggle_task_rule, create_task_rule, delete_task), SMS scheduling (schedule_sms, view_scheduled_sms, cancel_scheduled_sms), sales import (run_sales_scraper, view_sales), time entry management (clock_user, create_time_entry, edit_time_entry), and metrics/analytics (query_metrics, get_vendor_correlations, analyze_staffing_patterns). Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours.
 
 **Revenue Optimizer** — Analyzes patterns across scheduling, task completion, and expenses. Writes long-term observations and creates policies for the Office Manager to follow. 4 specialized tools. Runs nightly.
 
