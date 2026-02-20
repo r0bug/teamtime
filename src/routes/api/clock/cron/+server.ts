@@ -14,6 +14,7 @@ import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { checkOverdueClockOuts } from '$lib/server/services/clock-out-warning-service';
 import { checkLateArrivals } from '$lib/server/services/late-arrival-warning-service';
+import { processPendingJobs } from '$lib/server/jobs';
 import { db, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { createLogger } from '$lib/server/logger';
@@ -81,12 +82,24 @@ export const GET: RequestHandler = async ({ request }) => {
 	const clockOutResult = await checkOverdueClockOuts(systemUserId);
 	const lateArrivalResult = await checkLateArrivals(systemUserId);
 
-	log.info({ clockOutResult, lateArrivalResult }, 'Clock cron job completed');
+	// Process pending jobs (scheduled SMS, inventory drops, etc.)
+	let jobsResult = { processed: 0, succeeded: 0, failed: 0 };
+	try {
+		jobsResult = await processPendingJobs(10);
+		if (jobsResult.processed > 0) {
+			log.info({ jobsResult }, 'Processed pending jobs');
+		}
+	} catch (err) {
+		log.error({ error: err }, 'Failed to process pending jobs');
+	}
+
+	log.info({ clockOutResult, lateArrivalResult, jobsResult }, 'Clock cron job completed');
 
 	return json({
 		success: true,
 		timestamp: new Date().toISOString(),
 		clockOutWarnings: clockOutResult,
-		lateArrivals: lateArrivalResult
+		lateArrivals: lateArrivalResult,
+		jobsProcessed: jobsResult
 	});
 };

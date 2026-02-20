@@ -1,6 +1,8 @@
 import twilio from 'twilio';
 import { env } from '$env/dynamic/private';
 import { createLogger } from '$lib/server/logger';
+import { db, smsLogs, users } from '$lib/server/db';
+import { eq } from 'drizzle-orm';
 
 const log = createLogger('server:twilio');
 
@@ -66,9 +68,27 @@ export async function sendSMS(to: string, body: string): Promise<SMSResult> {
 	try {
 		const message = await client.messages.create({
 			body: fullMessage,
-			from: env.TWILIO_PHONE_NUMBER,
-			to
+			from: env.TWILIO_PHONE_NUMBER!,
+			to,
+			// Track delivery status via webhook if app URL is configured
+			...(env.APP_URL ? { statusCallback: `${env.APP_URL}/api/sms/webhook/status` } : {})
 		});
+
+		// Log outbound message
+		const userId = await findUserByPhone(to);
+		try {
+			await db.insert(smsLogs).values({
+				messageSid: message.sid,
+				direction: 'outbound',
+				status: 'queued',
+				fromNumber: env.TWILIO_PHONE_NUMBER!,
+				toNumber: to,
+				body: fullMessage,
+				userId
+			});
+		} catch (logErr) {
+			log.warn({ error: logErr, sid: message.sid }, 'Failed to insert SMS log');
+		}
 
 		return {
 			success: true,
@@ -78,10 +98,42 @@ export async function sendSMS(to: string, body: string): Promise<SMSResult> {
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error sending SMS';
 		log.error({ error: errorMessage, to }, 'Failed to send SMS');
 
+		// Log failed attempt
+		const userId = await findUserByPhone(to);
+		try {
+			await db.insert(smsLogs).values({
+				direction: 'outbound',
+				status: 'failed',
+				fromNumber: env.TWILIO_PHONE_NUMBER || 'unknown',
+				toNumber: to,
+				body: fullMessage,
+				userId,
+				errorMessage
+			});
+		} catch (logErr) {
+			log.warn({ error: logErr }, 'Failed to insert SMS failure log');
+		}
+
 		return {
 			success: false,
 			error: errorMessage
 		};
+	}
+}
+
+/**
+ * Look up a user ID by phone number
+ */
+async function findUserByPhone(phone: string): Promise<string | null> {
+	try {
+		const [user] = await db
+			.select({ id: users.id })
+			.from(users)
+			.where(eq(users.phone, phone))
+			.limit(1);
+		return user?.id ?? null;
+	} catch {
+		return null;
 	}
 }
 
@@ -130,4 +182,13 @@ export function formatPhoneToE164(phone: string, defaultCountryCode = '1'): stri
  */
 export function isTwilioConfigured(): boolean {
 	return !!(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_PHONE_NUMBER);
+}
+
+/**
+ * Validate a Twilio webhook signature
+ * Returns true if the request is genuinely from Twilio
+ */
+export function validateTwilioSignature(signature: string, url: string, params: Record<string, string>): boolean {
+	if (!env.TWILIO_AUTH_TOKEN) return false;
+	return twilio.validateRequest(env.TWILIO_AUTH_TOKEN, signature, url, params);
 }

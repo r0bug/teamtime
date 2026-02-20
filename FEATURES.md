@@ -2393,6 +2393,58 @@ The Gamification Config page allows administrators to tune game mechanics (point
 
 ---
 
+## SMS Dashboard & Delivery Tracking
+
+Full SMS management dashboard at `/admin/sms` with four tabs:
+
+### Overview Tab
+- **Configuration status** — green/red indicator for Twilio credentials
+- **Delivery rate stats** — total sent, delivered, failed, delivery percentage
+- **Send test SMS** — verify Twilio connectivity with a test message
+- **Staff phone coverage** — shows which staff are missing phone numbers (with links to edit)
+- **Opt-out alerts** — warning when staff have texted STOP
+
+### Delivery Tracking Tab
+- **Real-time delivery log** — outbound messages with status (queued → sent → delivered/failed)
+- **Status callback webhooks** — Twilio pushes delivery updates to `/api/sms/webhook/status`
+- **Error details** — Twilio error codes and messages for failed deliveries
+- **User enrichment** — matches phone numbers to staff names
+
+### Replies & Opt-outs Tab
+- **Inbound message log** — all replies sent to the Twilio number
+- **Opt-out detection** — STOP/UNSUBSCRIBE messages flagged and counted
+- **User matching** — links inbound phone numbers to known staff
+- **Webhook endpoint** — `/api/sms/webhook/inbound` receives Twilio inbound POSTs
+
+### Scheduled Jobs Tab
+- **Job queue stats** — pending, running, completed, failed, cancelled counts
+- **Scheduled SMS history** — all AI-scheduled messages with payload and result details
+
+### Phone Number Validation
+- Phone numbers are validated and normalized to E.164 format when saved on user profiles
+- Accepts formats: `(555) 123-4567`, `555-123-4567`, `5551234567`, `+15551234567`
+- Invalid numbers are rejected with a clear error message
+
+### Job Processing Fix
+- Scheduled SMS jobs are now processed every 15 minutes via the clock cron endpoint
+- Previously, the `/api/jobs/process` endpoint was never called by any cron job
+
+### Files
+
+**Admin Page**: `src/routes/(app)/admin/sms/+page.svelte`, `+page.server.ts`
+
+**API Endpoints**:
+- `src/routes/api/sms/test/+server.ts` — Test SMS endpoint
+- `src/routes/api/sms/status/+server.ts` — Status API
+- `src/routes/api/sms/webhook/status/+server.ts` — Delivery status callback
+- `src/routes/api/sms/webhook/inbound/+server.ts` — Inbound message webhook
+
+**Core Service**: `src/lib/server/twilio.ts` — Twilio client with logging, validation, and signature verification
+
+**Schema**: `src/lib/server/db/schema.ts` — `smsLogs` table with `sms_direction` and `sms_status` enums
+
+---
+
 ## Dashboard Enhancements
 
 ### Who's Working Widget

@@ -444,4 +444,33 @@ CREATE TABLE gamification_config (
 
 ---
 
+## SMS Logs Schema
+
+### SMS Logs Table
+
+Tracks all outbound SMS delivery statuses and inbound replies/opt-outs via Twilio webhooks.
+
+```sql
+CREATE TABLE sms_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_sid TEXT UNIQUE,                    -- Twilio message SID
+  direction sms_direction NOT NULL,           -- 'outbound' or 'inbound'
+  status sms_status NOT NULL,                 -- 'queued','sent','delivered','undelivered','failed','received','opt_out'
+  from_number TEXT NOT NULL,
+  to_number TEXT NOT NULL,
+  body TEXT,                                  -- Message content
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  error_code TEXT,                            -- Twilio error code
+  error_message TEXT,                         -- Twilio error description
+  segments INTEGER,                           -- Number of SMS segments
+  price TEXT,                                 -- Cost from Twilio
+  status_updated_at TIMESTAMPTZ,             -- Last status callback time
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+**Indexes**: `message_sid`, `user_id`, `direction`, `created_at DESC`
+
+---
+
 *Last updated: February 2026*

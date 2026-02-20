@@ -76,6 +76,14 @@ export const visibilityLevelEnum = pgEnum('visibility_level', ['none', 'own', 's
 export const visibilityCategoryEnum = pgEnum('visibility_category', ['tasks', 'messages', 'schedule', 'attendance', 'users', 'pricing', 'expenses']);
 export const visibilityGrantTypeEnum = pgEnum('visibility_grant_type', ['view', 'view_summary', 'none']);
 
+// SMS Enums
+export const smsDirectionEnum = pgEnum('sms_direction', ['outbound', 'inbound']);
+export const smsStatusEnum = pgEnum('sms_status', [
+	'queued', 'sent', 'delivered', 'undelivered', 'failed',  // outbound statuses
+	'received',  // inbound
+	'opt_out'    // STOP/unsubscribe
+]);
+
 // Gamification Enums
 export const pointCategoryEnum = pgEnum('point_category', ['attendance', 'task', 'pricing', 'sales', 'bonus', 'achievement']);
 export const achievementTierEnum = pgEnum('achievement_tier', ['bronze', 'silver', 'gold', 'platinum']);
@@ -1447,6 +1455,30 @@ export const jobs = pgTable('jobs', {
 
 export type Job = typeof jobs.$inferSelect;
 export type NewJob = typeof jobs.$inferInsert;
+
+// ============================================
+// SMS LOGS (Delivery tracking & inbound replies)
+// ============================================
+
+export const smsLogs = pgTable('sms_logs', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	messageSid: text('message_sid').unique(), // Twilio message SID
+	direction: smsDirectionEnum('direction').notNull(),
+	status: smsStatusEnum('status').notNull(),
+	fromNumber: text('from_number').notNull(),
+	toNumber: text('to_number').notNull(),
+	body: text('body'), // Message text
+	userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }), // Linked user if known
+	errorCode: text('error_code'), // Twilio error code if failed
+	errorMessage: text('error_message'), // Twilio error message
+	segments: integer('segments'), // Number of SMS segments
+	price: text('price'), // Cost from Twilio
+	statusUpdatedAt: timestamp('status_updated_at', { withTimezone: true }), // Last status callback time
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type SmsLog = typeof smsLogs.$inferSelect;
+export type NewSmsLog = typeof smsLogs.$inferInsert;
 
 // Relations
 

@@ -75,6 +75,14 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - **8 award types** with configurable point values (25-100 pts)
 - Loss aversion mechanics and social proof to drive engagement
 
+### SMS System
+- **Twilio integration** for outbound SMS with delivery tracking
+- **Delivery status webhooks** — real-time queued/sent/delivered/failed tracking
+- **Inbound reply capture** — see staff replies and STOP opt-outs
+- **SMS admin dashboard** at `/admin/sms` with config status, test sender, delivery log, and reply history
+- **Phone number validation** — auto-normalizes to E.164 on profile save
+- **Scheduled SMS** — AI Office Manager can schedule future messages via job queue
+
 ### AI Operations Assistants ("Shackled Mentats")
 
 Three specialized AI agents run in the background:
@@ -222,6 +230,10 @@ TeamTime exposes **100+ REST endpoints** organized by domain:
 - `/api/ai/cron` — AI agent triggers
 - `/api/architect/chats` — Architecture advisor
 - `/api/points/cron` — Daily gamification processing (sales attribution, resets)
+- `/api/sms/test` — Send test SMS (admin only)
+- `/api/sms/status` — SMS system status and job stats
+- `/api/sms/webhook/status` — Twilio delivery status callbacks
+- `/api/sms/webhook/inbound` — Twilio inbound message/reply webhook
 
 All endpoints require authentication except static files. Role-based authorization is enforced at the API layer.
 
@@ -233,7 +245,7 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-95 tables organized across domains:
+96 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries
 - **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules
@@ -246,6 +258,7 @@ All endpoints require authentication except static files. Role-based authorizati
 - **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes, ai_tool_config, ai_tool_keywords, ai_context_config, ai_context_keywords
 - **Shift Requests**: shift_requests, shift_request_responses
 - **Security**: login_attempts, account_lockouts
+- **SMS**: sms_logs (delivery tracking, inbound replies, opt-out detection)
 - **Admin**: app_settings, audit_logs, info_posts, gamification_config
 
 ## License

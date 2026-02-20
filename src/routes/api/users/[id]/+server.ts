@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db, users, auditLogs } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { hashPin, validatePinFormat } from '$lib/server/auth/pin';
+import { formatPhoneToE164 } from '$lib/server/twilio';
 
 // Get single user
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -67,7 +68,17 @@ export const PUT: RequestHandler = async ({ locals, params, request, getClientAd
 
 	// Fields users can update for themselves
 	if (body.name !== undefined) updateData.name = body.name;
-	if (body.phone !== undefined) updateData.phone = body.phone;
+	if (body.phone !== undefined) {
+		if (body.phone === '' || body.phone === null) {
+			updateData.phone = null;
+		} else {
+			const formatted = formatPhoneToE164(body.phone);
+			if (!formatted) {
+				return json({ error: 'Invalid phone number format. Use (555) 123-4567, 555-123-4567, or +15551234567' }, { status: 400 });
+			}
+			updateData.phone = formatted;
+		}
+	}
 
 	// Fields only managers can update
 	if (isManager) {
