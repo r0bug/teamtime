@@ -1195,6 +1195,27 @@ The Sales Dashboard provides visibility into daily sales, vendor performance, an
 - `GET /api/sales` — Query sales snapshots
 - Supports `?date=`, `?startDate=`, `?endDate=`, `?latest=true`, `?limit=`
 
+### AI Sales Context Provider
+
+The AI agents (Office Manager, Revenue Optimizer) automatically receive real-time sales context including:
+- **Yesterday's summary**: Sales, retained, labor hours/cost, net profit, $/labor-hour, top vendors
+- **Week-to-date aggregates**: Total sales/retained/labor cost, net profit, avg daily sales, avg $/labor-hour
+- **14-day trend analysis**: Direction (up/down/flat) with percent change vs prior period
+- **Recent daily breakdown**: Last 7 days of sales, retained, labor cost, and net profit per day
+
+Context is assembled at priority 22 (after attendance, before tasks) and token-estimated at ~100 + 60 per day of data.
+
+### NRS Data Sources Dashboard
+
+**URL**: `/admin/metrics/data-sources` (managers only)
+
+Admin page for monitoring NRS scrape health:
+- **Overview cards**: Total scrapes, unique days, all-time retained, missing days (30d)
+- **Source breakdown table**: Per-source stats (scrape count, date range, totals, avg vendor count, last scrape)
+- **Data gap detection**: Identifies missing non-Sunday dates in the last 30 days with visual warnings
+- **Scrape frequency chart**: Bar chart of daily scrape counts over last 30 days (color-coded: green=2+, blue=1)
+- **Scrape history table**: Paginated log of all snapshots with sale date, captured time, source, sales/vendor/retained amounts, and AI run ID
+
 ### Office Manager Integration
 
 The Office Manager has access to the `view_sales` tool:
@@ -1209,6 +1230,8 @@ The Office Manager has access to the `view_sales` tool:
 - `src/routes/api/sales/+server.ts` — Query API
 - `src/routes/api/sales/import/+server.ts` — Import API
 - `src/lib/ai/tools/office-manager/view-sales.ts` — Office Manager tool
+- `src/lib/ai/context/providers/sales.ts` — AI sales context provider
+- `src/routes/(app)/admin/metrics/data-sources/` — NRS data sources admin page
 - `scraper-imports/` — NRS scraper scripts and configuration
 
 ---

@@ -6,6 +6,7 @@ import { usersProvider } from './providers/users';
 import { locationsProvider } from './providers/locations';
 import { memoryProvider } from './providers/memory';
 import { userPermissionsProvider, setCurrentUserId, getCurrentUserId } from './providers/user-permissions';
+import { salesProvider } from './providers/sales';
 import { aiConfigService } from '../services/config-service';
 import { createLogger } from '$lib/server/logger';
 import { getPacificDateParts, getPacificWeekday, toPacificDateString, toPacificDateTimeString } from '$lib/server/utils/timezone';
@@ -18,6 +19,7 @@ const providers: AIContextProvider<any>[] = [
 	userPermissionsProvider, // First - permissions context (priority 5)
 	memoryProvider,          // Priority 10
 	attendanceProvider,      // Priority 20
+	salesProvider,           // Priority 22
 	tasksProvider,           // Priority 25
 	usersProvider,           // Priority 15
 	locationsProvider        // Priority 30
@@ -153,4 +155,4 @@ export function formatContextForPrompt(context: AssembledContext): string {
 	return header + body;
 }
 
-export { attendanceProvider, tasksProvider, usersProvider, locationsProvider, memoryProvider };
+export { attendanceProvider, tasksProvider, usersProvider, locationsProvider, memoryProvider, salesProvider };
