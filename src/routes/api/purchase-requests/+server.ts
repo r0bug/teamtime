@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, purchaseRequests, tasks, notifications, users } from '$lib/server/db';
 import { eq, and, desc } from 'drizzle-orm';
+import { isManager } from '$lib/server/auth/roles';
 
 // Get purchase requests
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -13,7 +14,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const conditions = [];
 
 	// Non-managers see only their own requests
-	if (locals.user.role !== 'manager') {
+	if (!isManager(locals.user)) {
 		conditions.push(eq(purchaseRequests.requesterId, locals.user.id));
 	}
 

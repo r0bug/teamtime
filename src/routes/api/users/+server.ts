@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, users, auditLogs } from '$lib/server/db';
-import { eq, ilike, or, desc } from 'drizzle-orm';
+import { eq, ilike, or, and, desc } from 'drizzle-orm';
 import { hashPin, validatePinFormat } from '$lib/server/auth/pin';
 import { requirePermission } from '$lib/server/auth/require-permission';
 import { sanitizeName, sanitizeEmail } from '$lib/server/utils/sanitize';
@@ -48,19 +48,11 @@ export const GET: RequestHandler = async (event) => {
 		conditions.push(eq(users.isActive, true));
 	}
 
-	const userList = await db
-		.select({
-			id: users.id,
-			email: users.email,
-			username: users.username,
-			name: users.name,
-			phone: users.phone,
-			role: users.role,
-			isActive: users.isActive,
-			createdAt: users.createdAt
-		})
-		.from(users)
-		.orderBy(desc(users.createdAt));
+	if (conditions.length > 0) {
+		query = query.where(and(...conditions));
+	}
+
+	const userList = await query.orderBy(desc(users.createdAt));
 
 	return json({ users: userList });
 };

@@ -2095,6 +2095,40 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://app.com/api/tasks/cron
 - `/api/clock/cron`
 - `/api/metrics/cron`
 
+### Session Invalidation for Deactivated Users
+
+When an admin deactivates a user, existing sessions are immediately invalidated:
+- `hooks.server.ts` checks `user.isActive` on every request
+- If inactive, the session is invalidated via Lucia and `locals.user` is cleared
+- The layout guard then redirects to `/login`
+- Prevents terminated employees from accessing the system with stale sessions
+
+### Role Hierarchy Enforcement
+
+All auth checks use `isManager()` / `isAdmin()` helpers instead of direct string comparison:
+- `isManager()` returns `true` for both `manager` AND `admin` roles
+- Fixed across 20+ API and page routes where `role !== 'manager'` incorrectly excluded admins
+- Admins now have full manager-level access to: shifts, locations, users, reports, purchase requests, expenses, schedule management
+
+### Demerit Escalation Guard
+
+Warning-to-demerit escalation now tracks existing demerits to prevent runaway penalties:
+- Both clock-out and late-arrival warning services check for existing demerits within the lookback period
+- New demerits only issued at threshold multiples (2 warnings = 1 demerit, 4 = 2, etc.)
+- Prevents point drain from repeated demerit issuance on every subsequent warning
+
+### SQL Injection Prevention (Task Rules)
+
+Task assignment rules now use parameterized `inArray()` queries instead of `sql.raw()` string interpolation for role-based user lookups. Prevents injection via malicious `assignmentConfig` role values.
+
+### Search Authorization
+
+The global search endpoint now filters messages by conversation participant, preventing users from searching through conversations they are not a member of.
+
+### Database Indexes
+
+Added indexes on 13+ high-traffic columns including `timeEntries.userId`, `clockOutWarnings.timeEntryId`, `users.phone`, `messages.conversationId`, `notifications.userId`, `loginAttempts.email`, and `salesTransactions.invoiceDate`.
+
 ### Permission Middleware
 
 Granular permission enforcement via `src/lib/server/auth/require-permission.ts`:

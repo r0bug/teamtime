@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, pgEnum, decimal, serial, unique, date } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, pgEnum, decimal, serial, unique, date, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Enums
@@ -341,7 +341,9 @@ export const users = pgTable('users', {
 	isActive: boolean('is_active').notNull().default(true),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => ({
+	phoneIdx: index('users_phone_idx').on(table.phone)
+}));
 
 // Sessions table (for Lucia auth)
 export const sessions = pgTable('sessions', {
@@ -417,7 +419,9 @@ export const timeEntries = pgTable('time_entries', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' })
-});
+}, (table) => ({
+	userIdIdx: index('time_entries_user_id_idx').on(table.userId)
+}));
 
 // Task templates table
 export const taskTemplates = pgTable('task_templates', {
@@ -754,7 +758,9 @@ export const messages = pgTable('messages', {
 	threadReplyCount: integer('thread_reply_count').notNull().default(0),
 	lastThreadReplyAt: timestamp('last_thread_reply_at', { withTimezone: true }),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => ({
+	conversationIdIdx: index('messages_conversation_id_idx').on(table.conversationId)
+}));
 
 // Message photos table
 export const messagePhotos = pgTable('message_photos', {
@@ -844,7 +850,9 @@ export const notifications = pgTable('notifications', {
 	isRead: boolean('is_read').notNull().default(false),
 	readAt: timestamp('read_at', { withTimezone: true }),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => ({
+	userIdIdx: index('notifications_user_id_idx').on(table.userId)
+}));
 
 // Push subscriptions table
 export const pushSubscriptions = pgTable('push_subscriptions', {
@@ -878,7 +886,9 @@ export const auditLogs = pgTable('audit_logs', {
 	afterData: jsonb('after_data').$type<Record<string, unknown>>(),
 	ipAddress: text('ip_address'),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => ({
+	userIdIdx: index('audit_logs_user_id_idx').on(table.userId)
+}));
 
 // Store hours table - operating hours per location per day
 export const storeHours = pgTable('store_hours', {
@@ -1475,7 +1485,9 @@ export const smsLogs = pgTable('sms_logs', {
 	price: text('price'), // Cost from Twilio
 	statusUpdatedAt: timestamp('status_updated_at', { withTimezone: true }), // Last status callback time
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => ({
+	userIdIdx: index('sms_logs_user_id_idx').on(table.userId)
+}));
 
 export type SmsLog = typeof smsLogs.$inferSelect;
 export type NewSmsLog = typeof smsLogs.$inferInsert;

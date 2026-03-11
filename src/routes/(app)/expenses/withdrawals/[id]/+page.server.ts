@@ -2,6 +2,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect, error } from '@sveltejs/kit';
 import { db, atmWithdrawals, withdrawalAllocations, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
+import { isManager } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!locals.user) {
@@ -30,7 +31,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	}
 
 	// Only allow owner or manager to view
-	if (withdrawal.userId !== locals.user.id && locals.user.role !== 'manager') {
+	if (withdrawal.userId !== locals.user.id && !isManager(locals.user)) {
 		throw error(403, 'Not authorized to view this withdrawal');
 	}
 
@@ -53,7 +54,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		totalAllocated,
 		remaining,
 		isOwner: withdrawal.userId === locals.user.id,
-		isManager: locals.user.role === 'manager'
+		isManager: isManager(locals.user)
 	};
 };
 
@@ -114,7 +115,7 @@ export const actions: Actions = {
 	},
 
 	delete: async ({ params, locals }) => {
-		if (!locals.user || locals.user.role !== 'manager') {
+		if (!locals.user || !isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 

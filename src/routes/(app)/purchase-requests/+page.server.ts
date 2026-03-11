@@ -2,13 +2,14 @@ import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 import { db, purchaseRequests, users } from '$lib/server/db';
 import { eq, desc, and } from 'drizzle-orm';
+import { isManager } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user) {
 		throw redirect(302, '/login');
 	}
 
-	const isManager = locals.user.role === 'manager';
+	const hasManagerAccess = isManager(locals.user);
 
 	const requests = await db
 		.select({
@@ -25,10 +26,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 		})
 		.from(purchaseRequests)
 		.leftJoin(users, eq(purchaseRequests.requesterId, users.id))
-		.where(isManager ? undefined : eq(purchaseRequests.requesterId, locals.user.id))
+		.where(hasManagerAccess ? undefined : eq(purchaseRequests.requesterId, locals.user.id))
 		.orderBy(desc(purchaseRequests.createdAt));
 
-	return { requests, isManager };
+	return { requests, isManager: hasManagerAccess };
 };
 
 export const actions: Actions = {
@@ -63,7 +64,7 @@ export const actions: Actions = {
 	},
 
 	decide: async ({ request, locals }) => {
-		if (!locals.user || locals.user.role !== 'manager') {
+		if (!locals.user || !isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 

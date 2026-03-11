@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db, users, tasks, messages, conversations } from '$lib/server/db';
+import { db, users, tasks, messages, conversations, conversationParticipants } from '$lib/server/db';
 import { ilike, or, eq, and, desc, sql } from 'drizzle-orm';
 
 export const GET: RequestHandler = async ({ url, locals }) => {
@@ -64,7 +64,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			});
 		}
 
-		// Search messages
+		// Search messages (only from conversations the user is a participant in)
 		const messageResults = await db
 			.select({
 				id: messages.id,
@@ -73,6 +73,13 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 				createdAt: messages.createdAt
 			})
 			.from(messages)
+			.innerJoin(
+				conversationParticipants,
+				and(
+					eq(conversationParticipants.conversationId, messages.conversationId),
+					eq(conversationParticipants.userId, locals.user.id)
+				)
+			)
 			.where(ilike(messages.content, pattern))
 			.orderBy(desc(messages.createdAt))
 			.limit(5);

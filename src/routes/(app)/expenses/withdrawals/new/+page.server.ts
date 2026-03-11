@@ -1,10 +1,11 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 import { db, atmWithdrawals } from '$lib/server/db';
+import { isPurchaser } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	if (!locals.user) {
-		throw redirect(302, '/login');
+	if (!locals.user || !isPurchaser(locals.user)) {
+		throw redirect(302, '/dashboard');
 	}
 
 	return {};
@@ -12,7 +13,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 export const actions: Actions = {
 	create: async ({ request, locals }) => {
-		if (!locals.user) {
+		if (!locals.user || !isPurchaser(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 

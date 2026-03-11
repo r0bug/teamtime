@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, locations, auditLogs } from '$lib/server/db';
 import { eq, ilike, desc } from 'drizzle-orm';
+import { isManager } from '$lib/server/auth/roles';
 
 // Get all locations
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -29,7 +30,7 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	if (locals.user.role !== 'manager') {
+	if (!isManager(locals.user)) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 

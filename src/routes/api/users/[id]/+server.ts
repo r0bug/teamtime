@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db, users, auditLogs } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { hashPin, validatePinFormat } from '$lib/server/auth/pin';
+import { isManager } from '$lib/server/auth/roles';
 import { formatPhoneToE164 } from '$lib/server/twilio';
 
 // Get single user
@@ -12,7 +13,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	}
 
 	// Users can view themselves, managers can view anyone
-	if (locals.user.id !== params.id && locals.user.role !== 'manager') {
+	if (locals.user.id !== params.id && !isManager(locals.user)) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 
@@ -47,9 +48,9 @@ export const PUT: RequestHandler = async ({ locals, params, request, getClientAd
 
 	// Users can update themselves (limited), managers can update anyone
 	const isSelf = locals.user.id === params.id;
-	const isManager = locals.user.role === 'manager';
+	const hasManagerAccess = isManager(locals.user);
 
-	if (!isSelf && !isManager) {
+	if (!isSelf && !hasManagerAccess) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 
@@ -81,7 +82,7 @@ export const PUT: RequestHandler = async ({ locals, params, request, getClientAd
 	}
 
 	// Fields only managers can update
-	if (isManager) {
+	if (hasManagerAccess) {
 		if (body.email !== undefined) updateData.email = body.email.toLowerCase();
 		if (body.username !== undefined) updateData.username = body.username.toLowerCase();
 		if (body.role !== undefined) updateData.role = body.role;
@@ -131,7 +132,7 @@ export const DELETE: RequestHandler = async ({ locals, params, getClientAddress 
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	if (locals.user.role !== 'manager') {
+	if (!isManager(locals.user)) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 

@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, atmWithdrawals, auditLogs } from '$lib/server/db';
 import { eq, and, desc } from 'drizzle-orm';
+import { isManager } from '$lib/server/auth/roles';
 
 // Get ATM withdrawals
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -14,7 +15,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const conditions = [];
 
 	// Non-managers see only their own withdrawals
-	if (locals.user.role !== 'manager') {
+	if (!isManager(locals.user)) {
 		conditions.push(eq(atmWithdrawals.userId, locals.user.id));
 	} else if (userId) {
 		conditions.push(eq(atmWithdrawals.userId, userId));

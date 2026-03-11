@@ -2,9 +2,10 @@ import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect, error } from '@sveltejs/kit';
 import { db, locations } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
+import { isManager } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
-	if (!locals.user || locals.user.role !== 'manager') {
+	if (!locals.user || !isManager(locals.user)) {
 		throw redirect(302, '/dashboard');
 	}
 
@@ -23,7 +24,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 export const actions: Actions = {
 	update: async ({ request, params, locals }) => {
-		if (!locals.user || locals.user.role !== 'manager') {
+		if (!locals.user || !isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 
@@ -54,7 +55,7 @@ export const actions: Actions = {
 	},
 
 	delete: async ({ params, locals }) => {
-		if (!locals.user || locals.user.role !== 'manager') {
+		if (!locals.user || !isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 

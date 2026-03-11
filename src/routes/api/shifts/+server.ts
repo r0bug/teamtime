@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, shifts, users, locations, auditLogs } from '$lib/server/db';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
+import { isManager } from '$lib/server/auth/roles';
 
 // Get shifts
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -16,7 +17,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const conditions = [];
 
 	// Non-managers can only see their own shifts
-	if (locals.user.role !== 'manager') {
+	if (!isManager(locals.user)) {
 		conditions.push(eq(shifts.userId, locals.user.id));
 	} else if (userId) {
 		conditions.push(eq(shifts.userId, userId));
@@ -50,7 +51,7 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	if (locals.user.role !== 'manager') {
+	if (!isManager(locals.user)) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 

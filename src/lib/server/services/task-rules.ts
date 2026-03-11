@@ -10,7 +10,7 @@ import { db, taskAssignmentRules, taskTemplates, tasks, users, timeEntries, shif
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('services:task-rules');
-import { eq, and, sql, desc, isNull, gte, ne, or } from 'drizzle-orm';
+import { eq, and, sql, desc, isNull, gte, ne, or, inArray } from 'drizzle-orm';
 import type { TaskAssignmentRule, TaskTemplate, CashCountConfig } from '$lib/server/db/schema';
 import { getPacificDateParts, getPacificStartOfDay, getPacificEndOfDay } from '$lib/server/utils/timezone';
 
@@ -236,13 +236,13 @@ async function determineAssignee(
  */
 async function getNextRotationUser(rule: TaskAssignmentRule): Promise<string | null> {
 	const config = rule.assignmentConfig;
-	const roles = config?.roles || ['staff'];
+	const roles = (config?.roles || ['staff']) as ('admin' | 'manager' | 'purchaser' | 'staff')[];
 
 	// Get eligible users
 	const eligibleUsers = await db
 		.select({ id: users.id })
 		.from(users)
-		.where(and(eq(users.isActive, true), sql`${users.role} = ANY(ARRAY[${sql.raw(roles.map((r) => `'${r}'`).join(','))}]::user_role[])`))
+		.where(and(eq(users.isActive, true), inArray(users.role, roles)))
 		.orderBy(users.name);
 
 	if (eligibleUsers.length === 0) return null;
@@ -298,8 +298,9 @@ async function getLocationStaffUser(
  * Get user with least active tasks
  */
 async function getUserWithLeastTasks(roles?: string[]): Promise<string | null> {
-	const roleFilter = roles && roles.length > 0
-		? sql`${users.role} = ANY(ARRAY[${sql.raw(roles.map((r) => `'${r}'`).join(','))}]::user_role[])`
+	const typedRoles = (roles || []) as ('admin' | 'manager' | 'purchaser' | 'staff')[];
+	const roleFilter = typedRoles.length > 0
+		? inArray(users.role, typedRoles)
 		: sql`true`;
 
 	const result = await db

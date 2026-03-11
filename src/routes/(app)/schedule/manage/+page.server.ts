@@ -3,9 +3,10 @@ import { fail, redirect } from '@sveltejs/kit';
 import { db, shifts, users, locations } from '$lib/server/db';
 import { eq, gte, lte, and, desc } from 'drizzle-orm';
 import { parsePacificDatetime } from '$lib/server/utils/timezone';
+import { isManager } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	if (!locals.user || locals.user.role !== 'manager') {
+	if (!locals.user || !isManager(locals.user)) {
 		throw redirect(302, '/schedule');
 	}
 
@@ -58,7 +59,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 export const actions: Actions = {
 	create: async ({ request, locals }) => {
-		if (!locals.user || locals.user.role !== 'manager') {
+		if (!locals.user || !isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 
@@ -86,7 +87,7 @@ export const actions: Actions = {
 	},
 
 	delete: async ({ request, locals }) => {
-		if (!locals.user || locals.user.role !== 'manager') {
+		if (!locals.user || !isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 

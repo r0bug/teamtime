@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, atmWithdrawals, withdrawalAllocations, users } from '$lib/server/db';
 import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
+import { isManager } from '$lib/server/auth/roles';
 import { parsePacificDate, parsePacificEndOfDay, toPacificDateTimeString } from '$lib/server/utils/timezone';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -9,7 +10,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	if (locals.user.role !== 'manager') {
+	if (!isManager(locals.user)) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 

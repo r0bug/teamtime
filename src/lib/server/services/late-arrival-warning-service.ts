@@ -158,6 +158,33 @@ export async function checkAndEscalateToDemerit(
 		return null;
 	}
 
+	// Count existing demerits of this type in the lookback period to prevent
+	// firing on every warning past threshold (3 warnings = 1 demerit, 6 = 2, etc.)
+	const lookbackDate = new Date();
+	lookbackDate.setDate(lookbackDate.getDate() - LATE_ARRIVAL_CONFIG.WARNING_LOOKBACK_DAYS);
+
+	const [demeritResult] = await db
+		.select({ count: count() })
+		.from(demerits)
+		.where(
+			and(
+				eq(demerits.userId, userId),
+				eq(demerits.type, 'late_arrival'),
+				gte(demerits.createdAt, lookbackDate)
+			)
+		);
+
+	const existingDemeritCount = demeritResult?.count ?? 0;
+	const threshold = LATE_ARRIVAL_CONFIG.WARNING_THRESHOLD_FOR_DEMERIT;
+
+	if (warningCount < threshold * (existingDemeritCount + 1)) {
+		log.info(
+			{ userId, warningCount, existingDemeritCount, nextDemeritAt: threshold * (existingDemeritCount + 1) },
+			'Late arrival demerit already issued for current warning batch, skipping'
+		);
+		return null;
+	}
+
 	// Get user info for SMS
 	const [user] = await db
 		.select({ id: users.id, name: users.name, phone: users.phone })

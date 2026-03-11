@@ -1,9 +1,14 @@
 // AI Token Usage Dashboard - Phase 0.8
+import { redirect } from '@sveltejs/kit';
 import { db, aiTokenUsage, aiActions } from '$lib/server/db';
 import { eq, and, gte, sql, desc } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
+import { isAdmin } from '$lib/server/auth/roles';
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
+	if (!isAdmin(locals.user)) {
+		throw redirect(302, '/dashboard');
+	}
 	const now = new Date();
 	const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 	const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);

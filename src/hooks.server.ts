@@ -87,6 +87,21 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	if (user) {
 		const [fullUser] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
+
+		// Deactivated users must not retain access via existing sessions
+		if (fullUser && !fullUser.isActive) {
+			await lucia.invalidateSession(session!.id);
+			const sessionCookie = lucia.createBlankSessionCookie();
+			event.cookies.set(sessionCookie.name, sessionCookie.value, {
+				path: '.',
+				...sessionCookie.attributes
+			});
+			event.locals.user = null;
+			event.locals.session = null;
+			event.locals.userPermissions = null;
+			return addSecurityHeaders(await resolve(event));
+		}
+
 		event.locals.user = fullUser || null;
 
 		// Load user permissions for granular access control

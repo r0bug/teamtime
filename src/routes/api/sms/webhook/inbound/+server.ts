@@ -17,7 +17,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, smsLogs, users, clockOutWarnings, timeEntries } from '$lib/server/db';
 import { eq, and, gte, isNull, isNotNull, desc } from 'drizzle-orm';
-import { validateTwilioSignature } from '$lib/server/twilio';
+import { validateTwilioSignature, formatPhoneToE164 } from '$lib/server/twilio';
 import { env } from '$env/dynamic/private';
 import { createLogger } from '$lib/server/logger';
 import { awardClockOutPoints } from '$lib/server/services/points-service';
@@ -94,14 +94,18 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
 	log.info({ messageSid, from, isOptOut, bodyPreview: body.slice(0, 50) }, 'Inbound SMS received');
 
-	// Look up user by phone number
+	// Look up user by phone number (normalize to E.164 for comparison since
+	// Twilio sends E.164 but users may have stored phone in various formats)
 	let userId: string | null = null;
 	try {
-		const [user] = await db
-			.select({ id: users.id, name: users.name })
+		const usersWithPhones = await db
+			.select({ id: users.id, name: users.name, phone: users.phone })
 			.from(users)
-			.where(eq(users.phone, from))
-			.limit(1);
+			.where(isNotNull(users.phone));
+
+		const user = usersWithPhones.find(
+			(u) => u.phone && formatPhoneToE164(u.phone) === from
+		);
 
 		if (user) {
 			userId = user.id;
