@@ -88,8 +88,9 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		.where(where);
 
 	// Available dates (for date picker navigation)
+	// Cast to text to guarantee YYYY-MM-DD string format regardless of driver behavior
 	const availableDates = await db
-		.selectDistinct({ date: salesTransactions.invoiceDate })
+		.selectDistinct({ date: sql<string>`${salesTransactions.invoiceDate}::text`.as('date_str') })
 		.from(salesTransactions)
 		.orderBy(desc(salesTransactions.invoiceDate))
 		.limit(30);
@@ -134,6 +135,6 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 			itemCount: Number(dayTotals.itemCount),
 			vendorCount: Number(dayTotals.vendorCount)
 		},
-		availableDates: availableDates.map(d => d.date as string)
+		availableDates: availableDates.map(d => String(d.date))
 	};
 };
