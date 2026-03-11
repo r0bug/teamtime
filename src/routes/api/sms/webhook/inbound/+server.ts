@@ -6,19 +6,26 @@
  * Called by Twilio when someone sends a text TO our Twilio number.
  * This captures replies, STOP/opt-out messages, and any other inbound texts.
  *
+ * Supports smart time parsing: employees can reply with their actual clock-out
+ * time (e.g. "5:30 PM", "530", "left at 3:30") and the system will use that
+ * time instead of NOW. Also handles replies after auto-clock-out.
+ *
  * Twilio sends application/x-www-form-urlencoded data.
  */
 
-import { text as textResponse, json } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, smsLogs, users, clockOutWarnings, timeEntries } from '$lib/server/db';
-import { eq, and, gte, isNull, desc } from 'drizzle-orm';
+import { eq, and, gte, isNull, isNotNull, desc } from 'drizzle-orm';
 import { validateTwilioSignature } from '$lib/server/twilio';
 import { env } from '$env/dynamic/private';
 import { createLogger } from '$lib/server/logger';
 import { awardClockOutPoints } from '$lib/server/services/points-service';
 import { checkAndAwardAchievements } from '$lib/server/services/achievements-service';
 import { auditClockEvent } from '$lib/server/services/audit-service';
+import { parseTimeReply } from '$lib/server/utils/parse-time-reply';
+import { SMS_MESSAGES } from '$lib/server/services/clock-out-warning-service';
+import { toPacificTimeString } from '$lib/server/utils/timezone';
 
 const log = createLogger('api:sms:webhook:inbound');
 
@@ -27,6 +34,32 @@ const OPT_OUT_WORDS = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit'
 
 // Words that mean "yes, clock me out"
 const CLOCK_OUT_CONFIRM_WORDS = ['yes', 'y', 'yeah', 'yep'];
+
+/** Helper to build a TwiML response with a message */
+function twiml(message: string): Response {
+	return new Response(
+		`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(message)}</Message></Response>`,
+		{ status: 200, headers: { 'Content-Type': 'text/xml' } }
+	);
+}
+
+/** Helper to build an empty TwiML response */
+function twimlEmpty(): Response {
+	return new Response(
+		'<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+		{ status: 200, headers: { 'Content-Type': 'text/xml' } }
+	);
+}
+
+/** Escape special XML characters */
+function escapeXml(str: string): string {
+	return str
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&apos;');
+}
 
 export const POST: RequestHandler = async ({ request, url }) => {
 	const formData = await request.formData();
@@ -124,8 +157,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
 				const trimmedBody = normalizedBody.trim();
 				const now = new Date();
 
+				// --- YES/Y: clock out at NOW ---
 				if (CLOCK_OUT_CONFIRM_WORDS.includes(trimmedBody)) {
-					// User confirmed — auto-clock them out
 					const [activeEntry] = await db
 						.select()
 						.from(timeEntries)
@@ -138,13 +171,11 @@ export const POST: RequestHandler = async ({ request, url }) => {
 						.limit(1);
 
 					if (activeEntry) {
-						// Clock out the user
 						await db
 							.update(timeEntries)
 							.set({ clockOut: now, updatedAt: now })
 							.where(eq(timeEntries.id, activeEntry.id));
 
-						// Award normal clock-out points (not penalty)
 						try {
 							await awardClockOutPoints(userId, activeEntry.id, true);
 							await checkAndAwardAchievements(userId);
@@ -152,7 +183,6 @@ export const POST: RequestHandler = async ({ request, url }) => {
 							log.warn({ error: err, userId }, 'Failed to award points for SMS clock-out');
 						}
 
-						// Audit the clock-out
 						try {
 							await auditClockEvent({
 								userId,
@@ -163,32 +193,195 @@ export const POST: RequestHandler = async ({ request, url }) => {
 							log.warn({ error: err, userId }, 'Failed to audit SMS clock-out');
 						}
 
-						log.info({ userId, timeEntryId: activeEntry.id, warningId: recentWarning.id }, 'User auto-clocked out via SMS reply');
+						log.info({ userId, timeEntryId: activeEntry.id, warningId: recentWarning.id }, 'User clocked out via SMS YES reply');
 					}
 
-					// Update warning record
 					await db
 						.update(clockOutWarnings)
 						.set({ userReply: body.trim(), repliedAt: now })
 						.where(eq(clockOutWarnings.id, recentWarning.id));
 
-					return new Response(
-						'<?xml version="1.0" encoding="UTF-8"?><Response><Message>Done! You\'ve been clocked out.</Message></Response>',
-						{ status: 200, headers: { 'Content-Type': 'text/xml' } }
-					);
-				} else {
-					// User replied with something else — log as their reason
+					return twiml("Done! You've been clocked out.");
+				}
+
+				// --- Try to parse a time from the reply ---
+				const parsedTime = parseTimeReply(body);
+
+				if (parsedTime) {
+					// Check if the user still has an active (open) time entry
+					const [activeEntry] = await db
+						.select()
+						.from(timeEntries)
+						.where(
+							and(
+								eq(timeEntries.id, recentWarning.timeEntryId),
+								isNull(timeEntries.clockOut)
+							)
+						)
+						.limit(1);
+
+					if (activeEntry) {
+						const clockInTime = new Date(activeEntry.clockIn);
+
+						// Validate: parsed time must be after clock-in and not in the future
+						if (parsedTime <= clockInTime) {
+							log.warn({ userId, parsedTime, clockInTime }, 'Parsed time is before clock-in');
+							await db
+								.update(clockOutWarnings)
+								.set({ userReply: body.trim(), repliedAt: now })
+								.where(eq(clockOutWarnings.id, recentWarning.id));
+							return twiml(SMS_MESSAGES.timeParseError);
+						}
+
+						if (parsedTime > now) {
+							log.warn({ userId, parsedTime, now }, 'Parsed time is in the future');
+							await db
+								.update(clockOutWarnings)
+								.set({ userReply: body.trim(), repliedAt: now })
+								.where(eq(clockOutWarnings.id, recentWarning.id));
+							return twiml(SMS_MESSAGES.timeParseError);
+						}
+
+						// Clock out at the parsed time
+						await db
+							.update(timeEntries)
+							.set({ clockOut: parsedTime, updatedAt: now })
+							.where(eq(timeEntries.id, activeEntry.id));
+
+						// Award normal clock-out points (not penalty)
+						try {
+							await awardClockOutPoints(userId, activeEntry.id, true);
+							await checkAndAwardAchievements(userId);
+						} catch (err) {
+							log.warn({ error: err, userId }, 'Failed to award points for SMS time-parsed clock-out');
+						}
+
+						// Audit with note about SMS correction
+						try {
+							await auditClockEvent({
+								userId,
+								timeEntryId: activeEntry.id,
+								action: 'clock_out'
+							});
+						} catch (err) {
+							log.warn({ error: err, userId }, 'Failed to audit SMS time-parsed clock-out');
+						}
+
+						const timeStr = toPacificTimeString(parsedTime);
+						log.info({ userId, timeEntryId: activeEntry.id, parsedTime: timeStr, warningId: recentWarning.id }, 'User clocked out via SMS with parsed time');
+
+						await db
+							.update(clockOutWarnings)
+							.set({ userReply: body.trim(), repliedAt: now })
+							.where(eq(clockOutWarnings.id, recentWarning.id));
+
+						return twiml(SMS_MESSAGES.timeConfirmed(timeStr));
+					}
+
+					// --- Entry already clocked out (auto-clock-out happened) ---
+					// Update the most recent time entry's clockOut to the parsed time
+					const [closedEntry] = await db
+						.select()
+						.from(timeEntries)
+						.where(
+							and(
+								eq(timeEntries.id, recentWarning.timeEntryId),
+								isNotNull(timeEntries.clockOut)
+							)
+						)
+						.limit(1);
+
+					if (closedEntry) {
+						const clockInTime = new Date(closedEntry.clockIn);
+
+						if (parsedTime > clockInTime && parsedTime <= now) {
+							await db
+								.update(timeEntries)
+								.set({ clockOut: parsedTime, updatedAt: now })
+								.where(eq(timeEntries.id, closedEntry.id));
+
+							const timeStr = toPacificTimeString(parsedTime);
+							log.info({ userId, timeEntryId: closedEntry.id, parsedTime: timeStr, warningId: recentWarning.id }, 'Updated already-closed time entry clock-out via SMS');
+
+							await db
+								.update(clockOutWarnings)
+								.set({ userReply: body.trim(), repliedAt: now })
+								.where(eq(clockOutWarnings.id, recentWarning.id));
+
+							return twiml(SMS_MESSAGES.timeUpdated(timeStr));
+						}
+					}
+
+					// Time parsed but could not apply — invalid range
 					await db
 						.update(clockOutWarnings)
 						.set({ userReply: body.trim(), repliedAt: now })
 						.where(eq(clockOutWarnings.id, recentWarning.id));
+					return twiml(SMS_MESSAGES.timeParseError);
+				}
 
-					log.info({ userId, warningId: recentWarning.id, reply: body.trim() }, 'User replied to clock-out warning with reason');
+				// --- Could not parse time — reply with help message ---
+				await db
+					.update(clockOutWarnings)
+					.set({ userReply: body.trim(), repliedAt: now })
+					.where(eq(clockOutWarnings.id, recentWarning.id));
 
-					return new Response(
-						'<?xml version="1.0" encoding="UTF-8"?><Response><Message>Got it, noted. Remember to clock out when you\'re done.</Message></Response>',
-						{ status: 200, headers: { 'Content-Type': 'text/xml' } }
-					);
+				log.info({ userId, warningId: recentWarning.id, reply: body.trim() }, 'User replied to clock-out warning, could not parse time');
+
+				return twiml(SMS_MESSAGES.timeParseError);
+			}
+
+			// --- No unreplied warning, but check for recently replied warnings ---
+			// Handle replies AFTER auto-clock-out: user might text "I left at 4:30" later
+			const [recentRepliedWarning] = await db
+				.select({
+					id: clockOutWarnings.id,
+					timeEntryId: clockOutWarnings.timeEntryId,
+					userId: clockOutWarnings.userId
+				})
+				.from(clockOutWarnings)
+				.where(
+					and(
+						eq(clockOutWarnings.userId, userId),
+						gte(clockOutWarnings.createdAt, fourHoursAgo)
+					)
+				)
+				.orderBy(desc(clockOutWarnings.createdAt))
+				.limit(1);
+
+			if (recentRepliedWarning) {
+				const parsedTime = parseTimeReply(body);
+
+				if (parsedTime) {
+					const now = new Date();
+
+					// Find the time entry (should be closed by now)
+					const [closedEntry] = await db
+						.select()
+						.from(timeEntries)
+						.where(
+							and(
+								eq(timeEntries.id, recentRepliedWarning.timeEntryId),
+								isNotNull(timeEntries.clockOut)
+							)
+						)
+						.limit(1);
+
+					if (closedEntry) {
+						const clockInTime = new Date(closedEntry.clockIn);
+
+						if (parsedTime > clockInTime && parsedTime <= now) {
+							await db
+								.update(timeEntries)
+								.set({ clockOut: parsedTime, updatedAt: now })
+								.where(eq(timeEntries.id, closedEntry.id));
+
+							const timeStr = toPacificTimeString(parsedTime);
+							log.info({ userId, timeEntryId: closedEntry.id, parsedTime: timeStr }, 'Updated clock-out time via late SMS reply');
+
+							return twiml(SMS_MESSAGES.timeUpdated(timeStr));
+						}
+					}
 				}
 			}
 		} catch (err) {
@@ -197,11 +390,5 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	}
 
 	// Return empty TwiML response (no matching reply context)
-	return new Response(
-		'<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-		{
-			status: 200,
-			headers: { 'Content-Type': 'text/xml' }
-		}
-	);
+	return twimlEmpty();
 };

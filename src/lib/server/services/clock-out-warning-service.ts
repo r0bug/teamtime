@@ -33,7 +33,11 @@ export const CLOCK_OUT_WARNING_CONFIG = {
 	DEMERIT_POINTS_DEDUCTED: 50,         // Points deducted for demerit
 	DEMERIT_EXPIRY_DAYS: 90,             // Days until demerit expires
 	GRACE_PERIOD_MINUTES: 30,            // Minutes after shift end before warning
-	MAX_HOURS_CLOCKED_IN: 10             // Fallback for no scheduled shift
+	MAX_HOURS_CLOCKED_IN: 10,            // Fallback for no scheduled shift
+	// Escalation intervals (minutes past shift end)
+	NAG_1_MINUTES: 30,                   // Friendly reminder
+	NAG_2_MINUTES: 90,                   // Firmer warning
+	NAG_3_MINUTES: 180                   // Auto clock-out at shift end
 };
 
 // ============================================================================
@@ -41,13 +45,22 @@ export const CLOCK_OUT_WARNING_CONFIG = {
 // ============================================================================
 
 export const SMS_MESSAGES = {
+	nag1: (shiftEndTime: Date) =>
+		`Your shift ended at ${toPacificTimeString(shiftEndTime)}. Still working? Reply YES to clock out now, or reply with your actual clock-out time (e.g. "5:15 PM").`,
+	nag2: (shiftEndTime: Date, minutesPast: number) =>
+		`You're still clocked in ${Math.round(minutesPast / 60)} hrs past your shift. Reply with your clock-out time or YES to clock out now. No reply = auto clock-out at shift end.`,
+	nag3: (shiftEndTime: Date) =>
+		`Auto-clocking you out at ${toPacificTimeString(shiftEndTime)} (shift end). Reply with your actual clock-out time if different.`,
 	autoReminder: 'Reminder: You are still clocked in. Please clock out at the end of your shift.',
-	autoReminderInteractive: (shiftEndTime: Date) =>
-		`Your shift ended at ${toPacificTimeString(shiftEndTime)}. Still working? Reply YES to clock out, or tell us why you're still in.`,
 	forceClockout: (managerName: string) =>
 		`${managerName} has clocked you out. Please remember to clock out at the end of your shift.`,
 	demeritIssued: (warningCount: number) =>
-		`You have received a demerit for repeated clock-out violations (${warningCount} warnings in 30 days). ${CLOCK_OUT_WARNING_CONFIG.DEMERIT_POINTS_DEDUCTED} points have been deducted.`
+		`You have received a demerit for repeated clock-out violations (${warningCount} warnings in 30 days). ${CLOCK_OUT_WARNING_CONFIG.DEMERIT_POINTS_DEDUCTED} points have been deducted.`,
+	timeConfirmed: (time: string) =>
+		`Got it — clocked you out at ${time}. Thanks!`,
+	timeParseError: 'Sorry, couldn\'t understand that time. Reply with a time like "5:30 PM" or "17:30", or YES to clock out now.',
+	timeUpdated: (time: string) =>
+		`Got it — updated your clock-out to ${time}.`,
 };
 
 // ============================================================================
@@ -78,25 +91,20 @@ export async function getWarningCount(
 }
 
 /**
- * Check if a warning already exists for a specific time entry today
- * (Prevents duplicate auto-reminders for the same entry)
+ * Get the number of nag warnings (auto_reminder type) sent for a specific time entry.
+ * Used to determine escalation level.
  */
-export async function hasWarningForEntryToday(timeEntryId: string): Promise<boolean> {
-	const todayStart = new Date();
-	todayStart.setHours(0, 0, 0, 0);
-
-	const [existing] = await db
-		.select({ id: clockOutWarnings.id })
+export async function getNagCountForEntry(timeEntryId: string): Promise<number> {
+	const [result] = await db
+		.select({ count: count() })
 		.from(clockOutWarnings)
 		.where(
 			and(
 				eq(clockOutWarnings.timeEntryId, timeEntryId),
-				gte(clockOutWarnings.createdAt, todayStart)
+				eq(clockOutWarnings.warningType, 'auto_reminder')
 			)
-		)
-		.limit(1);
-
-	return !!existing;
+		);
+	return result?.count ?? 0;
 }
 
 /**
@@ -462,11 +470,17 @@ export interface CronCheckResult {
 	skipped: number;
 	errors: string[];
 	demeritsIssued: number;
+	autoClockOuts: number;
 }
 
 /**
- * Check for overdue clock-outs and send reminders
+ * Check for overdue clock-outs and send escalating reminders
  * Called by cron every 15 minutes
+ *
+ * Escalation levels:
+ *   Nag 1 (NAG_1_MINUTES past shift end): Friendly reminder
+ *   Nag 2 (NAG_2_MINUTES past shift end): Firmer warning with auto clock-out threat
+ *   Nag 3 (NAG_3_MINUTES past shift end): Auto clock-out at shift end time + demerit check
  */
 export async function checkOverdueClockOuts(systemUserId: string): Promise<CronCheckResult> {
 	const result: CronCheckResult = {
@@ -474,12 +488,12 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 		warned: 0,
 		skipped: 0,
 		errors: [],
-		demeritsIssued: 0
+		demeritsIssued: 0,
+		autoClockOuts: 0
 	};
 
 	const now = new Date();
 	const config = await loadClockOutConfig();
-	const gracePeriodMs = config.gracePeriodMinutes * 60 * 1000;
 
 	// Find all active time entries (not clocked out)
 	const activeEntries = await db
@@ -512,18 +526,9 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 		result.checked++;
 
 		try {
-			// Check if already warned today for this entry
-			const alreadyWarned = await hasWarningForEntryToday(timeEntry.id);
-			if (alreadyWarned) {
-				result.skipped++;
-				continue;
-			}
-
 			const clockInTime = new Date(timeEntry.clockIn);
 			const hoursClocked = (now.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
 
-			let shouldWarn = false;
-			let minutesPastShiftEnd: number | undefined;
 			let shiftEndTime: Date | undefined;
 			let hasShift = false;
 
@@ -544,34 +549,56 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 			if (userShift) {
 				hasShift = true;
 				shiftEndTime = new Date(userShift.endTime);
-				const timePastShiftEnd = now.getTime() - shiftEndTime.getTime();
-
-				if (timePastShiftEnd > gracePeriodMs) {
-					shouldWarn = true;
-					minutesPastShiftEnd = Math.floor(timePastShiftEnd / (1000 * 60));
-				}
 			} else {
-				// Fallback: no shift scheduled, warn after MAX_HOURS_CLOCKED_IN
+				// Fallback: no shift scheduled, use clockIn + 8 hours as synthetic shift end
 				if (hoursClocked >= config.maxHoursClockedIn) {
-					shouldWarn = true;
 					shiftEndTime = new Date(clockInTime.getTime() + 8 * 60 * 60 * 1000);
-					minutesPastShiftEnd = Math.floor((now.getTime() - shiftEndTime.getTime()) / (1000 * 60));
 				}
 			}
 
-			if (!shouldWarn) {
+			// Not past any threshold yet
+			if (!shiftEndTime) {
 				result.skipped++;
 				continue;
 			}
 
-			// Send SMS reminder — interactive if we have actual shift data
+			const minutesPastShiftEnd = (now.getTime() - shiftEndTime.getTime()) / 60000;
+
+			// Not past the first nag threshold yet
+			if (minutesPastShiftEnd < CLOCK_OUT_WARNING_CONFIG.NAG_1_MINUTES) {
+				result.skipped++;
+				continue;
+			}
+
+			// Get how many nags we've already sent for this entry
+			const nagCount = await getNagCountForEntry(timeEntry.id);
+
+			let message: string | undefined;
+			let shouldAutoClockOut = false;
+
+			if (nagCount === 0 && minutesPastShiftEnd >= CLOCK_OUT_WARNING_CONFIG.NAG_1_MINUTES) {
+				// Nag 1: Friendly reminder
+				message = hasShift && shiftEndTime
+					? SMS_MESSAGES.nag1(shiftEndTime)
+					: SMS_MESSAGES.autoReminder;
+			} else if (nagCount === 1 && minutesPastShiftEnd >= CLOCK_OUT_WARNING_CONFIG.NAG_2_MINUTES) {
+				// Nag 2: Firmer warning
+				message = SMS_MESSAGES.nag2(shiftEndTime, minutesPastShiftEnd);
+			} else if (nagCount >= 2 && minutesPastShiftEnd >= CLOCK_OUT_WARNING_CONFIG.NAG_3_MINUTES) {
+				// Nag 3: Auto clock-out
+				message = SMS_MESSAGES.nag3(shiftEndTime);
+				shouldAutoClockOut = true;
+			} else {
+				// Not time for the next nag yet
+				result.skipped++;
+				continue;
+			}
+
+			// Send SMS
 			let smsResult: { success: boolean; sid?: string; error?: string } | undefined;
-			if (user.phone) {
+			if (user.phone && message) {
 				const formatted = formatPhoneToE164(user.phone);
 				if (formatted) {
-					const message = hasShift && shiftEndTime
-						? SMS_MESSAGES.autoReminderInteractive(shiftEndTime)
-						: SMS_MESSAGES.autoReminder;
 					smsResult = await sendSMS(formatted, message);
 				}
 			}
@@ -582,16 +609,57 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 				timeEntryId: timeEntry.id,
 				warningType: 'auto_reminder',
 				shiftEndTime,
-				minutesPastShiftEnd,
+				minutesPastShiftEnd: Math.floor(minutesPastShiftEnd),
+				reason: `Escalation nag ${nagCount + 1}`,
 				smsResult
 			});
 
 			result.warned++;
 
-			// Check for demerit escalation
-			const demerit = await checkAndEscalateToDemerit(user.id, warning.id, systemUserId);
-			if (demerit) {
-				result.demeritsIssued++;
+			// Auto clock-out at nag 3
+			if (shouldAutoClockOut) {
+				// Clock out at shift end time (not now) for accuracy
+				await db
+					.update(timeEntries)
+					.set({
+						clockOut: shiftEndTime,
+						updatedAt: now,
+						updatedBy: systemUserId
+					})
+					.where(eq(timeEntries.id, timeEntry.id));
+
+				result.autoClockOuts++;
+
+				log.info(
+					{
+						userId: user.id,
+						timeEntryId: timeEntry.id,
+						clockOutTime: shiftEndTime.toISOString()
+					},
+					'Auto clock-out executed at shift end time'
+				);
+
+				// Deduct points for forgotten clock-out
+				try {
+					await awardPoints({
+						userId: user.id,
+						basePoints: POINT_VALUES.CLOCK_OUT_FORGOTTEN,
+						category: 'attendance',
+						action: 'clock_out_forgotten',
+						description: 'Forgot to clock out (auto clock-out after escalating reminders)',
+						sourceType: 'time_entry',
+						sourceId: timeEntry.id,
+						metadata: { autoClockOut: true, nagCount: nagCount + 1 }
+					});
+				} catch (err) {
+					log.error({ error: err, timeEntryId: timeEntry.id }, 'Failed to deduct points for auto clock-out');
+				}
+
+				// Check for demerit escalation
+				const demerit = await checkAndEscalateToDemerit(user.id, warning.id, systemUserId);
+				if (demerit) {
+					result.demeritsIssued++;
+				}
 			}
 
 			log.info(
@@ -600,10 +668,11 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 					timeEntryId: timeEntry.id,
 					hoursClocked: hoursClocked.toFixed(1),
 					hasShift,
+					nagLevel: nagCount + 1,
 					smsSent: smsResult?.success ?? false,
-					demeritIssued: !!demerit
+					autoClockOut: shouldAutoClockOut
 				},
-				'Auto-reminder sent for overdue clock-out'
+				`Escalating nag ${nagCount + 1} sent for overdue clock-out`
 			);
 		} catch (err) {
 			const errorMsg = err instanceof Error ? err.message : 'Unknown error';

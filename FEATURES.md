@@ -1823,19 +1823,27 @@ The Clock-Out Warning system automatically detects employees who forget to clock
 
 ### Key Features
 
-#### Smart SMS Reminders with Shift Lookup
+#### 3-Tier Escalating SMS Reminders
 - Cron job runs every 15 minutes during business hours
 - Looks up each user's scheduled shift from the `shifts` table
-- If shift exists: warns when `now > shiftEnd + gracePeriod` with interactive SMS
-- If no shift: falls back to warning after 10+ hours clocked in (generic SMS)
-- **Interactive SMS**: "Your shift ended at 5:00 PM. Still working? Reply YES to clock out, or tell us why you're still in."
-- **Auto clock-out on YES reply**: Inbound webhook processes YES/Y/YEAH/YEP replies to auto-clock out the user, award points, and audit the event
-- **Reason capture**: Any other reply is logged as the employee's reason and acknowledged
-- Records warning for escalation tracking
+- If no shift: falls back to synthetic shift end (clock-in + 8 hours) after `MAX_HOURS_CLOCKED_IN`
+- **Nag 1** (30 min past shift end): Friendly reminder — "Your shift ended at 5:00 PM. Reply YES to clock out now, or reply with your actual clock-out time (e.g. '5:15 PM')."
+- **Nag 2** (90 min past shift end): Firmer warning — "You're still clocked in 2 hrs past your shift. Reply with your clock-out time or YES to clock out now. No reply = auto clock-out at shift end."
+- **Nag 3** (180 min past shift end): Auto-clocks out at shift end time, deducts points (`CLOCK_OUT_FORGOTTEN = -15`), checks for demerit escalation
+- Escalation level tracked per time entry via `getNagCountForEntry()`
 
-#### Admin-Configurable Grace Period
-- Grace period is configurable via Admin → Settings → Attendance & Clock-Out
-- Stored in `appSettings` as `clock_out_grace_period_minutes` (default: 30 minutes)
+#### Natural-Language Time Parsing
+- Employees can reply with their actual clock-out time instead of just YES
+- **Supported formats**: "5:30 PM", "5:30pm", "17:30", "530", "530pm", "5 PM", "5pm", bare number "5"
+- **Natural phrases**: "left at 3:30", "clocked out at 5pm", "headed out at 4"
+- **Business hour heuristics**: bare numbers 1-6 assume PM; "7:30" without meridian = 7:30 AM
+- **Validation**: parsed time must be after clock-in and not in the future (5-min tolerance)
+- **Post-auto-clock-out corrections**: if the system already auto-clocked out the employee, they can text their actual time and it updates the closed entry
+- **Late replies**: handles corrections within 4 hours even after initial reply
+
+#### Admin-Configurable Thresholds
+- Grace period / escalation intervals configurable via constants (can be moved to Admin settings)
+- Stored escalation config: `NAG_1_MINUTES: 30`, `NAG_2_MINUTES: 90`, `NAG_3_MINUTES: 180`
 - No restart required — config is loaded from DB on each cron run
 
 #### Manager Force Clock-Out
@@ -1858,7 +1866,10 @@ The Clock-Out Warning system automatically detects employees who forget to clock
   DEMERIT_POINTS_DEDUCTED: 50,         // Points lost per demerit
   DEMERIT_EXPIRY_DAYS: 90,             // Demerit expiration
   GRACE_PERIOD_MINUTES: 30,            // Minutes after shift before warning
-  MAX_HOURS_CLOCKED_IN: 10             // Fallback when no scheduled shift
+  MAX_HOURS_CLOCKED_IN: 10,            // Fallback when no scheduled shift
+  NAG_1_MINUTES: 30,                   // Friendly reminder
+  NAG_2_MINUTES: 90,                   // Firmer warning
+  NAG_3_MINUTES: 180                   // Auto clock-out at shift end
 }
 ```
 
@@ -1923,9 +1934,12 @@ The Clock-Out Warning system automatically detects employees who forget to clock
 
 **Service**: `src/lib/server/services/clock-out-warning-service.ts`
 
+**Time Parser**: `src/lib/server/utils/parse-time-reply.ts`
+
 **API Routes**:
 - `src/routes/api/clock/cron/+server.ts` — Clock-out check cron
 - `src/routes/api/clock/force-out/+server.ts` — Force clock-out
+- `src/routes/api/sms/webhook/inbound/+server.ts` — Inbound SMS reply handling (time parsing, auto-clock-out, corrections)
 
 **Schema**: `src/lib/server/db/schema.ts` — `clockOutWarnings`, `demerits` tables
 
@@ -2523,7 +2537,7 @@ Full SMS management dashboard at `/admin/sms` with four tabs:
 - **Opt-out detection** — STOP/UNSUBSCRIBE messages flagged and counted
 - **User matching** — links inbound phone numbers to known staff
 - **Webhook endpoint** — `/api/sms/webhook/inbound` receives Twilio inbound POSTs
-- **Clock-out reply handling** — YES/Y/YEAH/YEP replies to clock-out warnings auto-clock the user out, award points, and respond with confirmation TwiML; other replies are logged as the user's reason
+- **Clock-out reply handling** — YES/Y/YEAH/YEP replies auto-clock out; natural-language time replies (e.g. "5:30 PM", "left at 3:30") clock out at the specified time; post-auto-clock-out corrections update already-closed entries; unparseable replies get a help message with format examples
 
 ### Scheduled Jobs Tab
 - **Job queue stats** — pending, running, completed, failed, cancelled counts

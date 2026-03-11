@@ -21,7 +21,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - GPS-verified clock in/out from any device
 - Real-time "who's working where" visibility
 - Automatic shift matching and overtime tracking
-- **Smart clock-out reminders** — uses actual shift data with configurable grace period, interactive SMS ("Reply YES to clock out"), and auto-clock-out on reply
+- **Smart clock-out reminders** — 3-tier escalation (30min friendly → 90min firm → 180min auto-clock-out), interactive SMS with natural-language time parsing ("left at 5:30"), post-auto-clock-out corrections
 - **Late arrival detection** with automated SMS alerts and demerit escalation
 - Export to CSV for payroll integration
 
@@ -78,7 +78,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 ### SMS System
 - **Twilio integration** for outbound SMS with delivery tracking
 - **Delivery status webhooks** — real-time queued/sent/delivered/failed tracking
-- **Inbound reply processing** — auto-clock-out on YES reply to shift-end reminders, logs other replies as reasons
+- **Inbound reply processing** — auto-clock-out on YES reply, natural-language time parsing (e.g. "5:30 PM", "left at 3:30"), post-auto-clock-out corrections via late SMS replies
 - **SMS admin dashboard** at `/admin/sms` with config status, test sender, delivery log, and reply history
 - **Phone number validation** — auto-normalizes to E.164 on profile save
 - **Scheduled SMS** — AI Office Manager can schedule future messages via job queue
@@ -248,7 +248,7 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-96 tables organized across domains:
+97 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries
 - **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules
