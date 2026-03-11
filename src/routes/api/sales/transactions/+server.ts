@@ -49,7 +49,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			// Aggregate by hour
 			const rows = await db
 				.select({
-					hour: sql<number>`EXTRACT(HOUR FROM ${salesTransactions.createDateTime})`.as('hour'),
+					hour: sql<number>`EXTRACT(HOUR FROM ${salesTransactions.createDateTime} AT TIME ZONE 'America/Los_Angeles')`.as('hour'),
 					totalSales: sql<string>`SUM(${salesTransactions.totalPrice}::numeric)`.as('total_sales'),
 					vendorPortion: sql<string>`SUM(${salesTransactions.vendorPortionOfTotalPrice}::numeric)`.as('vendor_portion'),
 					retained: sql<string>`SUM(${salesTransactions.retainedAmountFromVendor}::numeric)`.as('retained'),
@@ -58,8 +58,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				})
 				.from(salesTransactions)
 				.where(where)
-				.groupBy(sql`EXTRACT(HOUR FROM ${salesTransactions.createDateTime})`)
-				.orderBy(sql`EXTRACT(HOUR FROM ${salesTransactions.createDateTime})`);
+				.groupBy(sql`EXTRACT(HOUR FROM ${salesTransactions.createDateTime} AT TIME ZONE 'America/Los_Angeles')`)
+				.orderBy(sql`EXTRACT(HOUR FROM ${salesTransactions.createDateTime} AT TIME ZONE 'America/Los_Angeles')`);
 
 			return json({
 				success: true,
@@ -111,14 +111,14 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				.select({
 					vendorId: salesTransactions.vendorId,
 					vendorName: sql<string>`MAX(${salesTransactions.vendorName})`.as('vendor_name'),
-					hour: sql<number>`EXTRACT(HOUR FROM ${salesTransactions.createDateTime})`.as('hour'),
+					hour: sql<number>`EXTRACT(HOUR FROM ${salesTransactions.createDateTime} AT TIME ZONE 'America/Los_Angeles')`.as('hour'),
 					totalSales: sql<string>`SUM(${salesTransactions.totalPrice}::numeric)`.as('total_sales'),
 					retained: sql<string>`SUM(${salesTransactions.retainedAmountFromVendor}::numeric)`.as('retained'),
 					itemCount: sql<number>`COUNT(*)`.as('item_count')
 				})
 				.from(salesTransactions)
 				.where(where)
-				.groupBy(salesTransactions.vendorId, sql`EXTRACT(HOUR FROM ${salesTransactions.createDateTime})`)
+				.groupBy(salesTransactions.vendorId, sql`EXTRACT(HOUR FROM ${salesTransactions.createDateTime} AT TIME ZONE 'America/Los_Angeles')`)
 				.orderBy(sql`SUM(${salesTransactions.totalPrice}::numeric) DESC`);
 
 			return json({

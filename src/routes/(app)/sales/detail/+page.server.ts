@@ -26,7 +26,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	// Hourly aggregation
 	const hourlyData = await db
 		.select({
-			hour: sql<number>`EXTRACT(HOUR FROM ${salesTransactions.createDateTime})`.as('hour'),
+			hour: sql<number>`EXTRACT(HOUR FROM ${salesTransactions.createDateTime} AT TIME ZONE 'America/Los_Angeles')`.as('hour'),
 			totalSales: sql<string>`SUM(${salesTransactions.totalPrice}::numeric)`.as('total_sales'),
 			vendorPortion: sql<string>`SUM(${salesTransactions.vendorPortionOfTotalPrice}::numeric)`.as('vendor_portion'),
 			retained: sql<string>`SUM(${salesTransactions.retainedAmountFromVendor}::numeric)`.as('retained'),
@@ -35,8 +35,8 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		})
 		.from(salesTransactions)
 		.where(where)
-		.groupBy(sql`EXTRACT(HOUR FROM ${salesTransactions.createDateTime})`)
-		.orderBy(sql`EXTRACT(HOUR FROM ${salesTransactions.createDateTime})`);
+		.groupBy(sql`EXTRACT(HOUR FROM ${salesTransactions.createDateTime} AT TIME ZONE 'America/Los_Angeles')`)
+		.orderBy(sql`EXTRACT(HOUR FROM ${salesTransactions.createDateTime} AT TIME ZONE 'America/Los_Angeles')`);
 
 	// Vendor aggregation (for this date, regardless of vendorId filter)
 	const dateCondition = eq(salesTransactions.invoiceDate, targetDate);
