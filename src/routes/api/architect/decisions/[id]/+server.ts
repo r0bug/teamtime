@@ -8,7 +8,10 @@ import { createLogger } from '$lib/server/logger';
 const log = createLogger('api:architect:decisions:id');
 
 // GET - Get a specific decision
-export const GET: RequestHandler = async ({ params }) => {
+export const GET: RequestHandler = async ({ params, locals }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	try {
 		const [decision] = await db
 			.select()
@@ -50,7 +53,10 @@ export const GET: RequestHandler = async ({ params }) => {
 };
 
 // PATCH - Update decision status or content
-export const PATCH: RequestHandler = async ({ params, request }) => {
+export const PATCH: RequestHandler = async ({ params, request, locals }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	try {
 		const body = await request.json();
 		const updates: Partial<typeof architectureDecisions.$inferInsert> = {};
@@ -113,7 +119,10 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 };
 
 // DELETE - Delete a decision
-export const DELETE: RequestHandler = async ({ params }) => {
+export const DELETE: RequestHandler = async ({ params, locals }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	try {
 		const [deleted] = await db
 			.delete(architectureDecisions)

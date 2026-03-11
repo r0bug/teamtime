@@ -7,7 +7,10 @@ import { createLogger } from '$lib/server/logger';
 const log = createLogger('api:architect:chats');
 
 // GET - Get a specific chat session
-export const GET: RequestHandler = async ({ params }) => {
+export const GET: RequestHandler = async ({ params, locals }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	try {
 		const session = await getChatSession(params.id);
 		if (!session) {
@@ -38,7 +41,10 @@ export const GET: RequestHandler = async ({ params }) => {
 };
 
 // PATCH - Update session (e.g., title)
-export const PATCH: RequestHandler = async ({ params, request }) => {
+export const PATCH: RequestHandler = async ({ params, request, locals }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	try {
 		const body = await request.json();
 
@@ -69,7 +75,10 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 };
 
 // DELETE - Delete a chat session
-export const DELETE: RequestHandler = async ({ params }) => {
+export const DELETE: RequestHandler = async ({ params, locals }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	try {
 		await deleteChatSession(params.id);
 		return json({ success: true });

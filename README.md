@@ -248,7 +248,7 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-97 tables organized across domains:
+96 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries
 - **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules
@@ -257,7 +257,7 @@ All endpoints require authentication except static files. Role-based authorizati
 - **Expenses**: atm_withdrawals, withdrawal_allocations, purchase_requests
 - **Messaging**: conversations, messages, message_photos, groups, group_members, thread_participants
 - **Gamification**: point_transactions, user_stats, achievements, user_achievements, leaderboard_snapshots, team_goals, shoutouts, award_types, demerits, clock_out_warnings, late_arrival_warnings
-- **Metrics & Analytics**: sales_snapshots, sales_transactions, vendor_employee_correlations, metric_definitions, metric_data_points, metric_reports, worker_pair_performance, worker_impact_metrics, staffing_level_metrics, day_of_week_metrics
+- **Metrics & Analytics**: sales_snapshots, sales_transactions, vendor_employee_correlations, metric_definitions, metrics, metric_data_sources, metric_import_history, worker_pair_performance, worker_impact_metrics, staffing_level_metrics, day_of_week_metrics
 - **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes, ai_tool_config, ai_tool_keywords, ai_context_config, ai_context_keywords
 - **Shift Requests**: shift_requests, shift_request_responses
 - **Security**: login_attempts, account_lockouts

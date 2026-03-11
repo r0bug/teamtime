@@ -13,7 +13,7 @@ const log = createLogger('ai:tools:run-sales-scraper');
 
 interface RunSalesScraperParams {
 	date?: string; // YYYY-MM-DD, defaults to today
-	method?: 'scraper' | 'api'; // default: 'scraper' (switch to 'api' after validation)
+	method?: 'scraper' | 'api'; // default: 'api'
 }
 
 interface RunSalesScraperResult {
@@ -227,7 +227,7 @@ export const runSalesScraperTool: AITool<RunSalesScraperParams, RunSalesScraperR
 			method: {
 				type: 'string',
 				enum: ['scraper', 'api'],
-				description: 'Import method. "api" uses NRS REST API (faster, no Python needed). "scraper" uses legacy Python web scraper. Defaults to "scraper".'
+				description: 'Import method. "api" uses NRS REST API (faster, no Python needed). "scraper" uses legacy Python web scraper. Defaults to "api".'
 			}
 		},
 		required: []
@@ -244,7 +244,7 @@ export const runSalesScraperTool: AITool<RunSalesScraperParams, RunSalesScraperR
 
 	getConfirmationMessage(params: RunSalesScraperParams): string {
 		const dateStr = params.date || 'today';
-		const method = params.method || 'scraper';
+		const method = params.method || 'api';
 		return `Import NRS sales for ${dateStr} via ${method}? This will fetch vendor sales data and store it in the database.`;
 	},
 
@@ -286,7 +286,7 @@ export const runSalesScraperTool: AITool<RunSalesScraperParams, RunSalesScraperR
 		}
 
 		const targetDate = params.date || new Date().toISOString().split('T')[0];
-		const method = params.method || 'scraper';
+		const method = params.method || 'api';
 
 		if (method === 'api') {
 			return executeViaApi(targetDate);

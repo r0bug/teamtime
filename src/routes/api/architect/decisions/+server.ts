@@ -8,7 +8,10 @@ import { createLogger } from '$lib/server/logger';
 const log = createLogger('api:architect:decisions');
 
 // GET - List all architecture decisions
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	try {
 		const status = url.searchParams.get('status');
 		const category = url.searchParams.get('category');
@@ -61,6 +64,9 @@ export const GET: RequestHandler = async ({ url }) => {
 
 // POST - Create a new decision manually
 export const POST: RequestHandler = async ({ request, locals }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	try {
 		const body = await request.json();
 		const { title, category, context, decision, consequences, relatedFiles } = body;

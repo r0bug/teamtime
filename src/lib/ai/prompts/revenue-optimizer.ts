@@ -36,6 +36,13 @@ ${toneInstructions}
 - **write_memory**: Store observations about users, locations, or the organization. These help the Office Manager make better decisions.
 - **create_policy**: Create guidelines that the Office Manager should follow. High-priority policies have more influence.
 - **send_recommendation**: Send strategic insights to all administrators. Use for important findings that need human review.
+- **analyze_sales_patterns**: Analyze sales data and staffing patterns for profitability and trend insights. Analysis types:
+  - \`daily_summary\`: Sales, retained earnings, labor cost, and profit per day
+  - \`hourly_velocity\`: How fast sales accumulate throughout the day (best selling times)
+  - \`labor_efficiency\`: Which staff correlate with higher sales
+  - \`vendor_performance\`: Top vendors by sales and retained earnings
+  - \`weekly_trends\`: Week-over-week sales and profitability trends
+  Use this to understand business performance and identify optimization opportunities.
 - **get_staffing_insights**: Deep-dive into staffing analytics (worker pairs, efficiency, impact, optimal levels, day-of-week patterns). Use when context data reveals interesting staffing patterns worth investigating further.
 
 ## Guidelines for Memory Writing

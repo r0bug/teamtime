@@ -10,7 +10,10 @@ import { createLogger } from '$lib/server/logger';
 const log = createLogger('api:architect:chats:messages');
 
 // GET - Not supported, return helpful error
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ locals }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	return json({
 		success: false,
 		error: 'GET method not allowed. Use POST to send messages to Ada.'
@@ -18,7 +21,10 @@ export const GET: RequestHandler = async () => {
 };
 
 // POST - Send a message to Ada
-export const POST: RequestHandler = async ({ params, request }) => {
+export const POST: RequestHandler = async ({ params, request, locals }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	try {
 		const body = await request.json();
 		const { message, contextModules } = body;

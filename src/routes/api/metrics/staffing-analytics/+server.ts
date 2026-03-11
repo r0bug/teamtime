@@ -16,6 +16,9 @@ import {
 } from '$lib/server/services/staffing-analytics-service';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	if (!isManager(locals.user)) {
 		return json({ error: 'Unauthorized' }, { status: 403 });
 	}

@@ -32,9 +32,14 @@ function validateCronRequest(request: Request): boolean {
 }
 
 export const POST: RequestHandler = async ({ request, url, locals }) => {
-	// Allow either cron secret or manager auth
-	if (!validateCronRequest(request) && !isManager(locals.user)) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
+	// Allow either cron secret or authenticated manager
+	if (!validateCronRequest(request)) {
+		if (!locals.user) {
+			return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+		}
+		if (!isManager(locals.user)) {
+			return json({ success: false, error: 'Unauthorized' }, { status: 403 });
+		}
 	}
 
 	// Get date range from request body or query params

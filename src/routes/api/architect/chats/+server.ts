@@ -8,6 +8,9 @@ const log = createLogger('api:architect:chats');
 
 // GET - List all chat sessions
 export const GET: RequestHandler = async ({ locals }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	try {
 		const sessions = await listChatSessions(50);
 		return json({
@@ -35,9 +38,11 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 // POST - Create a new chat session
 export const POST: RequestHandler = async ({ locals }) => {
+	if (!locals.user) {
+		return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+	}
 	try {
-		// Get user ID from session if available
-		const userId = locals.user?.id;
+		const userId = locals.user.id;
 		const session = await createChatSession(userId);
 		return json({
 			success: true,
