@@ -1146,27 +1146,31 @@ This section only appears if the user has at least one graded pricing decision.
 
 ### Overview
 
-The Sales Dashboard provides visibility into daily sales, vendor performance, and profitability metrics. Data is automatically imported from NRS Accounting via an hourly scraper during business hours.
+The Sales Dashboard provides visibility into daily sales, vendor performance, and profitability metrics. Data is imported from NRS Accounting via the **NRS REST API** (primary) or legacy Python scraper (fallback). The system stores both daily aggregate snapshots and individual transaction line items, enabling drill-down from weekly trends to hourly item-level detail.
 
 ### Access
 
-**URL**: `/sales` (available to all authenticated users via main navigation)
+- **Dashboard**: `/sales` — Daily/weekly/vendor aggregate views
+- **Detail Drill-Down**: `/sales/detail?date=YYYY-MM-DD` — Hourly, vendor, and item-level views
 
 ### Features
 
-#### Summary Cards
+#### Summary Dashboard (`/sales`)
+
+**Summary Cards**:
 - **Total Retained**: Sum of retained earnings for the period
 - **Total Sales**: Gross sales for the period
 - **Avg Daily Retained**: Average daily retained earnings
 - **Avg Daily Sales**: Average gross daily sales
 
-#### View Modes
+**View Modes**:
 
 **Daily View**:
 - Interactive line chart showing Sales vs Retained over time
 - Configurable date range (7, 14, or 30 days)
 - Hover tooltips on data points
 - Detailed table with date, sales, vendor payout, retained, and vendor count
+- **Clickable dates** link to the detail drill-down page
 
 **Weekly View**:
 - Horizontal bar chart aggregating by week
@@ -1178,22 +1182,81 @@ The Sales Dashboard provides visibility into daily sales, vendor performance, an
 - Progress bars showing relative performance
 - Shows both total sales and retained earnings per vendor
 
+#### Transaction Drill-Down (`/sales/detail`)
+
+Requires transaction-level data from the NRS API (stored in `sales_transactions` table).
+
+**Date Navigation**: Date picker with prev/next buttons across available dates.
+
+**Hourly View**:
+- Bar chart showing sales by hour of day (blue=total sales, green=retained)
+- Data table with hour, sales, vendor payout, retained, item count, vendor count
+- Identifies peak sales hours and activity patterns
+
+**Vendor View**:
+- Full vendor breakdown table for the day
+- Columns: vendor name, sales, vendor payout, retained, margin %, item count
+- Click any vendor to filter all views to that vendor's transactions
+
+**Item View**:
+- Individual transaction line items with timestamp, vendor, item description, quantity, price, total, retained, and cashier
+- Sorted by time (most recent first)
+- Vendor-filterable for per-vendor item detail
+
+**Vendor Filtering**: Add `?vendorId=123` to drill into a single vendor's activity.
+
 ### Data Collection
 
-**Sales Scraper** (`scraper-imports/`):
-- Pulls daily vendor sales from NRS Accounting
-- Runs hourly during business hours:
-  - M-S: 12pm - 8pm
-  - Sun: 1pm - 6pm
-- Stores snapshots in `sales_snapshots` table with vendor JSONB data
+#### NRS REST API (Primary)
 
-**Import API**:
-- `POST /api/sales/import` — Accepts scraper JSON output
+**Client**: `src/lib/server/services/nrs-api-client.ts`
+- Auth: `company` HTTP header with API key value
+- Filtering: POST with JSON body (GET query params are ignored by NRS)
+- Pagination: `{ nextPage: number|null, list: [...] }` response format
+- Endpoints: `posstore/list` (GET), `vendor/list` (GET), `possales/getall` (POST)
+- Each sale line item includes full commission data: `vendorPortionOfTotalPrice`, `retainedAmountFromVendor`
+- Timestamps per transaction via `createDateTime` (enables hourly analysis)
+
+**Import Endpoint**: `POST /api/sales/import-nrs`
 - Authenticated via `CRON_SECRET` Bearer token
+- Accepts optional `?date=YYYY-MM-DD` (defaults to today Pacific)
+- Fetches from NRS API, stores daily aggregate in `sales_snapshots` (source: `'nrs_api'`)
+- Also stores individual line items in `sales_transactions` table
+- Idempotent: re-importing a date replaces existing transactions
 
-**Query API**:
-- `GET /api/sales` — Query sales snapshots
+**Cron Script**: `scraper-imports/import_daily_sales_api.sh`
+
+#### Legacy Scraper (Fallback)
+
+**Scraper**: `scraper-imports/nrs_daily_vendor_sales.py`
+- Logs into NRS website, navigates to AP Vendor Inventory Totals report, parses HTML
+- Stores daily aggregates in `sales_snapshots` (source: `'scraper'`)
+- Does not store individual transactions
+
+**Import Endpoint**: `POST /api/sales/import` — Accepts scraper JSON output
+
+#### Transactions Query API
+
+`GET /api/sales/transactions` — Flexible query API for transaction-level data:
+- **Filters**: `?date=`, `?startDate=`, `?endDate=`, `?vendorId=`
+- **Group modes**:
+  - `?group=hourly` — Aggregate by hour (sales, retained, item count, vendor count)
+  - `?group=vendor` — Aggregate by vendor (sales, payout, retained, item count)
+  - `?group=vendor-hourly` — Vendor x hour cross-tabulation (heatmap data)
+  - `?group=item` — Individual items (paginated with `?limit=` and `?offset=`)
+
+**Query API** (aggregates):
+- `GET /api/sales` — Query daily snapshots
 - Supports `?date=`, `?startDate=`, `?endDate=`, `?latest=true`, `?limit=`
+
+### Validation
+
+A backfill-and-compare script verified the NRS API against 3 months of scraper data:
+- **100% match** from mid-January through present on sales totals
+- Small rounding differences ($0.36–$4.32) on retained amounts for some older dates
+- Holiday-period (Dec 20–Jan 3) differences due to manual adjustments in the AP report
+
+**Script**: `scripts/backfill-and-compare.ts` — Fetches N days from the API, compares against existing scraper snapshots, and optionally stores transactions.
 
 ### AI Sales Context Provider
 
@@ -1209,30 +1272,40 @@ Context is assembled at priority 22 (after attendance, before tasks) and token-e
 
 **URL**: `/admin/metrics/data-sources` (managers only)
 
-Admin page for monitoring NRS scrape health:
-- **Overview cards**: Total scrapes, unique days, all-time retained, missing days (30d)
-- **Source breakdown table**: Per-source stats (scrape count, date range, totals, avg vendor count, last scrape)
+Admin page for monitoring NRS import health:
+- **Overview cards**: Total imports, unique days, all-time retained, missing days (30d)
+- **Source breakdown table**: Per-source stats (import count, date range, totals, avg vendor count, last import)
 - **Data gap detection**: Identifies missing non-Sunday dates in the last 30 days with visual warnings
-- **Scrape frequency chart**: Bar chart of daily scrape counts over last 30 days (color-coded: green=2+, blue=1)
-- **Scrape history table**: Paginated log of all snapshots with sale date, captured time, source, sales/vendor/retained amounts, and AI run ID
+- **Import frequency chart**: Bar chart of daily import counts over last 30 days (color-coded: green=2+, blue=1)
+- **Import history table**: Paginated log of all snapshots with sale date, captured time, source, sales/vendor/retained amounts, and AI run ID
 
 ### Office Manager Integration
 
-The Office Manager has access to the `view_sales` tool:
-- Query any date's sales data
-- Calculate profitability (retained - labor costs)
-- Show top vendors, totals, vendor counts
+The Office Manager's `run_sales_scraper` tool supports two methods:
+- `method: 'api'` — Fetches directly from NRS REST API (faster, stores transactions)
+- `method: 'scraper'` — Legacy Python web scraper (fallback)
+
+Also has `view_sales` tool to query any date's sales data, calculate profitability, and show top vendors.
 
 ### Files
 
-- `src/routes/(app)/sales/+page.svelte` — Dashboard UI
-- `src/routes/(app)/sales/+page.server.ts` — Server data loading
-- `src/routes/api/sales/+server.ts` — Query API
-- `src/routes/api/sales/import/+server.ts` — Import API
-- `src/lib/ai/tools/office-manager/view-sales.ts` — Office Manager tool
+- `src/routes/(app)/sales/+page.svelte` — Dashboard UI (aggregate views)
+- `src/routes/(app)/sales/+page.server.ts` — Server data loading (snapshots)
+- `src/routes/(app)/sales/detail/+page.svelte` — Transaction drill-down UI
+- `src/routes/(app)/sales/detail/+page.server.ts` — Server data loading (transactions)
+- `src/routes/api/sales/+server.ts` — Snapshot query API
+- `src/routes/api/sales/transactions/+server.ts` — Transaction query API
+- `src/routes/api/sales/import-nrs/+server.ts` — NRS API import endpoint
+- `src/routes/api/sales/import/+server.ts` — Legacy scraper import endpoint
+- `src/lib/server/services/nrs-api-client.ts` — NRS REST API client
+- `src/lib/ai/tools/office-manager/run-sales-scraper.ts` — AI import tool (API + scraper)
+- `src/lib/ai/tools/office-manager/view-sales.ts` — AI sales query tool
 - `src/lib/ai/context/providers/sales.ts` — AI sales context provider
 - `src/routes/(app)/admin/metrics/data-sources/` — NRS data sources admin page
-- `scraper-imports/` — NRS scraper scripts and configuration
+- `scripts/backfill-and-compare.ts` — API vs scraper validation script
+- `scripts/nrs-api-explore.ts` — NRS API exploration/discovery script
+- `scraper-imports/import_daily_sales_api.sh` — API-based cron script
+- `scraper-imports/import_daily_sales.sh` — Legacy scraper cron script
 
 ---
 
@@ -1583,7 +1656,8 @@ Two new tools for the Office Manager AI:
 
 | Table | Purpose |
 |-------|---------|
-| `sales_snapshots` | Daily sales data imported from LOB software |
+| `sales_snapshots` | Daily sales aggregates imported from NRS (API or scraper) |
+| `sales_transactions` | Individual POS line items from NRS API (hourly/item drill-down) |
 | `vendor_employee_correlations` | Computed correlations by period |
 | `metric_definitions` | Configurable metric definitions |
 | `metric_data_points` | Time-series metric data |

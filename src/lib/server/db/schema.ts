@@ -2098,6 +2098,60 @@ export const salesSnapshots = pgTable('sales_snapshots', {
 export type SalesSnapshot = typeof salesSnapshots.$inferSelect;
 export type NewSalesSnapshot = typeof salesSnapshots.$inferInsert;
 
+// Sales Transactions - Individual POS line items from NRS API
+// Enables hourly drill-down and item-level detail views
+export const salesTransactions = pgTable('sales_transactions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+
+	// NRS identifiers
+	arCashRegId: integer('ar_cash_reg_id').notNull(),
+	arCashRegDetailId: integer('ar_cash_reg_detail_id').notNull(),
+
+	// Store info
+	storeId: integer('store_id').notNull(),
+	storeName: text('store_name'),
+
+	// Timing
+	invoiceDate: date('invoice_date').notNull(),
+	createDateTime: timestamp('create_date_time', { withTimezone: true }).notNull(),
+
+	// Vendor info
+	vendorId: integer('vendor_id').notNull(),
+	vendorName: text('vendor_name'),
+
+	// Item info
+	partId: integer('part_id'),
+	partNumber: text('part_number'),
+	partName: text('part_name'),
+	itemDescription: text('item_description'),
+
+	// Financials
+	quantity: integer('quantity').notNull().default(1),
+	price: decimal('price', { precision: 12, scale: 2 }).notNull(),
+	totalPrice: decimal('total_price', { precision: 12, scale: 2 }).notNull(),
+	tax: decimal('tax', { precision: 12, scale: 2 }).default('0'),
+	discountAmount: decimal('discount_amount', { precision: 12, scale: 2 }).default('0'),
+
+	// Commission breakdown
+	vendorPortionOfTotalPrice: decimal('vendor_portion', { precision: 12, scale: 2 }).notNull(),
+	retainedAmountFromVendor: decimal('retained_amount', { precision: 12, scale: 2 }).notNull(),
+
+	// Cashier
+	userName: text('user_name'),
+
+	// Metadata
+	importedAt: timestamp('imported_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Indexes:
+// CREATE INDEX idx_sales_tx_invoice_date ON sales_transactions(invoice_date);
+// CREATE INDEX idx_sales_tx_vendor_id ON sales_transactions(vendor_id);
+// CREATE INDEX idx_sales_tx_create_dt ON sales_transactions(create_date_time);
+// CREATE UNIQUE INDEX idx_sales_tx_nrs_id ON sales_transactions(ar_cash_reg_detail_id);
+
+export type SalesTransaction = typeof salesTransactions.$inferSelect;
+export type NewSalesTransaction = typeof salesTransactions.$inferInsert;
+
 // ============================================================================
 // GAMIFICATION SYSTEM
 // ============================================================================

@@ -475,4 +475,41 @@ CREATE TABLE sms_logs (
 
 ---
 
-*Last updated: February 2026*
+## Sales Transactions
+
+Individual POS line items from the NRS REST API. Enables hourly drill-down and item-level detail views on the Sales Detail page (`/sales/detail`).
+
+```sql
+CREATE TABLE sales_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ar_cash_reg_id INTEGER NOT NULL,               -- NRS register ID
+  ar_cash_reg_detail_id INTEGER NOT NULL,         -- NRS line item ID (unique)
+  store_id INTEGER NOT NULL,
+  store_name TEXT,
+  invoice_date DATE NOT NULL,                     -- Business day
+  create_date_time TIMESTAMPTZ NOT NULL,          -- Exact transaction timestamp
+  vendor_id INTEGER NOT NULL,
+  vendor_name TEXT,
+  part_id INTEGER,
+  part_number TEXT,
+  part_name TEXT,
+  item_description TEXT,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  price DECIMAL(12,2) NOT NULL,                   -- Unit price
+  total_price DECIMAL(12,2) NOT NULL,             -- Qty * price
+  tax DECIMAL(12,2) DEFAULT 0,
+  discount_amount DECIMAL(12,2) DEFAULT 0,
+  vendor_portion DECIMAL(12,2) NOT NULL,          -- Amount owed to vendor
+  retained_amount DECIMAL(12,2) NOT NULL,         -- Store's commission
+  user_name TEXT,                                 -- Cashier
+  imported_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+**Indexes**: `invoice_date`, `vendor_id`, `create_date_time`, unique on `ar_cash_reg_detail_id`
+
+**Related**: `sales_snapshots` stores daily aggregates; `sales_transactions` stores the underlying line items.
+
+---
+
+*Last updated: March 2026*

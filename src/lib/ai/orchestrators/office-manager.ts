@@ -1,6 +1,6 @@
 // Office Manager Orchestrator - Runs the AI agent with multi-step task chaining
-import { db, aiConfig, aiActions, aiCooldowns, aiPendingWork, aiTokenUsage, shifts, timeEntries, tasks, users } from '$lib/server/db';
-import { eq, and, gte, lt, lte, isNull, sql } from 'drizzle-orm';
+import { db, aiConfig, aiActions, aiCooldowns, aiPendingWork, aiTokenUsage, shifts, timeEntries, tasks, users, metrics } from '$lib/server/db';
+import { eq, and, gte, lt, lte, isNull, sql, or } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { getProvider } from '../providers';
 import { assembleContext, formatContextForPrompt } from '../context';
@@ -14,7 +14,7 @@ const log = createLogger('ai:orchestrator:office-manager');
 const AGENT: AIAgent = 'office_manager';
 
 // Pre-flight trigger types that determine which context providers to load
-export type PreFlightTrigger = 'late_staff' | 'overdue_tasks' | 'forgotten_clockout' | 'pending_work';
+export type PreFlightTrigger = 'late_staff' | 'overdue_tasks' | 'forgotten_clockout' | 'pending_work' | 'performance_alert';
 
 interface PreFlightResult {
 	shouldRun: boolean;
@@ -99,12 +99,34 @@ async function preFlightTriage(): Promise<PreFlightResult> {
 		.limit(1);
 	const hasPendingWork = pendingWork.length > 0;
 
+	// Check 5: Any performance alerts? (low completion rate or punctuality in past 24h)
+	const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+	const perfAlertResult = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(metrics)
+		.where(and(
+			eq(metrics.metricType, 'staff_performance'),
+			gte(metrics.periodStart, twentyFourHoursAgo),
+			or(
+				and(
+					eq(metrics.metricKey, 'task_completion_rate'),
+					lte(sql`CAST(${metrics.value} AS DECIMAL)`, 50)
+				),
+				and(
+					eq(metrics.metricKey, 'clock_in_punctuality'),
+					lte(sql`CAST(${metrics.value} AS DECIMAL)`, 60)
+				)
+			)
+		));
+	const hasPerformanceAlert = Number(perfAlertResult[0]?.count || 0) > 0;
+
 	// Build triggers list
 	const triggers: PreFlightTrigger[] = [];
 	if (lateStaff.length > 0) triggers.push('late_staff');
 	if (overdueTaskCount > 0) triggers.push('overdue_tasks');
 	if (forgottenClockoutCount > 0) triggers.push('forgotten_clockout');
 	if (hasPendingWork) triggers.push('pending_work');
+	if (hasPerformanceAlert) triggers.push('performance_alert');
 
 	const shouldRun = triggers.length > 0;
 
@@ -114,7 +136,8 @@ async function preFlightTriage(): Promise<PreFlightResult> {
 		lateStaffCount: lateStaff.length,
 		overdueTaskCount,
 		forgottenClockoutCount,
-		hasPendingWork
+		hasPendingWork,
+		hasPerformanceAlert
 	}, shouldRun ? 'Pre-flight: actionable items found' : 'Pre-flight: nothing actionable, skipping LLM call');
 
 	return {

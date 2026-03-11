@@ -87,7 +87,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 
 Three specialized AI agents run in the background:
 
-**Office Manager** — Monitors attendance, flags missing staff, creates/cancels/completes tasks, sends proactive messages, views schedules, manages permissions, runs sales scraper, and awards recognition. **47 tools available** including points management (view_points, award_points, give_shoutout), schedule management (create_schedule, update_schedule, copy_schedule, delete_schedule), task rule management (list_task_rules, toggle_task_rule, create_task_rule, delete_task), SMS scheduling (schedule_sms, view_scheduled_sms, cancel_scheduled_sms), sales import (run_sales_scraper, view_sales), time entry management (clock_user, create_time_entry, edit_time_entry), and metrics/analytics (query_metrics, get_vendor_correlations, analyze_staffing_patterns). Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours. **Sales context provider** automatically injects yesterday's sales, week-to-date aggregates, 14-day trends, and profitability metrics into AI prompts.
+**Office Manager** — Monitors attendance, flags missing staff, creates/cancels/completes tasks, sends proactive messages, views schedules, manages permissions, imports sales data, and awards recognition. **47 tools available** including points management (view_points, award_points, give_shoutout), schedule management (create_schedule, update_schedule, copy_schedule, delete_schedule), task rule management (list_task_rules, toggle_task_rule, create_task_rule, delete_task), SMS scheduling (schedule_sms, view_scheduled_sms, cancel_scheduled_sms), sales import (run_sales_scraper with API or legacy scraper method, view_sales), time entry management (clock_user, create_time_entry, edit_time_entry), and metrics/analytics (query_metrics, get_vendor_correlations, analyze_staffing_patterns). Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours. **Sales context provider** automatically injects yesterday's sales, week-to-date aggregates, 14-day trends, and profitability metrics into AI prompts.
 
 **Revenue Optimizer** — Analyzes patterns across scheduling, task completion, and expenses. Writes long-term observations and creates policies for the Office Manager to follow. 4 specialized tools. Runs nightly.
 
@@ -208,6 +208,7 @@ src/
 │   │   ├── tasks/      # Task management
 │   │   ├── pricing/    # Item pricing workflow
 │   │   ├── inventory/  # AI-powered inventory drops
+│   │   ├── sales/      # Sales dashboard + transaction drill-down
 │   │   ├── expenses/   # ATM withdrawals and allocations
 │   │   ├── messages/   # Team communication
 │   │   └── schedule/   # Shift viewing and management
@@ -229,6 +230,8 @@ TeamTime exposes **100+ REST endpoints** organized by domain:
 - `/api/conversations`, `/api/messages` — Team messaging
 - `/api/ai/cron` — AI agent triggers
 - `/api/architect/chats` — Architecture advisor
+- `/api/sales/import-nrs` — NRS REST API sales import (replaces scraper)
+- `/api/sales/transactions` — Transaction-level drill-down (hourly, vendor, item grouping)
 - `/api/points/cron` — Daily gamification processing (sales attribution, resets)
 - `/api/sms/test` — Send test SMS (admin only)
 - `/api/sms/status` — SMS system status and job stats
@@ -245,7 +248,7 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-96 tables organized across domains:
+97 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries
 - **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules
@@ -254,7 +257,7 @@ All endpoints require authentication except static files. Role-based authorizati
 - **Expenses**: atm_withdrawals, withdrawal_allocations, purchase_requests
 - **Messaging**: conversations, messages, message_photos, groups, group_members, thread_participants
 - **Gamification**: point_transactions, user_stats, achievements, user_achievements, leaderboard_snapshots, team_goals, shoutouts, award_types, demerits, clock_out_warnings, late_arrival_warnings
-- **Metrics & Analytics**: sales_snapshots, vendor_employee_correlations, metric_definitions, metric_data_points, metric_reports, worker_pair_performance, worker_impact_metrics, staffing_level_metrics, day_of_week_metrics
+- **Metrics & Analytics**: sales_snapshots, sales_transactions, vendor_employee_correlations, metric_definitions, metric_data_points, metric_reports, worker_pair_performance, worker_impact_metrics, staffing_level_metrics, day_of_week_metrics
 - **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes, ai_tool_config, ai_tool_keywords, ai_context_config, ai_context_keywords
 - **Shift Requests**: shift_requests, shift_request_responses
 - **Security**: login_attempts, account_lockouts

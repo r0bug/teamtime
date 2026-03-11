@@ -360,7 +360,11 @@
 						<tbody>
 							{#each [...filteredDailyData].reverse() as day}
 								<tr class="border-b border-gray-100 hover:bg-gray-50">
-									<td class="py-2 px-3 font-medium">{formatDate(day.date)}</td>
+									<td class="py-2 px-3 font-medium">
+										<a href="/sales/detail?date={day.date}" class="hover:text-primary-600 hover:underline">
+											{formatDate(day.date)}
+										</a>
+									</td>
 									<td class="py-2 px-3 text-right text-blue-600">{formatCurrency(day.totalSales)}</td>
 									<td class="py-2 px-3 text-right text-gray-600">{formatCurrency(day.totalVendorAmount)}</td>
 									<td class="py-2 px-3 text-right text-green-600 font-medium">{formatCurrency(day.totalRetained)}</td>
