@@ -48,11 +48,6 @@ Generated: 2026-03-12
 
 ## Low
 
-- [ ] **Missing database indexes** (BLOCKED: postgres-owned tables)
-  - `time_entries_user_id_idx` on `time_entries(user_id)` — defined in schema.ts but missing from DB
-  - `users_phone_idx` on `users(phone)` — defined in schema.ts but missing from DB
-  - Attempted 2026-04-16 as teamtime role: `ERROR: must be owner of table`
-  - **Fix:** Needs sudo — either `sudo -u postgres psql <db> -c "ALTER TABLE time_entries OWNER TO teamtime; ALTER TABLE users OWNER TO teamtime;"` then run CREATE INDEX as teamtime, OR run CREATE INDEX directly as postgres role.
 
 - [ ] **`requiresConfirmation` flag bypassed in cron mode**
   - `clock_user` tool declares `requiresConfirmation: true` (line 63)
@@ -94,3 +89,4 @@ Generated: 2026-03-12
 - [x] **Missing try/catch around cron services** — wrapped `checkOverdueClockOuts` and `checkLateArrivals` in independent try/catch in `cron/+server.ts`
 - [x] **Non-deterministic admin selection** — added `.orderBy(asc(users.createdAt))` in `cron/+server.ts`
 - [x] **SMS nag2 rounds hours misleadingly** — swapped `Math.round` → `toFixed(1).replace(/\.0$/, '')` in `clock-out-warning-service.ts`
+- [x] **Missing database indexes** — transferred `time_entries` and `users` ownership from postgres → teamtime via `sudo -u postgres psql -c "ALTER TABLE ... OWNER TO teamtime"`, then created `time_entries_user_id_idx` and `users_phone_idx` as the app user
