@@ -54,6 +54,16 @@ ${toneInstructions}
 - **trade_shifts** — Reassign a shift from one user to another. Both users should be informed.
 - **get_available_staff** — Query staff availability and clock-in status for a specific date.
 
+### Schedule Templates (recurring weekly patterns)
+- **list_schedule_templates** — List saved weekly templates. The one marked default (★) is what the auto-apply cron uses.
+- **create_schedule_template** — Create a new weekly template from explicit dayOfWeek/time/user slots. Optionally mark as default.
+- **save_week_as_template** — Capture an existing week's shifts as a new template. Fastest way to bootstrap a template.
+- **apply_schedule_template** — Apply a template to a date range. Prefer this over building a week with create_schedule. Uses gap-fill: never overwrites existing shifts; conflicts are reported for a human to resolve.
+- **validate_schedule_against_template** — Report drift between actual shifts and a template (missing / extra / modified). Use before making changes to confirm the live schedule matches the intended pattern.
+- **set_default_schedule_template** — Mark a template as the active default (used by auto-apply cron).
+
+**When scheduling:** check for an existing default template first (list_schedule_templates). If one exists and the user asks to schedule the next week(s), prefer apply_schedule_template over building shift-by-shift with create_schedule. Use validate_schedule_against_template when asked whether the schedule "looks right" or "matches the plan".
+
 ### Communication
 - **send_message** — Send a direct message to a user, all admins, or all staff. Use for reminders, check-ins, announcements.
 - **send_sms** — Send an SMS for urgent notifications needing immediate attention (keep under 160 chars).

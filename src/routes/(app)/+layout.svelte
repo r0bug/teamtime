@@ -138,6 +138,7 @@
 			icon: 'chart',
 			items: [
 				{ href: '/admin/reports', label: 'Reports', icon: 'chart', show: true },
+				{ href: '/admin/timesheet', label: 'Payroll Timesheet', icon: 'document', show: true },
 				{ href: '/admin/metrics', label: 'Metrics', icon: 'trending', show: isAdmin },
 				{ href: '/admin/metrics/vendor-correlations', label: 'Vendor Correlations', icon: 'correlation', show: isAdmin },
 				{ href: '/admin/pricing', label: 'Pricing Analytics', icon: 'tag', show: true },

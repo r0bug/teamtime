@@ -16,8 +16,15 @@ import { checkOverdueClockOuts } from '$lib/server/services/clock-out-warning-se
 import { checkLateArrivals } from '$lib/server/services/late-arrival-warning-service';
 import { processPendingJobs } from '$lib/server/jobs';
 import { db, users } from '$lib/server/db';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { createLogger } from '$lib/server/logger';
+import {
+	autoApplyDefaultTemplate,
+	getScheduleTemplateConfig,
+	updateScheduleTemplateConfig
+} from '$lib/server/services/schedule-template-service';
+
+const SCHEDULE_TEMPLATE_CRON_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 const log = createLogger('api:clock:cron');
 
@@ -69,6 +76,7 @@ export const GET: RequestHandler = async ({ request }) => {
 			.select({ id: users.id })
 			.from(users)
 			.where(eq(users.role, 'admin'))
+			.orderBy(asc(users.createdAt))
 			.limit(1);
 
 		if (admin) {
@@ -78,9 +86,25 @@ export const GET: RequestHandler = async ({ request }) => {
 		log.warn({ error: err }, 'Failed to find admin user, using fallback system user ID');
 	}
 
-	// Run the checks
-	const clockOutResult = await checkOverdueClockOuts(systemUserId);
-	const lateArrivalResult = await checkLateArrivals(systemUserId);
+	// Run the checks — wrap each in independent try/catch so a failure in
+	// one service does not cause the remaining services to be skipped.
+	let clockOutResult: Awaited<ReturnType<typeof checkOverdueClockOuts>> | { error: string };
+	try {
+		clockOutResult = await checkOverdueClockOuts(systemUserId);
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		log.error({ err }, 'checkOverdueClockOuts failed');
+		clockOutResult = { error: msg };
+	}
+
+	let lateArrivalResult: Awaited<ReturnType<typeof checkLateArrivals>> | { error: string };
+	try {
+		lateArrivalResult = await checkLateArrivals(systemUserId);
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		log.error({ err }, 'checkLateArrivals failed');
+		lateArrivalResult = { error: msg };
+	}
 
 	// Process pending jobs (scheduled SMS, inventory drops, etc.)
 	let jobsResult = { processed: 0, succeeded: 0, failed: 0 };
@@ -93,13 +117,41 @@ export const GET: RequestHandler = async ({ request }) => {
 		log.error({ error: err }, 'Failed to process pending jobs');
 	}
 
-	log.info({ clockOutResult, lateArrivalResult, jobsResult }, 'Clock cron job completed');
+	// Schedule template auto-apply (gated to run at most once per 24 hours)
+	let scheduleTemplateResult:
+		| { weeksProcessed: number; shiftsCreated: number; errors: string[] }
+		| { skipped: true; reason: string }
+		| { error: string } = { skipped: true, reason: 'not due' };
+	try {
+		const config = await getScheduleTemplateConfig();
+		if (!config.enabled) {
+			scheduleTemplateResult = { skipped: true, reason: 'disabled' };
+		} else {
+			const now = Date.now();
+			const lastRun = config.cronLastRun ?? 0;
+			if (now - lastRun < SCHEDULE_TEMPLATE_CRON_INTERVAL_MS) {
+				scheduleTemplateResult = { skipped: true, reason: '24hr gate active' };
+			} else {
+				const result = await autoApplyDefaultTemplate(config.weeksAhead, systemUserId);
+				await updateScheduleTemplateConfig({ cronLastRun: now });
+				scheduleTemplateResult = result;
+				log.info({ result }, 'Schedule template auto-apply completed');
+			}
+		}
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		log.error({ err }, 'Schedule template auto-apply failed');
+		scheduleTemplateResult = { error: msg };
+	}
+
+	log.info({ clockOutResult, lateArrivalResult, jobsResult, scheduleTemplateResult }, 'Clock cron job completed');
 
 	return json({
 		success: true,
 		timestamp: new Date().toISOString(),
 		clockOutWarnings: clockOutResult,
 		lateArrivals: lateArrivalResult,
-		jobsProcessed: jobsResult
+		jobsProcessed: jobsResult,
+		scheduleTemplate: scheduleTemplateResult
 	});
 };

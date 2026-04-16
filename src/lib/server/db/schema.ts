@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, pgEnum, decimal, serial, unique, date, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, pgEnum, decimal, serial, unique, date, index, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Enums
@@ -395,9 +395,50 @@ export const shifts = pgTable('shifts', {
 	endTime: timestamp('end_time', { withTimezone: true }).notNull(),
 	notes: text('notes'),
 	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	templateId: uuid('template_id').references((): AnyPgColumn => scheduleTemplates.id, { onDelete: 'set null' }),
+	templateShiftId: uuid('template_shift_id').references((): AnyPgColumn => scheduleTemplateShifts.id, { onDelete: 'set null' }),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
+
+// Schedule Templates — saved weekly patterns (recurring schedule support)
+export const scheduleTemplates = pgTable('schedule_templates', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),
+	description: text('description'),
+	isDefault: boolean('is_default').notNull().default(false),
+	isActive: boolean('is_active').notNull().default(true),
+	effectiveFrom: timestamp('effective_from', { withTimezone: true }),
+	effectiveTo: timestamp('effective_to', { withTimezone: true }),
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}, (t) => ({
+	isDefaultIdx: index('schedule_templates_is_default_idx').on(t.isDefault)
+	// Partial unique index "schedule_templates_one_default_idx" is added
+	// via raw SQL in the generated migration (drizzle-kit cannot emit partial uniques).
+}));
+
+// Schedule Template Shifts — day-of-week × time × user × location entries that make up a template
+export const scheduleTemplateShifts = pgTable('schedule_template_shifts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	templateId: uuid('template_id')
+		.notNull()
+		.references(() => scheduleTemplates.id, { onDelete: 'cascade' }),
+	dayOfWeek: integer('day_of_week').notNull(), // 0 = Sunday … 6 = Saturday
+	startTime: text('start_time').notNull(), // 'HH:MM' 24h wall-clock (Pacific)
+	endTime: text('end_time').notNull(), // 'HH:MM' 24h wall-clock (end < start → overnight)
+	userId: uuid('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
+	notes: text('notes'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (t) => ({
+	templateIdIdx: index('schedule_template_shifts_template_id_idx').on(t.templateId),
+	dayIdx: index('schedule_template_shifts_day_idx').on(t.templateId, t.dayOfWeek),
+	userIdx: index('schedule_template_shifts_user_idx').on(t.userId)
+}));
 
 // Time entries table
 export const timeEntries = pgTable('time_entries', {
@@ -421,6 +462,23 @@ export const timeEntries = pgTable('time_entries', {
 	updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' })
 }, (table) => ({
 	userIdIdx: index('time_entries_user_id_idx').on(table.userId)
+}));
+
+// Break entries table - tracks individual breaks within a time entry
+export const breakEntries = pgTable('break_entries', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	timeEntryId: uuid('time_entry_id')
+		.notNull()
+		.references(() => timeEntries.id, { onDelete: 'cascade' }),
+	userId: uuid('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	breakStart: timestamp('break_start', { withTimezone: true }).notNull(),
+	breakEnd: timestamp('break_end', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	timeEntryIdIdx: index('break_entries_time_entry_id_idx').on(table.timeEntryId),
+	userIdIdx: index('break_entries_user_id_idx').on(table.userId)
 }));
 
 // Task templates table
@@ -1549,10 +1607,41 @@ export const shiftsRelations = relations(shifts, ({ one }) => ({
 	location: one(locations, {
 		fields: [shifts.locationId],
 		references: [locations.id]
+	}),
+	template: one(scheduleTemplates, {
+		fields: [shifts.templateId],
+		references: [scheduleTemplates.id]
+	}),
+	templateShift: one(scheduleTemplateShifts, {
+		fields: [shifts.templateShiftId],
+		references: [scheduleTemplateShifts.id]
 	})
 }));
 
-export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
+export const scheduleTemplatesRelations = relations(scheduleTemplates, ({ one, many }) => ({
+	creator: one(users, {
+		fields: [scheduleTemplates.createdBy],
+		references: [users.id]
+	}),
+	shifts: many(scheduleTemplateShifts)
+}));
+
+export const scheduleTemplateShiftsRelations = relations(scheduleTemplateShifts, ({ one }) => ({
+	template: one(scheduleTemplates, {
+		fields: [scheduleTemplateShifts.templateId],
+		references: [scheduleTemplates.id]
+	}),
+	user: one(users, {
+		fields: [scheduleTemplateShifts.userId],
+		references: [users.id]
+	}),
+	location: one(locations, {
+		fields: [scheduleTemplateShifts.locationId],
+		references: [locations.id]
+	})
+}));
+
+export const timeEntriesRelations = relations(timeEntries, ({ one, many }) => ({
 	user: one(users, {
 		fields: [timeEntries.userId],
 		references: [users.id]
@@ -1560,6 +1649,18 @@ export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
 	shift: one(shifts, {
 		fields: [timeEntries.shiftId],
 		references: [shifts.id]
+	}),
+	breaks: many(breakEntries)
+}));
+
+export const breakEntriesRelations = relations(breakEntries, ({ one }) => ({
+	timeEntry: one(timeEntries, {
+		fields: [breakEntries.timeEntryId],
+		references: [timeEntries.id]
+	}),
+	user: one(users, {
+		fields: [breakEntries.userId],
+		references: [users.id]
 	})
 }));
 

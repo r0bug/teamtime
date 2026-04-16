@@ -54,7 +54,7 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const userId = formData.get('userId') as string;
 		const name = formData.get('name') as string;
-		const email = formData.get('email') as string;
+		const email = (formData.get('email') as string)?.trim().toLowerCase();
 		const phone = formData.get('phone') as string;
 		const role = formData.get('role') as string;
 		const hourlyRate = formData.get('hourlyRate') as string;
@@ -121,7 +121,7 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const name = formData.get('name') as string;
-		const email = formData.get('email') as string;
+		const email = (formData.get('email') as string)?.trim().toLowerCase();
 		const username = formData.get('username') as string;
 		const phone = formData.get('phone') as string;
 		const role = formData.get('role') as string;

@@ -2441,6 +2441,159 @@ Shift Requests enable managers to broadcast open shifts to all staff. Employees 
 
 ---
 
+## Schedule Templates
+
+### Overview
+
+Schedule Templates save recurring weekly shift patterns so admins don't need to rebuild the schedule by hand each week. Templates can be applied to arbitrary date ranges with per-conflict resolution, materialized by a daily cron, and validated against the live schedule to surface drift.
+
+### Concepts
+
+- **Template**: a named weekly pattern of shifts. Each shift has `dayOfWeek` (0=Sun … 6=Sat), `startTime` / `endTime` in Pacific wall-clock (`HH:MM`), `userId`, and optional `locationId` + `notes`.
+- **Default template**: exactly one template can be marked default (enforced by a partial unique index). The daily cron only auto-applies the default.
+- **Materialization**: when a template is applied to a date range, each slot becomes a real `shifts` row with `templateId` + `templateShiftId` backreferences. Overnight shifts (end < start) roll the end time forward 24 hours. DST-aware via `createPacificDateTime`.
+- **Drift**: the difference between what the live schedule contains and what the default template prescribes — classified as `missing` (template slot has no matching shift), `extra` (shift with no matching template slot), `modified` (same user+date+start but different end/location), or `matching`.
+
+### Workflow
+
+#### Building a template
+
+1. Go to `/admin/schedule/templates` → **New Template**
+2. Add shift rows (day, start, end, user, optional location, notes)
+3. Optionally mark as default
+4. Save — the template is ready to apply
+
+Alternatively, click **Save as Template** on the main `/admin/schedule` page to snapshot the currently displayed week.
+
+#### Applying a template to a date range (manual)
+
+1. From the templates list, click **Apply** on a template
+2. Pick a start and end date
+3. Click **Plan** — the server computes which slots are clean inserts, which conflict with existing shifts, and which already match
+4. For each conflict, choose **skip existing**, **overwrite with template**, or **add alongside**
+5. Click **Commit** — the server re-plans with the same date range (to prevent stale/replayed plans) and executes the decisions
+
+#### Auto-apply (cron)
+
+The `/api/clock/cron` handler calls `autoApplyDefaultTemplate` at most once every 24 hours when `app_settings.schedule_template_config.enabled` is true. It materializes the default template into weeks `startOfNextWeek … startOfNextWeek + weeksAhead` (default 4), always in **gap-fill only** mode — it never overwrites existing shifts and never touches the current week.
+
+#### Drift validation
+
+On the main `/admin/schedule` page, the server calls `validateRange` for the default template against the displayed week. If any slot is missing/extra/modified, a yellow banner appears with the counts and a link to the template's apply page.
+
+### AI Office Manager Tools
+
+| Tool | Purpose |
+|------|---------|
+| `list_schedule_templates` | Summary with day initials per template, marks the default with ★ |
+| `create_schedule_template` | Create a new template with shift array (requires confirmation) |
+| `save_week_as_template` | Snapshot an existing week into a new template |
+| `apply_schedule_template` | Apply to a date range — **forced gap-fill** for AI (no HITL conflict prompt); returns conflict samples for human review |
+| `validate_schedule_against_template` | Drift report with samples of missing/extra/modified |
+| `set_default_schedule_template` | Mark a template as the active default |
+
+The system prompt instructs the agent to prefer `apply_schedule_template` over building shift-by-shift with `create_schedule` when a default exists.
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/schedule-templates` | GET | List templates (optional `?include=shifts`) |
+| `/api/schedule-templates` | POST | Create a template |
+| `/api/schedule-templates/[id]` | GET/PUT/DELETE | Get / update (full replace of shifts) / delete (409 if default) |
+| `/api/schedule-templates/[id]/set-default` | POST | Mark as active default |
+| `/api/schedule-templates/[id]/plan-apply` | POST | `{startDate, endDate}` → `ApplicationPlan`, no writes |
+| `/api/schedule-templates/[id]/commit-apply` | POST | Re-plans server-side, then executes per-slot decisions |
+| `/api/schedule-templates/[id]/validate` | POST | `{startDate, endDate}` → drift report |
+| `/api/schedule-templates/save-from-week` | POST | Snapshot an existing week into a new template |
+
+All endpoints are manager-gated via the shared `isManager` check.
+
+### Database Schema
+
+- `schedule_templates` — Named patterns; partial unique index ensures ≤1 default
+- `schedule_template_shifts` — Individual slots (day × time × user × location)
+- `shifts.template_id` + `shifts.template_shift_id` — Backreferences on materialized shifts, set on cascade delete of the template source
+
+### Files
+
+**Service**: `src/lib/server/services/schedule-template-service.ts` — `listTemplates`, `createTemplate`, `updateTemplate`, `deleteTemplate`, `setDefaultTemplate`, `saveWeekAsTemplate`, `planApplication`, `commitApplication`, `commitGapFillOnly`, `validateRange`, `autoApplyDefaultTemplate`
+
+**API**: `src/routes/api/schedule-templates/`
+
+**Admin UI**: `src/routes/(app)/admin/schedule/templates/+page.svelte` (list + inline editor), `src/routes/(app)/admin/schedule/templates/[id]/apply/+page.svelte` (per-conflict resolution)
+
+**Drift banner**: `src/routes/(app)/admin/schedule/+page.svelte`
+
+**AI tools**: `src/lib/ai/tools/office-manager/{list,create,save-week-as,apply,validate-schedule-against,set-default}-schedule-template.ts`
+
+**Cron**: `src/routes/api/clock/cron/+server.ts` — invokes `autoApplyDefaultTemplate` with a 24h gate
+
+**Migration**: `drizzle/0022_even_lockheed.sql` (tables + partial unique index)
+
+---
+
+## Break Tracking & Payroll Timesheet
+
+### Overview
+
+Break Tracking lets employees log breaks during their shifts with a single button tap. The Payroll Timesheet admin page rolls breaks up against a configurable paid-break allowance and reports the excess that should be deducted from paid hours.
+
+### Employee Experience
+
+- **Start Break** / **End Break** buttons appear on the dashboard while clocked in
+- Breaks are recorded as individual `break_entries` rows tied to the active `time_entry`
+- Clock-out automatically closes any still-open break
+
+### Paid Break Allowance
+
+Configured at `/admin/settings` as `{minutesPer, perHours}` (e.g. 15 minutes per 4 hours worked). The allowance scales proportionally by shift length: an 8-hour shift with `{15, 4}` gets 30 allowed paid-break minutes.
+
+For each time entry:
+- **Break minutes** = sum of break durations
+- **Allowed minutes** = `floor(hoursWorked / perHours * minutesPer)`
+- **Excess minutes** = `max(0, breakMinutes - allowedMinutes)` — this is what gets deducted from paid hours
+
+### Payroll Timesheet
+
+At `/admin/timesheet`, managers see per-employee daily rollups:
+
+- Date, clock in, clock out
+- Break (min), Allowed (min), Excess (min)
+- Hours (clocked minus excess)
+- Auto Clock-Out flag (shift ended via the 3-hour auto-clock-out, not a real out)
+
+The page supports arbitrary start/end date ranges and CSV export for payroll processing.
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/clock/break/start` | POST | Start a break on the current active time entry |
+| `/api/clock/break/end` | POST | End the currently-open break |
+
+Both endpoints write to `audit_logs` with `action = break_start` / `break_end`.
+
+### Database Schema
+
+- `break_entries` — Individual break records (`time_entry_id`, `user_id`, `break_start`, `break_end`)
+- `app_settings.break_allowance_config` — JSON `{minutesPer, perHours}`
+- `audit_logs.action` enum extended to include `break_start` and `break_end`
+
+### Files
+
+**API**: `src/routes/api/clock/break/{start,end}/+server.ts`, `src/routes/api/clock/out/+server.ts` (auto-closes open break)
+
+**Settings UI**: `src/routes/(app)/admin/settings/+page.svelte` + `+page.server.ts` (`updateBreakAllowance` action)
+
+**Dashboard**: `src/routes/(app)/dashboard/+page.svelte` (break buttons)
+
+**Timesheet**: `src/routes/(app)/admin/timesheet/+page.svelte` + `+page.server.ts`
+
+**Audit**: `src/lib/server/services/audit-service.ts` (`auditClockEvent` extended action types)
+
+---
+
 ## Bulk Operations
 
 ### Overview

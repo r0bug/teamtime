@@ -34,6 +34,9 @@ module.exports = {
         TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
         TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
         TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER,
+        // NRS POS API
+        NRS_API_KEY: process.env.NRS_API_KEY,
+        NRS_STORE_ID: process.env.NRS_STORE_ID,
         // App
         PUBLIC_APP_URL: process.env.PUBLIC_APP_URL,
         CRON_SECRET: process.env.CRON_SECRET

@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { db, shifts, timeEntries, tasks, conversationParticipants, messages, inventoryDrops, inventoryDropItems, users, locations, pricingDecisions } from '$lib/server/db';
+import { db, shifts, timeEntries, breakEntries, tasks, conversationParticipants, messages, inventoryDrops, inventoryDropItems, users, locations, pricingDecisions } from '$lib/server/db';
 import { eq, and, isNull, gt, gte, lt, sql, inArray, desc } from 'drizzle-orm';
 import { isPurchaser, isManager, isAdmin } from '$lib/server/auth/roles';
 import { getOrCreateUserStats, getTodayPoints, getLeaderboard, getUserLeaderboardPosition, LEVEL_THRESHOLDS } from '$lib/server/services/points-service';
@@ -37,6 +37,22 @@ export const load: PageServerLoad = async ({ locals }) => {
 			)
 		)
 		.limit(1);
+
+	// Get active break (if clocked in)
+	let activeBreak = null;
+	if (activeTimeEntry) {
+		const [break_] = await db
+			.select()
+			.from(breakEntries)
+			.where(
+				and(
+					eq(breakEntries.timeEntryId, activeTimeEntry.id),
+					isNull(breakEntries.breakEnd)
+				)
+			)
+			.limit(1);
+		activeBreak = break_ ? { id: break_.id, breakStart: break_.breakStart.toISOString() } : null;
+	}
 
 	// Get pending tasks count
 	const [{ count: pendingTasks }] = await db
@@ -310,6 +326,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {
 		nextShift,
 		activeTimeEntry,
+		activeBreak,
 		pendingTasks: pendingTasks || 0,
 		unreadMessages,
 		dropStats,

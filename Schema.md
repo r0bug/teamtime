@@ -510,6 +510,92 @@ CREATE TABLE sales_transactions (
 
 **Related**: `sales_snapshots` stores daily aggregates; `sales_transactions` stores the underlying line items.
 
+## Schedule Templates
+
+Saved weekly shift patterns that can be applied to arbitrary date ranges or materialized by a daily cron. See [FEATURES.md](./FEATURES.md) for the full workflow.
+
+### Schedule Templates Table
+
+```sql
+CREATE TABLE schedule_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT,
+  is_default BOOLEAN NOT NULL DEFAULT false,      -- exactly one default at a time
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  effective_from TIMESTAMPTZ,                     -- optional window
+  effective_to TIMESTAMPTZ,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Partial unique index — enforces the "one default at a time" invariant at the DB
+CREATE UNIQUE INDEX schedule_templates_one_default_idx
+  ON schedule_templates (is_default) WHERE is_default = true;
+```
+
+**Indexes**: `is_default` (btree), `is_default WHERE is_default = true` (partial unique)
+
+### Schedule Template Shifts Table
+
+```sql
+CREATE TABLE schedule_template_shifts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id UUID NOT NULL REFERENCES schedule_templates(id) ON DELETE CASCADE,
+  day_of_week INTEGER NOT NULL,                   -- 0 = Sunday … 6 = Saturday
+  start_time TEXT NOT NULL,                       -- 'HH:MM' 24h Pacific wall-clock
+  end_time TEXT NOT NULL,                         -- 'HH:MM' (end < start → overnight)
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  location_id UUID REFERENCES locations(id) ON DELETE SET NULL,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+**Indexes**: `template_id`, `(template_id, day_of_week)`, `user_id`
+
+### Shifts Table (additions)
+
+```sql
+ALTER TABLE shifts
+  ADD COLUMN template_id UUID REFERENCES schedule_templates(id) ON DELETE SET NULL,
+  ADD COLUMN template_shift_id UUID REFERENCES schedule_template_shifts(id) ON DELETE SET NULL;
+```
+
+Materialized shifts carry `template_id` + `template_shift_id` so drift validation can match them back to the source slot.
+
+### Auto-Apply Configuration
+
+Stored in `app_settings` under key `schedule_template_config`:
+
+```json
+{"enabled": true, "weeksAhead": 4, "cronLastRun": <epoch-ms>}
+```
+
+The clock cron (`/api/clock/cron`) calls `autoApplyDefaultTemplate` at most once every 24 hours when enabled; only the **default** template is materialized, gap-fill mode only (never overwrites existing shifts).
+
+## Break Entries
+
+Tracks individual breaks taken within a time entry. Used by the payroll timesheet to compute paid-break allowance and excess unpaid time.
+
+```sql
+CREATE TABLE break_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  time_entry_id UUID NOT NULL REFERENCES time_entries(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  break_start TIMESTAMPTZ NOT NULL,
+  break_end TIMESTAMPTZ,                          -- NULL while break is in progress
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+**Indexes**: `time_entry_id`, `user_id`
+
+**Audit log**: `audit_logs.action` now accepts `break_start` and `break_end` in addition to `clock_in` / `clock_out`.
+
+**Config**: `app_settings.break_allowance_config` holds `{minutesPer: number, perHours: number}` — e.g. `{minutesPer: 15, perHours: 4}` means employees get 15 paid minutes per 4 hours worked, scaled proportionally. Only break time exceeding the allowance is deducted from the timesheet.
+
 ---
 
-*Last updated: March 2026*
+*Last updated: April 2026*

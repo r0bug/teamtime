@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
 	import RecentShoutouts from '$lib/components/RecentShoutouts.svelte';
 	import WhosWorking from '$lib/components/WhosWorking.svelte';
@@ -9,6 +10,7 @@
 	$: user = data.user;
 	$: nextShift = data.nextShift;
 	$: activeTimeEntry = data.activeTimeEntry;
+	$: activeBreak = data.activeBreak;
 	$: pendingTasks = data.pendingTasks;
 	$: unreadMessages = data.unreadMessages;
 	$: dropStats = data.dropStats;
@@ -17,6 +19,7 @@
 	$: whosWorking = data.whosWorking;
 
 	let clockLoading = false;
+	let breakLoading = false;
 
 	function getTierColor(tier: string): string {
 		switch (tier) {
@@ -153,7 +156,9 @@
 		<div class="card-body">
 			<div class="flex items-center justify-between mb-4">
 				<h2 class="text-lg font-semibold">Time Clock</h2>
-				{#if activeTimeEntry}
+				{#if activeBreak}
+					<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">On Break</span>
+				{:else if activeTimeEntry}
 					<span class="badge-success">Clocked In</span>
 				{:else}
 					<span class="badge-gray">Clocked Out</span>
@@ -170,17 +175,77 @@
 						<p class="text-sm text-gray-500">{activeTimeEntry.clockInAddress}</p>
 					{/if}
 				</div>
-				<form method="POST" action="/api/clock/out" use:enhance={() => {
-					clockLoading = true;
-					return async ({ update }) => {
-						clockLoading = false;
-						await update();
-					};
-				}}>
-					<button type="submit" disabled={clockLoading} class="btn-danger w-full touch-target">
-						{clockLoading ? 'Clocking Out...' : 'Clock Out'}
-					</button>
-				</form>
+
+				{#if activeBreak}
+					<!-- On Break State -->
+					<div class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+						<p class="text-sm text-amber-700 font-medium">Break started at</p>
+						<p class="text-lg font-semibold text-amber-800">
+							{new Date(activeBreak.breakStart).toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' })}
+						</p>
+					</div>
+					<div class="space-y-2">
+						<button
+							type="button"
+							disabled={breakLoading}
+							on:click={async () => {
+								breakLoading = true;
+								try {
+									const res = await fetch('/api/clock/break/end', { method: 'POST' });
+									if (res.ok) { await invalidateAll(); }
+								} finally { breakLoading = false; }
+							}}
+							class="w-full touch-target rounded-lg px-4 py-3 font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+						>
+							{breakLoading ? 'Ending Break...' : 'End Break'}
+						</button>
+						<button
+							type="button"
+							disabled
+							class="btn-danger w-full touch-target opacity-50 cursor-not-allowed"
+							title="End break before clocking out"
+						>
+							Clock Out
+						</button>
+						<p class="text-xs text-gray-500 text-center">End your break before clocking out</p>
+					</div>
+				{:else}
+					<!-- Clocked In, Not On Break -->
+					<div class="space-y-2">
+						<button
+							type="button"
+							disabled={breakLoading}
+							on:click={async () => {
+								breakLoading = true;
+								try {
+									const res = await fetch('/api/clock/break/start', { method: 'POST' });
+									if (res.ok) { await invalidateAll(); }
+								} finally { breakLoading = false; }
+							}}
+							class="w-full touch-target rounded-lg px-4 py-3 font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 disabled:opacity-50"
+						>
+							{breakLoading ? 'Starting Break...' : 'Start Break'}
+						</button>
+						<button
+							type="button"
+							disabled={clockLoading}
+							on:click={async () => {
+								clockLoading = true;
+								try {
+									const res = await fetch('/api/clock/out', {
+										method: 'POST',
+										headers: { 'Content-Type': 'application/json' },
+										body: JSON.stringify({})
+									});
+									if (res.ok) { await invalidateAll(); }
+								} finally { clockLoading = false; }
+							}}
+							class="btn-danger w-full touch-target"
+						>
+							{clockLoading ? 'Clocking Out...' : 'Clock Out'}
+						</button>
+					</div>
+				{/if}
 			{:else}
 				{#if nextShift}
 					<div class="mb-4">
@@ -195,17 +260,24 @@
 						{/if}
 					</div>
 				{/if}
-				<form method="POST" action="/api/clock/in" use:enhance={() => {
-					clockLoading = true;
-					return async ({ update }) => {
-						clockLoading = false;
-						await update();
-					};
-				}}>
-					<button type="submit" disabled={clockLoading} class="btn-primary w-full touch-target">
-						{clockLoading ? 'Clocking In...' : 'Clock In'}
-					</button>
-				</form>
+				<button
+					type="button"
+					disabled={clockLoading}
+					on:click={async () => {
+						clockLoading = true;
+						try {
+							const res = await fetch('/api/clock/in', {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({})
+							});
+							if (res.ok) { await invalidateAll(); }
+						} finally { clockLoading = false; }
+					}}
+					class="btn-primary w-full touch-target"
+				>
+					{clockLoading ? 'Clocking In...' : 'Clock In'}
+				</button>
 			{/if}
 		</div>
 	</div>

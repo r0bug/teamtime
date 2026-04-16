@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db, timeEntries, taskTemplates, tasks } from '$lib/server/db';
+import { db, timeEntries, taskTemplates, tasks, breakEntries } from '$lib/server/db';
 import { eq, and, isNull } from 'drizzle-orm';
 import {
 	processRulesForTrigger,
@@ -34,6 +34,25 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const body = await request.json().catch(() => ({}));
 	const { lat, lng, address } = body;
 	const now = new Date();
+
+	// Auto-end any active break before clocking out
+	const [activeBreak] = await db
+		.select()
+		.from(breakEntries)
+		.where(
+			and(
+				eq(breakEntries.timeEntryId, activeEntry.id),
+				isNull(breakEntries.breakEnd)
+			)
+		)
+		.limit(1);
+
+	if (activeBreak) {
+		await db
+			.update(breakEntries)
+			.set({ breakEnd: now })
+			.where(eq(breakEntries.id, activeBreak.id));
+	}
 
 	// Check if this is the last clock-out BEFORE updating (while user is still shown as clocked in)
 	const locationId = activeEntry.locationId;

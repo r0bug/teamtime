@@ -148,6 +148,20 @@
       "when": 1773248522717,
       "tag": "0020_absurd_kitty_pryde",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1775019709882,
+      "tag": "0021_long_harry_osborn",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1776325592698,
+      "tag": "0022_even_lockheed",
+      "breakpoints": true
     }
   ]
 }

@@ -12,7 +12,8 @@ import {
 	users,
 	timeEntries,
 	shifts,
-	appSettings
+	appSettings,
+	breakEntries
 } from '$lib/server/db';
 import { createLogger } from '$lib/server/logger';
 import { eq, and, gte, lte, isNull, count, desc } from 'drizzle-orm';
@@ -47,8 +48,11 @@ export const CLOCK_OUT_WARNING_CONFIG = {
 export const SMS_MESSAGES = {
 	nag1: (shiftEndTime: Date) =>
 		`Your shift ended at ${toPacificTimeString(shiftEndTime)}. Still working? Reply YES to clock out now, or reply with your actual clock-out time (e.g. "5:15 PM").`,
-	nag2: (shiftEndTime: Date, minutesPast: number) =>
-		`You're still clocked in ${Math.round(minutesPast / 60)} hrs past your shift. Reply with your clock-out time or YES to clock out now. No reply = auto clock-out at shift end.`,
+	nag2: (shiftEndTime: Date, minutesPast: number) => {
+		// Show 1 decimal (e.g. 1.6 hrs for 95 min) but strip trailing .0 (2.0 → 2)
+		const hrs = (minutesPast / 60).toFixed(1).replace(/\.0$/, '');
+		return `You're still clocked in ${hrs} hrs past your shift. Reply with your clock-out time or YES to clock out now. No reply = auto clock-out at shift end.`;
+	},
 	nag3: (shiftEndTime: Date) =>
 		`Auto-clocking you out at ${toPacificTimeString(shiftEndTime)} (shift end). Reply with your actual clock-out time if different.`,
 	autoReminder: 'Reminder: You are still clocked in. Please clock out at the end of your shift.',
@@ -376,6 +380,25 @@ export async function forceClockOut(
 
 	const now = new Date();
 
+	// Auto-end any active break before clocking out
+	const [activeBreak] = await db
+		.select()
+		.from(breakEntries)
+		.where(
+			and(
+				eq(breakEntries.timeEntryId, activeEntry.id),
+				isNull(breakEntries.breakEnd)
+			)
+		)
+		.limit(1);
+
+	if (activeBreak) {
+		await db
+			.update(breakEntries)
+			.set({ breakEnd: now })
+			.where(eq(breakEntries.id, activeBreak.id));
+	}
+
 	// Clock out the user
 	const [updatedEntry] = await db
 		.update(timeEntries)
@@ -543,12 +566,6 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 
 	log.info({ activeEntriesCount: activeEntries.length }, 'Checking overdue clock-outs');
 
-	// Get today's date boundaries for shift lookup
-	const todayStart = new Date(now);
-	todayStart.setHours(0, 0, 0, 0);
-	const todayEnd = new Date(now);
-	todayEnd.setHours(23, 59, 59, 999);
-
 	for (const { timeEntry, user } of activeEntries) {
 		result.checked++;
 
@@ -559,15 +576,19 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 			let shiftEndTime: Date | undefined;
 			let hasShift = false;
 
-			// Look up today's shift for this user
+			// Look up the shift that matches this clock-in time
+			// Search for shifts that started within 2 hours before/after the clock-in
+			const shiftSearchStart = new Date(clockInTime.getTime() - 2 * 60 * 60 * 1000);
+			const shiftSearchEnd = new Date(clockInTime.getTime() + 2 * 60 * 60 * 1000);
+
 			const [userShift] = await db
 				.select({ endTime: shifts.endTime })
 				.from(shifts)
 				.where(
 					and(
 						eq(shifts.userId, user.id),
-						gte(shifts.startTime, todayStart),
-						lte(shifts.startTime, todayEnd)
+						gte(shifts.startTime, shiftSearchStart),
+						lte(shifts.startTime, shiftSearchEnd)
 					)
 				)
 				.orderBy(desc(shifts.endTime))
@@ -645,6 +666,25 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 
 			// Auto clock-out at nag 3
 			if (shouldAutoClockOut) {
+				// Auto-end any active break before clocking out
+				const [activeBreakEntry] = await db
+					.select()
+					.from(breakEntries)
+					.where(
+						and(
+							eq(breakEntries.timeEntryId, timeEntry.id),
+							isNull(breakEntries.breakEnd)
+						)
+					)
+					.limit(1);
+
+				if (activeBreakEntry) {
+					await db
+						.update(breakEntries)
+						.set({ breakEnd: shiftEndTime })
+						.where(eq(breakEntries.id, activeBreakEntry.id));
+				}
+
 				// Clock out at shift end time (not now) for accuracy
 				await db
 					.update(timeEntries)

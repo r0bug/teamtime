@@ -13,6 +13,12 @@
 	$: siteTitle = data.settings['site_title'] || 'TeamTime';
 	$: clockOutGracePeriod = parseInt(data.settings['clock_out_grace_period_minutes'] || '30', 10);
 
+	// Break allowance config
+	$: breakAllowanceRaw = data.settings['break_allowance_config'];
+	$: breakAllowance = (() => {
+		try { return breakAllowanceRaw ? JSON.parse(breakAllowanceRaw) : { minutesPer: 15, perHours: 4 }; } catch { return { minutesPer: 15, perHours: 4 }; }
+	})();
+
 	// Module toggle state
 	$: enabledModulesRaw = data.settings['enabled_modules'];
 	$: enabledModules = (() => {
@@ -279,6 +285,55 @@
 							/>
 							<span class="text-sm text-gray-500">minutes</span>
 							<button type="submit" class="btn-primary text-sm">Save</button>
+						</div>
+					</form>
+				</div>
+
+				<div class="border-t pt-4 mt-4">
+					<form method="POST" action="?/updateBreakAllowance" use:enhance={() => {
+						return async ({ update }) => {
+							await update();
+							await invalidateAll();
+						};
+					}} class="space-y-3">
+						<div>
+							<label class="font-medium text-sm">Paid Break Allowance</label>
+							<p class="text-xs text-gray-500 mt-1">
+								Employees get paid break time that is not deducted from their timesheet. Only break time exceeding this allowance is deducted. Scales proportionally by shift length.
+							</p>
+						</div>
+						<div class="flex items-center space-x-2 flex-wrap gap-y-2">
+							<input
+								type="number"
+								name="minutesPer"
+								value={breakAllowance.minutesPer}
+								min="0"
+								max="60"
+								class="input w-20"
+							/>
+							<span class="text-sm text-gray-500">minutes per</span>
+							<input
+								type="number"
+								name="perHours"
+								value={breakAllowance.perHours}
+								min="1"
+								max="12"
+								class="input w-20"
+							/>
+							<span class="text-sm text-gray-500">hours worked</span>
+							<button type="submit" class="btn-primary text-sm">Save</button>
+						</div>
+						<div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+							<p class="text-sm text-blue-800">
+								<strong>Example:</strong>
+								4hr shift = {breakAllowance.minutesPer} min,
+								8hr shift = {breakAllowance.minutesPer * 2} min,
+								{#if breakAllowance.perHours <= 4}
+									12hr shift = {Math.round(breakAllowance.minutesPer * 12 / breakAllowance.perHours)} min
+								{:else}
+									6hr shift = {Math.round(breakAllowance.minutesPer * 6 / breakAllowance.perHours)} min
+								{/if}
+							</p>
 						</div>
 					</form>
 				</div>

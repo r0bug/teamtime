@@ -88,7 +88,7 @@
 	// Format date for display
 	function formatDate(dateStr: string): string {
 		const date = new Date(dateStr + 'T12:00:00');
-		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+		return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 	}
 
 	function formatWeek(weekStart: string): string {

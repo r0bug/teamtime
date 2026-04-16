@@ -7,6 +7,10 @@
 	export let form: ActionData;
 
 	let showCreateModal = false;
+	let showSaveTemplateModal = false;
+	let saveTemplateName = '';
+	let saveTemplateDescription = '';
+	let saveTemplateSetDefault = false;
 	let createStep: 1 | 2 = 1; // Step 1: Select days/times, Step 2: Repeat options
 	let editingShift: typeof data.shifts[0] | null = null;
 	let loading = false;
@@ -443,11 +447,37 @@
 				</svg>
 				Print
 			</button>
+			<a href="/admin/schedule/templates" class="btn-secondary">Templates</a>
+			<button on:click={() => (showSaveTemplateModal = true)} class="btn-secondary"
+				>Save as Template</button
+			>
 			<button on:click={openCreateModal} class="btn-primary">
 				+ Add Shift
 			</button>
 		</div>
 	</div>
+
+	{#if data.driftSummary && (data.driftSummary.missingCount > 0 || data.driftSummary.modifiedCount > 0 || data.driftSummary.extraCount > 0)}
+		<div class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded no-print">
+			<div class="flex items-center justify-between gap-3 flex-wrap">
+				<div class="text-sm">
+					<span class="font-medium text-yellow-900"
+						>Drift from "{data.driftSummary.templateName}":</span
+					>
+					<span class="text-yellow-800">
+						{data.driftSummary.missingCount} missing,
+						{data.driftSummary.extraCount} extra,
+						{data.driftSummary.modifiedCount} modified
+						({data.driftSummary.driftPercent}%)
+					</span>
+				</div>
+				<a
+					href="/admin/schedule/templates/{data.driftSummary.templateId}/apply"
+					class="text-sm text-blue-700 hover:underline">Apply template →</a
+				>
+			</div>
+		</div>
+	{/if}
 
 	{#if form?.success}
 		<div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4 no-print">
@@ -930,6 +960,68 @@
 					</div>
 				</form>
 			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Save Week as Template Modal -->
+{#if showSaveTemplateModal}
+	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 no-print">
+		<div class="bg-white rounded-lg max-w-md w-full p-6">
+			<h2 class="text-xl font-bold mb-2">Save Week as Template</h2>
+			<p class="text-sm text-gray-600 mb-4">
+				Captures every shift in the week starting {data.startDate} as a reusable weekly pattern.
+			</p>
+			<form
+				method="POST"
+				action="?/saveAsTemplate"
+				use:enhance={() => {
+					return async ({ update }) => {
+						await update();
+						showSaveTemplateModal = false;
+						saveTemplateName = '';
+						saveTemplateDescription = '';
+						saveTemplateSetDefault = false;
+					};
+				}}
+			>
+				<input type="hidden" name="weekStartDate" value={data.startDate} />
+				<label class="block mb-3">
+					<span class="block text-sm font-medium text-gray-700 mb-1">Template name *</span>
+					<input
+						name="name"
+						bind:value={saveTemplateName}
+						required
+						class="w-full px-3 py-2 border border-gray-300 rounded"
+						placeholder="Default Weekly"
+					/>
+				</label>
+				<label class="block mb-3">
+					<span class="block text-sm font-medium text-gray-700 mb-1">Description</span>
+					<input
+						name="description"
+						bind:value={saveTemplateDescription}
+						class="w-full px-3 py-2 border border-gray-300 rounded"
+						placeholder="optional"
+					/>
+				</label>
+				<label class="flex items-center gap-2 mb-4">
+					<input
+						type="checkbox"
+						name="setAsDefault"
+						bind:checked={saveTemplateSetDefault}
+					/>
+					<span class="text-sm">Set as active default (used by auto-apply cron)</span>
+				</label>
+				<div class="flex gap-2 justify-end">
+					<button
+						type="button"
+						on:click={() => (showSaveTemplateModal = false)}
+						class="btn-secondary">Cancel</button
+					>
+					<button type="submit" class="btn-primary">Save Template</button>
+				</div>
+			</form>
 		</div>
 	</div>
 {/if}

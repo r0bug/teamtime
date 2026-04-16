@@ -48,6 +48,12 @@ export {
 	viewPendingApprovalsTool,
 	permissionTools
 } from './permission-tools';
+export { listScheduleTemplatesTool } from './list-schedule-templates';
+export { createScheduleTemplateTool } from './create-schedule-template';
+export { saveWeekAsTemplateTool } from './save-week-as-template';
+export { applyScheduleTemplateTool } from './apply-schedule-template';
+export { validateScheduleAgainstTemplateTool } from './validate-schedule-against-template';
+export { setDefaultScheduleTemplateTool } from './set-default-schedule-template';
 
 import { sendMessageTool } from './send-message';
 import { createTaskTool } from './create-task';
@@ -89,6 +95,12 @@ import { clockUserTool } from './clock-user';
 import { createTimeEntryTool } from './create-time-entry';
 import { editTimeEntryTool } from './edit-time-entry';
 import { permissionTools } from './permission-tools';
+import { listScheduleTemplatesTool } from './list-schedule-templates';
+import { createScheduleTemplateTool } from './create-schedule-template';
+import { saveWeekAsTemplateTool } from './save-week-as-template';
+import { applyScheduleTemplateTool } from './apply-schedule-template';
+import { validateScheduleAgainstTemplateTool } from './validate-schedule-against-template';
+import { setDefaultScheduleTemplateTool } from './set-default-schedule-template';
 import type { AITool } from '../../types';
 
 // Use explicit any for the tools array since each tool has its own type parameters
@@ -124,6 +136,13 @@ export const officeManagerTools: AITool<any, any>[] = [
 	createScheduleTool,
 	updateScheduleTool,
 	copyScheduleTool,
+	// Schedule template tools
+	listScheduleTemplatesTool,
+	createScheduleTemplateTool,
+	saveWeekAsTemplateTool,
+	applyScheduleTemplateTool,
+	validateScheduleAgainstTemplateTool,
+	setDefaultScheduleTemplateTool,
 	// Time entry management tools
 	clockUserTool,
 	createTimeEntryTool,

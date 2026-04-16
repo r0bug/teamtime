@@ -1,14 +1,9 @@
 // Sales Detail - Server-side data for drill-down views (hourly, vendor, item)
 import type { PageServerLoad } from './$types';
-import { redirect } from '@sveltejs/kit';
 import { db, salesTransactions } from '$lib/server/db';
 import { eq, gte, lte, and, sql, desc } from 'drizzle-orm';
-import { isManager } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ url, locals }) => {
-	if (!isManager(locals.user)) {
-		throw redirect(302, '/dashboard');
-	}
 	const date = url.searchParams.get('date');
 	const vendorId = url.searchParams.get('vendorId');
 
@@ -92,7 +87,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	const availableDates = await db
 		.selectDistinct({ date: sql<string>`${salesTransactions.invoiceDate}::text`.as('date_str') })
 		.from(salesTransactions)
-		.orderBy(desc(salesTransactions.invoiceDate))
+		.orderBy(sql`${salesTransactions.invoiceDate}::text DESC`)
 		.limit(30);
 
 	return {

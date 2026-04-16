@@ -5,6 +5,11 @@ import { eq, and, gte, lte } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
 import { createLogger } from '$lib/server/logger';
 import { parsePacificDatetime, getPacificDateParts, toPacificDateString, parsePacificDate, parsePacificEndOfDay } from '$lib/server/utils/timezone';
+import {
+	getDefaultTemplate,
+	saveWeekAsTemplate,
+	validateRange
+} from '$lib/server/services/schedule-template-service';
 
 const log = createLogger('admin:schedule');
 
@@ -215,6 +220,42 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		employeePayPeriodHours[shift.userId].hours += hours;
 	}
 
+	// Schedule template context: default template + drift against this week (if set)
+	let defaultTemplate: { id: string; name: string } | null = null;
+	let driftSummary: {
+		templateId: string;
+		templateName: string;
+		driftPercent: number;
+		missingCount: number;
+		extraCount: number;
+		modifiedCount: number;
+	} | null = null;
+	try {
+		const def = await getDefaultTemplate();
+		if (def) {
+			defaultTemplate = { id: def.id, name: def.name };
+			try {
+				const report = await validateRange({
+					templateId: def.id,
+					startDate: startDateStr,
+					endDate: endDateStr
+				});
+				driftSummary = {
+					templateId: def.id,
+					templateName: def.name,
+					driftPercent: report.summary.driftPercent,
+					missingCount: report.summary.missingCount,
+					extraCount: report.summary.extraCount,
+					modifiedCount: report.summary.modifiedCount
+				};
+			} catch (err) {
+				log.warn({ err }, 'Template drift validation failed');
+			}
+		}
+	} catch (err) {
+		log.warn({ err }, 'Failed to load default template');
+	}
+
 	return {
 		shifts: allShifts,
 		users: allUsers,
@@ -222,6 +263,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		storeHours: allStoreHours,
 		startDate: startDateStr,
 		endDate: endDateStr,
+		defaultTemplate,
+		driftSummary,
 		// Pay period data
 		currentPayPeriod: currentPayPeriod ? {
 			startDate: currentPayPeriod.startDate.toISOString().split('T')[0],
@@ -412,6 +455,35 @@ export const actions: Actions = {
 		} catch (error) {
 			log.error({ error, userId, locationId, repeatCount, datesCount: dates.length }, 'Error creating bulk shifts');
 			return fail(500, { error: 'Failed to create shifts' });
+		}
+	},
+
+	saveAsTemplate: async ({ request, locals }) => {
+		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		const formData = await request.formData();
+		const name = (formData.get('name') as string)?.trim();
+		const description = (formData.get('description') as string)?.trim() || null;
+		const weekStartDate = formData.get('weekStartDate') as string;
+		const setAsDefault = formData.get('setAsDefault') === 'on';
+		if (!name || !weekStartDate) {
+			return fail(400, { error: 'Name and weekStartDate required' });
+		}
+		try {
+			const template = await saveWeekAsTemplate(parsePacificDate(weekStartDate), {
+				name,
+				description,
+				setAsDefault,
+				createdBy: locals.user?.id ?? null
+			});
+			return {
+				success: true,
+				message: `Saved week as template "${template.name}" (${template.shifts.length} shifts)`
+			};
+		} catch (err) {
+			log.error({ err, name, weekStartDate }, 'saveAsTemplate failed');
+			return fail(500, {
+				error: err instanceof Error ? err.message : 'Failed to save week as template'
+			});
 		}
 	}
 };

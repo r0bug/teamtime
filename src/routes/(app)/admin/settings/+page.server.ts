@@ -138,6 +138,43 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
+	updateBreakAllowance: async ({ request, locals }) => {
+		if (!isManager(locals.user)) {
+			return fail(403, { error: 'Unauthorized' });
+		}
+
+		const formData = await request.formData();
+		const minutesPer = parseInt(formData.get('minutesPer')?.toString() ?? '', 10);
+		const perHours = parseInt(formData.get('perHours')?.toString() ?? '', 10);
+
+		if (isNaN(minutesPer) || minutesPer < 0 || minutesPer > 60) {
+			return fail(400, { error: 'Break minutes must be between 0 and 60' });
+		}
+		if (isNaN(perHours) || perHours < 1 || perHours > 12) {
+			return fail(400, { error: 'Per hours must be between 1 and 12' });
+		}
+
+		const key = 'break_allowance_config';
+		const value = JSON.stringify({ minutesPer, perHours });
+
+		const [existing] = await db
+			.select()
+			.from(appSettings)
+			.where(eq(appSettings.key, key))
+			.limit(1);
+
+		if (existing) {
+			await db
+				.update(appSettings)
+				.set({ value, updatedAt: new Date() })
+				.where(eq(appSettings.key, key));
+		} else {
+			await db.insert(appSettings).values({ key, value });
+		}
+
+		return { success: true };
+	},
+
 	updateSiteTitle: async ({ request, locals }) => {
 		if (!isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });

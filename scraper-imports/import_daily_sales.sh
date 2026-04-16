@@ -1,30 +1,24 @@
 #!/bin/bash
-# Import today's sales data from NRS to TeamTime
+# Import today's sales data from NRS API to TeamTime
 # Runs hourly during business hours to capture latest sales
+# Uses the NRS REST API directly (no Python scraper needed)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEAMTIME_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_FILE="$SCRIPT_DIR/sales_import.log"
 
-# Load TeamTime env for CRON_SECRET and DATABASE_URL
+# Load TeamTime env for CRON_SECRET
 source "$TEAMTIME_DIR/.env"
 
-# Today's date in MM/DD/YYYY format for the scraper (use Pacific time for business day)
-TODAY=$(TZ='America/Los_Angeles' date +"%m/%d/%Y")
+TODAY_ISO=$(TZ='America/Los_Angeles' date +"%Y-%m-%d")
 TODAY_DISPLAY=$(TZ='America/Los_Angeles' date +"%Y-%m-%d %H:%M")
 
-API_URL="http://localhost:3000/api/sales/import"
+API_URL="http://localhost:3000/api/sales/import-nrs?date=$TODAY_ISO"
 
 # Log function
 log() {
     echo "[$TODAY_DISPLAY] $1" >> "$LOG_FILE"
 }
-
-# Check credentials
-if [ ! -f "$SCRIPT_DIR/nrscreds.secret" ]; then
-    log "ERROR: nrscreds.secret not found"
-    exit 1
-fi
 
 # Check CRON_SECRET
 if [ -z "$CRON_SECRET" ]; then
@@ -32,44 +26,32 @@ if [ -z "$CRON_SECRET" ]; then
     exit 1
 fi
 
-cd "$SCRIPT_DIR"
+# Call the NRS API import endpoint
+RESPONSE=$(curl -s -X POST "$API_URL" \
+    -H "Authorization: Bearer $CRON_SECRET" \
+    -H "Content-Type: application/json" \
+    --max-time 60)
 
-# Run scraper for today
-OUTPUT=$(python3 nrs_daily_vendor_sales.py --date "$TODAY" --format json 2>&1)
-SCRAPE_EXIT=$?
-
-# Check if scraper succeeded
-if [ $SCRAPE_EXIT -ne 0 ]; then
-    log "SCRAPER EXIT CODE: $SCRAPE_EXIT - $OUTPUT"
+CURL_EXIT=$?
+if [ $CURL_EXIT -ne 0 ]; then
+    log "CURL ERROR: exit code $CURL_EXIT"
     exit 1
 fi
 
-# Check if it's valid JSON
-if echo "$OUTPUT" | python3 -c "import sys, json; json.load(sys.stdin)" 2>/dev/null; then
-    # POST to TeamTime
-    RESPONSE=$(echo "$OUTPUT" | curl -s -X POST "$API_URL" \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $CRON_SECRET" \
-        -d @-)
+# Parse response
+SUCCESS=$(echo "$RESPONSE" | grep -o '"success":true')
+if [ -n "$SUCCESS" ]; then
+    VENDOR_COUNT=$(echo "$RESPONSE" | grep -o '"vendorCount":[0-9]*' | head -1 | cut -d: -f2)
+    TOTAL_SALES=$(echo "$RESPONSE" | grep -o '"totalSales":[0-9.]*' | head -1 | cut -d: -f2)
+    TOTAL_RETAINED=$(echo "$RESPONSE" | grep -o '"totalRetained":[0-9.]*' | head -1 | cut -d: -f2)
+    TX_COUNT=$(echo "$RESPONSE" | grep -o '"transactionCount":[0-9]*' | head -1 | cut -d: -f2)
 
-    # Check response
-    if echo "$RESPONSE" | grep -q '"success":true'; then
-        RETAINED=$(echo "$OUTPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(f\"\${d['totals']['total_retained']:.2f}\")")
-        SALES=$(echo "$OUTPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(f\"\${d['totals']['total_sales']:.2f}\")")
-        VENDORS=$(echo "$OUTPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['totals']['vendor_count'])")
-        if [ "$VENDORS" = "0" ]; then
-            log "NO DATA - NRS returned 0 vendors for today (sales may not be entered yet)"
-        else
-            log "OK - Sales: $SALES, Retained: $RETAINED, Vendors: $VENDORS"
-        fi
+    if [ "$VENDOR_COUNT" = "0" ] || [ -z "$VENDOR_COUNT" ]; then
+        log "NO DATA - NRS returned 0 vendors for today (sales may not be entered yet)"
     else
-        log "IMPORT FAILED: $RESPONSE"
+        log "OK - Sales: \$$TOTAL_SALES, Retained: \$$TOTAL_RETAINED, Vendors: $VENDOR_COUNT, Transactions: $TX_COUNT"
     fi
 else
-    # Check for no data vs error
-    if echo "$OUTPUT" | grep -qi "no data\|no sales\|empty"; then
-        log "No sales data yet for today"
-    else
-        log "SCRAPE ERROR: $OUTPUT"
-    fi
+    ERROR=$(echo "$RESPONSE" | grep -o '"error":"[^"]*"' | head -1 | cut -d'"' -f4)
+    log "IMPORT FAILED: ${ERROR:-$RESPONSE}"
 fi

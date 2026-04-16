@@ -1,14 +1,9 @@
 // Sales Dashboard - Server-side data loading
 import type { PageServerLoad } from './$types';
-import { redirect } from '@sveltejs/kit';
 import { db, salesSnapshots } from '$lib/server/db';
 import { desc, gte, lte, and, sql } from 'drizzle-orm';
-import { isManager } from '$lib/server/auth/roles';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	if (!isManager(locals.user)) {
-		throw redirect(302, '/dashboard');
-	}
 	// Get last 30 days of sales data
 	const thirtyDaysAgo = new Date();
 	thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);

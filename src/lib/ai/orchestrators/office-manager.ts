@@ -8,7 +8,7 @@ import { getToolsForAgent } from '../tools';
 import { buildOfficeManagerSystemPrompt, buildOfficeManagerUserPrompt, buildContinuationPrompt } from '../prompts/office-manager';
 import type { AIAgent, AIRunResult, AITool, ToolExecutionContext } from '../types';
 import { createLogger } from '$lib/server/logger';
-import { getPacificDayBounds } from '$lib/server/utils/timezone';
+import { getPacificDayBounds, getPacificHour, getPacificWeekday } from '$lib/server/utils/timezone';
 
 const log = createLogger('ai:orchestrator:office-manager');
 const AGENT: AIAgent = 'office_manager';
@@ -199,8 +199,8 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 		// Check operational hours (unless force run)
 		if (!config.forceRun) {
 			const now = new Date();
-			const currentHour = now.getHours();
-			const currentDay = now.getDay(); // 0 = Sunday, 6 = Saturday
+			const currentHour = getPacificHour(now);
+			const currentDay = getPacificWeekday(now); // 0 = Sunday, 6 = Saturday
 
 			const startHour = agentConfig.operationalStartHour ?? 9;
 			const endHour = agentConfig.operationalEndHour ?? 17;

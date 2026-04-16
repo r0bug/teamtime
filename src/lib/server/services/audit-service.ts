@@ -171,7 +171,7 @@ export async function auditLogin(params: {
 export async function auditClockEvent(params: {
 	userId: string;
 	timeEntryId: string;
-	action: 'clock_in' | 'clock_out';
+	action: 'clock_in' | 'clock_out' | 'break_start' | 'break_end';
 	locationId?: string;
 	latitude?: number;
 	longitude?: number;

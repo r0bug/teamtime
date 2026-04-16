@@ -21,9 +21,18 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - GPS-verified clock in/out from any device
 - Real-time "who's working where" visibility
 - Automatic shift matching and overtime tracking
+- **Break tracking** — employees start/end breaks from their dashboard, with a configurable paid-break allowance (e.g. 15 min per 4 hours) applied to payroll timesheets
+- **Payroll Timesheet** (`/admin/timesheet`) — per-employee daily rollups with break minutes, allowed/excess breakdown, auto-clock-out flagging, and CSV export
 - **Smart clock-out reminders** — 3-tier escalation (30min friendly → 90min firm → 180min auto-clock-out), interactive SMS with natural-language time parsing ("left at 5:30"), post-auto-clock-out corrections
 - **Late arrival detection** with automated SMS alerts and demerit escalation
 - Export to CSV for payroll integration
+
+### Scheduling
+- Weekly grid UI for building schedules at `/admin/schedule`
+- **Schedule Templates** (`/admin/schedule/templates`) — save recurring weekly patterns with one marked as default; apply to any date range with per-conflict resolution (skip / overwrite / add alongside)
+- **Drift validation** — the admin schedule page shows a banner when the current week diverges from the default template
+- **Daily cron auto-apply** — the default template fills gaps up to 4 weeks ahead (configurable), never overwriting existing shifts
+- **AI office manager integration** — 6 template tools (`list_schedule_templates`, `apply_schedule_template`, `validate_schedule_against_template`, `save_week_as_template`, `create_schedule_template`, `set_default_schedule_template`)
 
 ### Task Management
 - Assign one-off or recurring tasks with photo requirements
@@ -87,7 +96,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 
 Three specialized AI agents run in the background:
 
-**Office Manager** — Monitors attendance, flags missing staff, creates/cancels/completes tasks, sends proactive messages, views schedules, manages permissions, imports sales data, and awards recognition. **47 tools available** including points management (view_points, award_points, give_shoutout), schedule management (create_schedule, update_schedule, copy_schedule, delete_schedule), task rule management (list_task_rules, toggle_task_rule, create_task_rule, delete_task), SMS scheduling (schedule_sms, view_scheduled_sms, cancel_scheduled_sms), sales import (run_sales_scraper with API or legacy scraper method, view_sales), time entry management (clock_user, create_time_entry, edit_time_entry), and metrics/analytics (query_metrics, get_vendor_correlations, analyze_staffing_patterns). Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours. **Sales context provider** automatically injects yesterday's sales, week-to-date aggregates, 14-day trends, and profitability metrics into AI prompts.
+**Office Manager** — Monitors attendance, flags missing staff, creates/cancels/completes tasks, sends proactive messages, views schedules, manages permissions, imports sales data, and awards recognition. **53 tools available** including points management (view_points, award_points, give_shoutout), schedule management (create_schedule, update_schedule, copy_schedule, delete_schedule), **schedule templates** (list_schedule_templates, create_schedule_template, save_week_as_template, apply_schedule_template, validate_schedule_against_template, set_default_schedule_template), task rule management (list_task_rules, toggle_task_rule, create_task_rule, delete_task), SMS scheduling (schedule_sms, view_scheduled_sms, cancel_scheduled_sms), sales import (run_sales_scraper with API or legacy scraper method, view_sales), time entry management (clock_user, create_time_entry, edit_time_entry), and metrics/analytics (query_metrics, get_vendor_correlations, analyze_staffing_patterns). Interactive chat interface with streaming responses and tool confirmations. Runs on a 15-minute cron schedule during business hours. **Sales context provider** automatically injects yesterday's sales, week-to-date aggregates, 14-day trends, and profitability metrics into AI prompts.
 
 **Revenue Optimizer** — Analyzes patterns across scheduling, task completion, and expenses. Writes long-term observations and creates policies for the Office Manager to follow. 4 specialized tools. Runs nightly.
 
@@ -248,9 +257,10 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-97 tables organized across domains:
+99 tables organized across domains:
 
-- **Core**: users, sessions, locations, shifts, time_entries
+- **Core**: users, sessions, locations, shifts, time_entries, break_entries
+- **Scheduling**: schedule_templates, schedule_template_shifts (referenced by `shifts.template_id` / `template_shift_id`)
 - **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules
 - **Pricing**: pricing_decisions, pricing_decision_photos, pricing_grades
 - **Inventory**: inventory_drops, inventory_drop_photos, inventory_drop_items
