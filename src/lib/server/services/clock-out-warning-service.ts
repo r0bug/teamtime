@@ -19,7 +19,7 @@ import { createLogger } from '$lib/server/logger';
 import { eq, and, gte, lte, isNull, count, desc } from 'drizzle-orm';
 import { awardPoints, POINT_VALUES } from './points-service';
 import { sendSMS, formatPhoneToE164 } from '$lib/server/twilio';
-import { toPacificTimeString } from '$lib/server/utils/timezone';
+import { toPacificTimeString, getPacificDayBounds } from '$lib/server/utils/timezone';
 import type { ClockOutWarning, Demerit } from '$lib/server/db/schema';
 
 const log = createLogger('services:clock-out-warning');
@@ -581,8 +581,8 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 			const shiftSearchStart = new Date(clockInTime.getTime() - 2 * 60 * 60 * 1000);
 			const shiftSearchEnd = new Date(clockInTime.getTime() + 2 * 60 * 60 * 1000);
 
-			const [userShift] = await db
-				.select({ endTime: shifts.endTime })
+			let [userShift] = await db
+				.select({ startTime: shifts.startTime, endTime: shifts.endTime })
 				.from(shifts)
 				.where(
 					and(
@@ -594,13 +594,40 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 				.orderBy(desc(shifts.endTime))
 				.limit(1);
 
+			// Fallback: if the ±2hr window missed (user clocked in very early/late),
+			// find the nearest shift for this user on the same Pacific calendar day
+			// as their clock-in. This prevents premature synthetic-shift-end warnings
+			// for edge-case clock-ins that still correspond to a real shift.
+			if (!userShift) {
+				const { start: dayStart, end: dayEnd } = getPacificDayBounds(clockInTime);
+				const dayShifts = await db
+					.select({ startTime: shifts.startTime, endTime: shifts.endTime })
+					.from(shifts)
+					.where(
+						and(
+							eq(shifts.userId, user.id),
+							gte(shifts.startTime, dayStart),
+							lte(shifts.startTime, dayEnd)
+						)
+					);
+				if (dayShifts.length > 0) {
+					// Pick the shift whose startTime is closest to the actual clock-in
+					userShift = dayShifts.reduce((nearest, s) => {
+						const nearestDiff = Math.abs(new Date(nearest.startTime).getTime() - clockInTime.getTime());
+						const currentDiff = Math.abs(new Date(s.startTime).getTime() - clockInTime.getTime());
+						return currentDiff < nearestDiff ? s : nearest;
+					});
+				}
+			}
+
 			if (userShift) {
 				hasShift = true;
 				shiftEndTime = new Date(userShift.endTime);
 			} else {
-				// Fallback: no shift scheduled, use clockIn + 8 hours as synthetic shift end
+				// Fallback: no shift scheduled at all — use clockIn + maxHoursClockedIn
+				// as the synthetic shift end so nag intervals stay correctly spaced.
 				if (hoursClocked >= config.maxHoursClockedIn) {
-					shiftEndTime = new Date(clockInTime.getTime() + 8 * 60 * 60 * 1000);
+					shiftEndTime = new Date(clockInTime.getTime() + config.maxHoursClockedIn * 60 * 60 * 1000);
 				}
 			}
 

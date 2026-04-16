@@ -28,9 +28,11 @@ const SCHEDULE_TEMPLATE_CRON_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 const log = createLogger('api:clock:cron');
 
-// System user ID for auto-issued demerits
-// In production, this should be configured or use a specific system account
-const SYSTEM_USER_ID_FALLBACK = '00000000-0000-0000-0000-000000000000';
+// System user for auto-issued demerits and AI-driven actions.
+// A real row with this email exists in `users` (role=admin, is_active=false)
+// so FK constraints referencing users.id never violate. If the row is missing
+// (dev/staging), we fall back to the first admin by createdAt.
+const SYSTEM_USER_EMAIL = 'system@teamtime.local';
 
 export const GET: RequestHandler = async ({ request }) => {
 	// Verify cron secret
@@ -69,21 +71,36 @@ export const GET: RequestHandler = async ({ request }) => {
 
 	log.info('Clock-out cron job starting');
 
-	// Get system user ID - find first admin or use fallback
-	let systemUserId = SYSTEM_USER_ID_FALLBACK;
+	// Resolve the system user — prefer the dedicated system@teamtime.local row,
+	// otherwise fall back to the oldest admin so FK constraints stay satisfied.
+	let systemUserId: string;
 	try {
-		const [admin] = await db
+		const [systemUser] = await db
 			.select({ id: users.id })
 			.from(users)
-			.where(eq(users.role, 'admin'))
-			.orderBy(asc(users.createdAt))
+			.where(eq(users.email, SYSTEM_USER_EMAIL))
 			.limit(1);
 
-		if (admin) {
+		if (systemUser) {
+			systemUserId = systemUser.id;
+		} else {
+			const [admin] = await db
+				.select({ id: users.id })
+				.from(users)
+				.where(eq(users.role, 'admin'))
+				.orderBy(asc(users.createdAt))
+				.limit(1);
+
+			if (!admin) {
+				log.error('No system user and no admin users exist — cannot run cron');
+				return json({ error: 'No system or admin user configured' }, { status: 500 });
+			}
+			log.warn({ adminId: admin.id }, 'system@teamtime.local not found, falling back to oldest admin');
 			systemUserId = admin.id;
 		}
 	} catch (err) {
-		log.warn({ error: err }, 'Failed to find admin user, using fallback system user ID');
+		log.error({ error: err }, 'Failed to resolve system user');
+		return json({ error: 'Failed to resolve system user' }, { status: 500 });
 	}
 
 	// Run the checks — wrap each in independent try/catch so a failure in

@@ -6,13 +6,7 @@ Generated: 2026-03-12
 
 ## Critical
 
-- [ ] **Race condition: AI Office Manager vs Clock Cron can double-process clock-outs**
-  - Both `/api/ai/cron` (Office Manager) and `/api/clock/cron` can clock out the same user simultaneously
-  - No mutex, advisory lock, or coordination between them
-  - Clock cron sets `clockOut = shiftEndTime` (correct for payroll); AI tool sets `clockOut = now()` (hours later)
-  - If both fire, user gets double SMS, double point deductions, duplicate audit records
-  - **Files:** `src/lib/ai/orchestrators/office-manager.ts`, `src/lib/ai/tools/office-manager/clock-user.ts`, `src/routes/api/clock/cron/+server.ts`
-  - **Fix:** Add a check in the AI `clock_user` tool to skip users who already have a recent `clock_out_warnings` record, or add a DB advisory lock in `checkOverdueClockOuts`
+*(none remaining)*
 
 ---
 
@@ -24,56 +18,13 @@ Generated: 2026-03-12
 
 ## Medium
 
-- [ ] **Shift lookup misses early/late clock-ins (>2 hours off)**
-  - The 2-hour window around clock-in time works for normal cases
-  - If someone clocks in >2 hours early or >2 hours late, their shift isn't found
-  - Fallback logic (clockIn + 8h) kicks in, which could trigger premature warnings
-  - **File:** `src/lib/server/services/clock-out-warning-service.ts` lines 556-572
-  - **Fix:** Widen the window or add a secondary lookup that finds the nearest shift for the user on that calendar day
-
-- [ ] **Nag timing compression for no-shift users**
-  - `maxHoursClockedIn` is 10 but synthetic shift end is `clockIn + 8h`
-  - When first warning fires at 10h, `minutesPastShiftEnd` is already 120 min
-  - Nag 1 and Nag 2 fire only 15 minutes apart instead of ~60 minutes
-  - **File:** `src/lib/server/services/clock-out-warning-service.ts` lines 578-583
-  - **Fix:** Either set synthetic shift end to `clockIn + maxHoursClockedIn` or reduce `maxHoursClockedIn` to match
-
-- [ ] **Fallback system user ID may cause FK violation**
-  - `SYSTEM_USER_ID_FALLBACK = '00000000-0000-0000-0000-000000000000'` used when no admin exists
-  - If `demerits.issued_by` has a FK constraint to `users`, demerit creation will fail
-  - **File:** `src/routes/api/clock/cron/+server.ts` lines 26, 66-79
-  - **Fix:** Create an actual system user record in the DB, or make `issuedBy` nullable for system-generated demerits
+*(none remaining)*
 
 ---
 
 ## Low
 
-
-- [ ] **`requiresConfirmation` flag bypassed in cron mode**
-  - `clock_user` tool declares `requiresConfirmation: true` (line 63)
-  - Chat orchestrator enforces it; cron orchestrator ignores it entirely
-  - AI can autonomously clock users in/out during cron runs with no human approval
-  - **File:** `src/lib/ai/orchestrators/office-manager.ts` (~line 399)
-  - **Fix:** Either enforce in cron mode or document as intentional and remove the flag
-
-- [ ] **`rateLimit.maxPerHour` never enforced**
-  - `clock_user` tool declares `maxPerHour: 20` but neither orchestrator checks it
-  - Dead configuration across the entire AI tool system
-  - **File:** `src/lib/ai/tools/office-manager/clock-user.ts` line 69
-
-
-- [ ] **Late arrival time-entry matching too broad for split shifts**
-  - Matches any time entry on or after the shift's date (midnight), not the specific shift
-  - Split-shift workers could have false negatives (missed late arrival warnings)
-  - **File:** `src/lib/server/services/late-arrival-warning-service.ts` ~line 338
-
-
-- [ ] **16-hour forgotten clock-out threshold in AI is a dead letter**
-  - Office Manager pre-flight checks for users clocked in >16 hours
-  - Clock cron already auto-clocks out at ~3 hours past shift end
-  - The AI threshold will almost never trigger because the clock cron handles it first
-  - **File:** `src/lib/ai/orchestrators/office-manager.ts` lines 79-88
-  - **Fix:** Lower to 4-6 hours to serve as a safety net, or remove if clock cron is reliable
+*(none remaining)*
 
 ---
 
@@ -90,3 +41,11 @@ Generated: 2026-03-12
 - [x] **Non-deterministic admin selection** — added `.orderBy(asc(users.createdAt))` in `cron/+server.ts`
 - [x] **SMS nag2 rounds hours misleadingly** — swapped `Math.round` → `toFixed(1).replace(/\.0$/, '')` in `clock-out-warning-service.ts`
 - [x] **Missing database indexes** — transferred `time_entries` and `users` ownership from postgres → teamtime via `sudo -u postgres psql -c "ALTER TABLE ... OWNER TO teamtime"`, then created `time_entries_user_id_idx` and `users_phone_idx` as the app user
+- [x] **Race condition between AI Office Manager and Clock Cron** — `clock_user` tool now queries `clock_out_warnings` for entries with a row in the last 30 minutes and skips, preventing duplicate SMS / points / audit records
+- [x] **Shift lookup misses early/late clock-ins (>2 hours off)** — added fallback that finds the nearest shift on the same Pacific day when the ±2hr window misses
+- [x] **Nag timing compression for no-shift users** — synthetic shift end is now `clockIn + config.maxHoursClockedIn` (was hard-coded `+ 8h`) so Nag 1/2 stay ~60min apart
+- [x] **Fallback system user ID may cause FK violation** — created real `system@teamtime.local` user row (role=admin, is_active=false); cron resolves by email with oldest-admin fallback, returns 500 if neither exists
+- [x] **`requiresConfirmation` flag bypassed in cron mode** — removed the declaration (dead config); cooldowns still enforced via `cooldown.perUser`
+- [x] **`rateLimit.maxPerHour` never enforced** — removed the declaration from `clock_user` tool (dead config, no orchestrator reads it)
+- [x] **Late arrival time-entry matching too broad for split shifts** — narrowed leftJoin to `${shifts.startTime} ± interval '2 hours'` (was day-match)
+- [x] **16-hour forgotten clock-out threshold in AI is a dead letter** — lowered to 5 hours to act as a safety net when clock-cron fails to auto-close an entry

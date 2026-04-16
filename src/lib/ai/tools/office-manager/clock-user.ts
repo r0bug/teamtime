@@ -1,6 +1,6 @@
 // Clock User Tool - Clock a user in or out right now with full side-effect chain
-import { db, users, timeEntries, shifts } from '$lib/server/db';
-import { eq, and, isNull, gte, lte } from 'drizzle-orm';
+import { db, users, timeEntries, shifts, clockOutWarnings } from '$lib/server/db';
+import { eq, and, isNull, gte, lte, desc } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
 import { validateRequiredUserId, validateLocationId } from '../utils/validation';
@@ -60,17 +60,9 @@ export const clockUserTool: AITool<ClockUserParams, ClockUserResult> = {
 		required: ['userId', 'action']
 	},
 
-	requiresConfirmation: true,
 	requiresApproval: false,
 	cooldown: {
 		perUser: 5
-	},
-	rateLimit: {
-		maxPerHour: 20
-	},
-
-	getConfirmationMessage(params: ClockUserParams): string {
-		return `Clock ${params.action === 'in' ? 'in' : 'out'} user ${params.userId}?`;
 	},
 
 	validate(params: ClockUserParams) {
@@ -236,6 +228,33 @@ async function clockOut(
 
 	if (!activeEntry) {
 		return { success: false, error: `${user.name} is not currently clocked in` };
+	}
+
+	// Race-condition guard: if the clock-cron has already processed this entry
+	// (e.g. sent a nag / auto-clock-out) within the last 30 minutes, skip to
+	// avoid duplicate clock-outs, SMS, points and audit records.
+	const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
+	const [recentWarning] = await db
+		.select({ id: clockOutWarnings.id, warningType: clockOutWarnings.warningType, createdAt: clockOutWarnings.createdAt })
+		.from(clockOutWarnings)
+		.where(
+			and(
+				eq(clockOutWarnings.timeEntryId, activeEntry.id),
+				gte(clockOutWarnings.createdAt, thirtyMinutesAgo)
+			)
+		)
+		.orderBy(desc(clockOutWarnings.createdAt))
+		.limit(1);
+
+	if (recentWarning) {
+		log.info(
+			{ userId: user.id, timeEntryId: activeEntry.id, warningType: recentWarning.warningType, runId: context.runId },
+			'Skipping AI clock-out: clock-cron recently processed this entry'
+		);
+		return {
+			success: false,
+			error: `Clock-cron already processed this entry ${Math.round((now.getTime() - new Date(recentWarning.createdAt).getTime()) / 60000)} min ago (warning: ${recentWarning.warningType}) — skipping to avoid duplicate`
+		};
 	}
 
 	const effectiveLocationId = locationId || activeEntry.locationId || user.primaryLocationId || undefined;

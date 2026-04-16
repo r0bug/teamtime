@@ -76,14 +76,16 @@ async function preFlightTriage(): Promise<PreFlightResult> {
 		));
 	const overdueTaskCount = Number(overdueResult[0]?.count || 0);
 
-	// Check 3: Any forgotten clock-outs? (clocked in > 16 hours)
-	const sixteenHoursAgo = new Date(now.getTime() - 16 * 60 * 60 * 1000);
+	// Check 3: Any forgotten clock-outs? (clocked in > 5 hours past expected)
+	// Clock-cron auto-clocks out at ~3 hours past shift end, so this acts as a
+	// safety net for entries that slipped through (no shift record, cron failure).
+	const fiveHoursAgo = new Date(now.getTime() - 5 * 60 * 60 * 1000);
 	const forgottenResult = await db
 		.select({ count: sql<number>`count(*)` })
 		.from(timeEntries)
 		.where(and(
 			isNull(timeEntries.clockOut),
-			lt(timeEntries.clockIn, sixteenHoursAgo)
+			lt(timeEntries.clockIn, fiveHoursAgo)
 		));
 	const forgottenClockoutCount = Number(forgottenResult[0]?.count || 0);
 

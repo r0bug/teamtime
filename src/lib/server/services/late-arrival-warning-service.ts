@@ -333,9 +333,11 @@ export async function checkLateArrivals(systemUserId: string): Promise<LateArriv
 			timeEntries,
 			and(
 				eq(timeEntries.userId, shifts.userId),
-				// Match any time entry where user clocked in on the shift day
-				// This catches both open entries and already-closed entries
-				gte(timeEntries.clockIn, sql`${shifts.startTime}::date::timestamp with time zone`)
+				// Narrow match to clock-ins within ±2hr of the shift start so
+				// split-shift workers don't see false-negative late warnings
+				// from a prior shift's time entry matching the entire day.
+				gte(timeEntries.clockIn, sql`${shifts.startTime} - interval '2 hours'`),
+				sql`${timeEntries.clockIn} <= ${shifts.startTime} + interval '2 hours'`
 			)
 		)
 		.where(
