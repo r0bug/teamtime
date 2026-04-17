@@ -52,7 +52,9 @@
 	// Hourly chart calculations
 	$: maxHourlySales = Math.max(...data.hourly.map(h => h.totalSales), 1);
 	$: totalItems = data.totals.itemCount;
-	$: hasData = data.totals.itemCount > 0;
+	// "Has data" now includes the case where we only have labor cost but no
+	// sales yet (e.g. a day currently in progress before the first sale).
+	$: hasData = data.totals.itemCount > 0 || data.totals.labor > 0 || data.hourly.length > 0;
 
 	// Find prev/next available dates
 	$: currentDateIndex = data.availableDates.indexOf(data.date);
@@ -140,7 +142,7 @@
 		</div>
 	{:else}
 		<!-- Summary Cards -->
-		<div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+		<div class="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
 			<div class="card">
 				<div class="card-body text-center">
 					<p class="text-xl lg:text-2xl font-bold text-blue-600">{formatCurrency(data.totals.totalSales)}</p>
@@ -161,17 +163,29 @@
 			</div>
 			<div class="card">
 				<div class="card-body text-center">
-					<p class="text-xl lg:text-2xl font-bold text-gray-700">{data.totals.itemCount}</p>
-					<p class="text-xs text-gray-600">Items Sold</p>
+					<p class="text-xl lg:text-2xl font-bold text-red-600">{formatCurrency(data.totals.labor)}</p>
+					<p class="text-xs text-gray-600">Labor Cost</p>
 				</div>
 			</div>
 			<div class="card">
 				<div class="card-body text-center">
-					<p class="text-xl lg:text-2xl font-bold text-purple-600">{data.totals.vendorCount}</p>
-					<p class="text-xs text-gray-600">Active Vendors</p>
+					<p class="text-xl lg:text-2xl font-bold {data.totals.net >= 0 ? 'text-emerald-600' : 'text-red-700'}">{formatCurrency(data.totals.net)}</p>
+					<p class="text-xs text-gray-600">Net (Retained − Labor)</p>
+				</div>
+			</div>
+			<div class="card">
+				<div class="card-body text-center">
+					<p class="text-xl lg:text-2xl font-bold text-gray-700">{data.totals.itemCount}</p>
+					<p class="text-xs text-gray-600">Items Sold</p>
 				</div>
 			</div>
 		</div>
+
+		{#if data.laborMeta.unknownRateEntries > 0}
+			<div class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800">
+				{data.laborMeta.unknownRateEntries} time {data.laborMeta.unknownRateEntries === 1 ? 'entry' : 'entries'} excluded from labor cost — user has no hourly rate configured.
+			</div>
+		{/if}
 
 		<!-- Detail Tabs -->
 		<div class="card mb-6">
@@ -265,6 +279,8 @@
 									<th class="text-right py-2 px-3 font-medium text-gray-600">Sales</th>
 									<th class="text-right py-2 px-3 font-medium text-gray-600">Vendor Payout</th>
 									<th class="text-right py-2 px-3 font-medium text-gray-600">Retained</th>
+									<th class="text-right py-2 px-3 font-medium text-gray-600">Labor</th>
+									<th class="text-right py-2 px-3 font-medium text-gray-600">Net</th>
 									<th class="text-right py-2 px-3 font-medium text-gray-600">Items</th>
 									<th class="text-right py-2 px-3 font-medium text-gray-600">Vendors</th>
 								</tr>
@@ -276,6 +292,8 @@
 										<td class="py-2 px-3 text-right text-blue-600">{formatCurrency(h.totalSales)}</td>
 										<td class="py-2 px-3 text-right text-gray-600">{formatCurrency(h.vendorPortion)}</td>
 										<td class="py-2 px-3 text-right text-green-600 font-medium">{formatCurrency(h.retained)}</td>
+										<td class="py-2 px-3 text-right text-red-600">{formatCurrency(h.labor)}</td>
+										<td class="py-2 px-3 text-right font-medium {h.net >= 0 ? 'text-emerald-600' : 'text-red-700'}">{formatCurrency(h.net)}</td>
 										<td class="py-2 px-3 text-right text-gray-500">{h.itemCount}</td>
 										<td class="py-2 px-3 text-right text-gray-500">{h.vendorCount}</td>
 									</tr>
