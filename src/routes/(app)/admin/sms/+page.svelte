@@ -3,7 +3,16 @@
 
 	export let data: PageData;
 
-	let activeTab: 'overview' | 'delivery' | 'replies' | 'scheduled' | 'conversations' | 'help' = 'overview';
+	type TabId = 'overview' | 'delivery' | 'replies' | 'scheduled' | 'conversations' | 'help';
+	let activeTab: TabId = 'overview';
+	const tabs: { id: TabId; label: string }[] = [
+		{ id: 'overview', label: 'Overview' },
+		{ id: 'delivery', label: 'Delivery Tracking' },
+		{ id: 'replies', label: 'Replies & Opt-outs' },
+		{ id: 'scheduled', label: 'Scheduled Jobs' },
+		{ id: 'conversations', label: 'AI Conversations' },
+		{ id: 'help', label: 'How to Use' }
+	];
 
 	let selectedConvoId: string | null = null;
 	$: selectedConvo = data.conversations?.find((c) => c.id === selectedConvoId) ?? null;
@@ -74,14 +83,7 @@
 		<!-- Tab Navigation -->
 		<div class="border-b border-gray-200 mb-6">
 			<nav class="flex space-x-8">
-				{#each [
-					{ id: 'overview', label: 'Overview' },
-					{ id: 'delivery', label: 'Delivery Tracking' },
-					{ id: 'replies', label: `Replies & Opt-outs` },
-					{ id: 'scheduled', label: 'Scheduled Jobs' },
-					{ id: 'conversations', label: 'AI Conversations' },
-					{ id: 'help', label: 'How to Use' }
-				] as tab}
+				{#each tabs as tab}
 					<button
 						on:click={() => activeTab = tab.id}
 						class="py-3 px-1 border-b-2 text-sm font-medium transition-colors {activeTab === tab.id

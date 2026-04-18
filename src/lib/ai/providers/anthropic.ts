@@ -295,9 +295,10 @@ export const anthropicProvider: LLMProvider = {
 	estimateCost(inputTokens: number, outputTokens: number, model: string): number {
 		// Prices per million tokens (as of 2025)
 		const pricing: Record<string, { input: number; output: number }> = {
-			// Claude 4 Series (Latest - 2025)
+			// Claude 4.x Series (Latest - 2025/2026)
 			'claude-opus-4-20250514': { input: 15.0, output: 75.0 },
 			'claude-sonnet-4-20250514': { input: 3.0, output: 15.0 },
+			'claude-haiku-4-5-20251001': { input: 1.0, output: 5.0 },
 			// Claude 3.5 Series
 			'claude-3-5-sonnet-20241022': { input: 3.0, output: 15.0 },
 			'claude-3-5-haiku-20241022': { input: 1.0, output: 5.0 },

@@ -15,9 +15,10 @@ Send daily summaries to admins about system activity.`
 // Model options per provider
 export const MODEL_OPTIONS: Record<string, { value: string; label: string; costPer1k: number }[]> = {
 	anthropic: [
-		// Claude 4 Series (Latest - 2025)
+		// Claude 4.x Series (Latest - 2025/2026)
 		{ value: 'claude-opus-4-20250514', label: 'Claude Opus 4 (Most Capable)', costPer1k: 0.015 },
 		{ value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4 (Balanced)', costPer1k: 0.003 },
+		{ value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (Cheap & Fast — Default)', costPer1k: 0.001 },
 		// Claude 3.5 Series
 		{ value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet (Smart)', costPer1k: 0.003 },
 		{ value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku (Fast)', costPer1k: 0.001 },

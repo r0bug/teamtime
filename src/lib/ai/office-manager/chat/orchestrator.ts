@@ -28,6 +28,7 @@ import {
 	addAssistantMessage,
 	createPendingAction,
 	logAIAction,
+	logChatTokenUsage,
 	trackActionPerformed,
 	generateChatSummary,
 	shouldSummarize,
@@ -42,6 +43,19 @@ import { eq } from 'drizzle-orm';
 import { aiConfigService } from '../../services/config-service';
 
 const log = createLogger('ai:office-manager:chat');
+
+// When Haiku invokes request_model_upgrade, the chat re-runs on this model.
+// One-shot: the re-run does not escalate again.
+const DEFAULT_CHAT_MODEL = 'claude-haiku-4-5-20251001';
+const ESCALATION_MODEL = 'claude-sonnet-4-20250514';
+const ESCALATION_TOOL_NAME = 'request_model_upgrade';
+
+function getEscalationReason(toolCalls: { name: string; params: Record<string, unknown> }[] | undefined): string | null {
+	const call = toolCalls?.find((tc) => tc.name === ESCALATION_TOOL_NAME);
+	if (!call) return null;
+	const reason = call.params?.reason;
+	return typeof reason === 'string' ? reason : 'unspecified';
+}
 
 // System prompt for Office Manager chat
 const OFFICE_MANAGER_SYSTEM_PROMPT = `You are the Office Manager AI assistant for TeamTime, a staff management system for a thrift store.
@@ -100,6 +114,23 @@ Use these when:
 - You need context about previous decisions or arrangements
 - Checking if you've handled a similar situation before
 - Understanding the history with a particular user
+
+## Model Escalation (use sparingly)
+
+You are running on Claude Haiku. For most requests — single-tool dispatch, questions, simple multi-tool workflows — answer directly. For genuinely complex requests you can call **request_model_upgrade(reason)** to re-run the turn on a more capable model (Claude Sonnet). Do this ONLY when:
+
+- The request has interdependent constraints (e.g. "rebalance next week so nobody works 6 days AND everyone stays under 40 hours AND cover Saturday opening")
+- The user gave conditional instructions with 2+ branches (e.g. "move Jamie's shift unless it pushes them over 40h, otherwise ask Casey")
+- You must reason over 15+ staff or 30+ shifts simultaneously
+- A schedule template application has many ambiguous conflicts needing prioritized resolution
+
+Do NOT escalate for:
+- Simple tool dispatch (create_task, send_message, view_schedule)
+- Single-conditional requests
+- Questions the user is asking about state
+- Anything where the right next action is obvious
+
+Calling request_model_upgrade discards your other tool calls for this turn. The user's original message is re-sent to Sonnet. Include a brief reason. Do NOT call it more than once per turn.
 
 ## Guidelines
 - Be helpful, professional, and concise
@@ -214,7 +245,7 @@ export interface ProcessMessageResult {
 export async function processUserMessage(
 	chatId: string,
 	userMessage: string,
-	model = 'claude-sonnet-4-20250514',
+	model = 'claude-haiku-4-5-20251001',
 	requestingUserId?: string
 ): Promise<ProcessMessageResult> {
 	// Get the chat session
@@ -257,8 +288,32 @@ ${userMessage}`;
 		temperature: 0.3
 	};
 
-	const runId = randomUUID();
-	const llmResponse = await anthropicProvider.complete(request);
+	let runId = randomUUID();
+	let startedAt = Date.now();
+	let activeModel = model;
+	let llmResponse = await anthropicProvider.complete(request);
+
+	// Haiku can request escalation via request_model_upgrade. Re-run the same request
+	// on Sonnet one time. The Haiku attempt is logged as a zero-action usage row.
+	const escalationReason = activeModel !== ESCALATION_MODEL
+		? getEscalationReason(llmResponse.toolCalls)
+		: null;
+	if (escalationReason) {
+		log.info({ chatId, escalationReason, from: activeModel, to: ESCALATION_MODEL }, 'Chat escalating to Sonnet');
+		await logChatTokenUsage({
+			runId,
+			model: activeModel,
+			inputTokens: llmResponse.usage.inputTokens,
+			outputTokens: llmResponse.usage.outputTokens,
+			toolsUsed: [ESCALATION_TOOL_NAME],
+			actionsTaken: 0,
+			durationMs: Date.now() - startedAt
+		});
+		activeModel = ESCALATION_MODEL;
+		runId = randomUUID();
+		startedAt = Date.now();
+		llmResponse = await anthropicProvider.complete({ ...request, model: activeModel });
+	}
 
 	// Process tool calls
 	const processedToolCalls: ProcessMessageResult['toolCalls'] = [];
@@ -299,7 +354,7 @@ ${userMessage}`;
 				await logAIAction({
 					runId,
 					provider: 'anthropic',
-					model,
+					model: activeModel,
 					toolName: toolCall.name,
 					toolParams: toolCall.params,
 					executed: false
@@ -312,7 +367,7 @@ ${userMessage}`;
 					dryRun: false,
 					config: {
 						provider: 'anthropic',
-						model
+						model: activeModel
 					},
 					chatId,
 					userId
@@ -343,7 +398,7 @@ ${userMessage}`;
 					await logAIAction({
 						runId,
 						provider: 'anthropic',
-						model,
+						model: activeModel,
 						toolName: toolCall.name,
 						toolParams: toolCall.params,
 						executed: true,
@@ -361,7 +416,7 @@ ${userMessage}`;
 					await logAIAction({
 						runId,
 						provider: 'anthropic',
-						model,
+						model: activeModel,
 						toolName: toolCall.name,
 						toolParams: toolCall.params,
 						executed: false,
@@ -411,6 +466,16 @@ ${userMessage}`;
 		});
 	}
 
+	await logChatTokenUsage({
+		runId,
+		model: activeModel,
+		inputTokens: llmResponse.usage.inputTokens,
+		outputTokens: llmResponse.usage.outputTokens,
+		toolsUsed: processedToolCalls.map((tc) => tc.name),
+		actionsTaken: processedToolCalls.filter((tc) => tc.result && !tc.requiresConfirmation).length,
+		durationMs: Date.now() - startedAt
+	});
+
 	return {
 		response: responseContent,
 		toolCalls: processedToolCalls,
@@ -442,7 +507,7 @@ export async function executeConfirmedAction(
 		dryRun: false,
 		config: {
 			provider: 'anthropic',
-			model: 'claude-sonnet-4-20250514'
+			model: 'claude-haiku-4-5-20251001'
 		},
 		chatId: pendingAction.chatId,
 		userId: requestingUserId
@@ -459,7 +524,7 @@ export async function executeConfirmedAction(
 		await logAIAction({
 			runId,
 			provider: 'anthropic',
-			model: 'claude-sonnet-4-20250514',
+			model: 'claude-haiku-4-5-20251001',
 			toolName: pendingAction.toolName,
 			toolParams: pendingAction.toolArgs,
 			executed: true,
@@ -473,7 +538,7 @@ export async function executeConfirmedAction(
 		await logAIAction({
 			runId,
 			provider: 'anthropic',
-			model: 'claude-sonnet-4-20250514',
+			model: 'claude-haiku-4-5-20251001',
 			toolName: pendingAction.toolName,
 			toolParams: pendingAction.toolArgs,
 			executed: false,
@@ -496,7 +561,7 @@ export async function* continueAfterConfirmation(
 	chatId: string,
 	executedAction: { toolName: string; toolArgs: Record<string, unknown>; result: unknown },
 	requestingUserId: string,
-	model = 'claude-sonnet-4-20250514'
+	model = 'claude-haiku-4-5-20251001'
 ): AsyncGenerator<StreamEvent> {
 	log.info({ chatId, toolName: executedAction.toolName, requestingUserId }, 'CONTINUATION: Starting post-confirmation continuation');
 
@@ -511,6 +576,7 @@ export async function* continueAfterConfirmation(
 
 		const userId = requestingUserId || session.userId;
 		const runId = randomUUID();
+		const startedAt = Date.now();
 
 		// Assemble context with user permissions
 		const context = await assembleOfficeManagerContext(3000, userId);
@@ -552,6 +618,8 @@ Continue with any remaining tasks from the original request. If there are more i
 		// Stream the LLM response
 		let fullContent = '';
 		let tokensUsed = 0;
+		let totalInputTokens = 0;
+		let totalOutputTokens = 0;
 		const allToolCalls: ExecutedToolCall[] = [];
 		const pendingActions: PendingAction[] = [];
 		let needsContinuation = false;
@@ -561,18 +629,33 @@ Continue with any remaining tasks from the original request. If there are more i
 		// Initial LLM call
 		let currentTurnToolCalls: ExecutedToolCall[] = [];
 		let currentTurnContent = '';
+		let escalationReason: string | null = null;
 
 		if (!anthropicProvider.stream) {
 			throw new Error('Streaming not supported by provider');
 		}
 
 		for await (const chunk of anthropicProvider.stream(request)) {
+			if (escalationReason) {
+				if (chunk.type === 'done' && chunk.usage) {
+					totalInputTokens += chunk.usage.inputTokens;
+					totalOutputTokens += chunk.usage.outputTokens;
+					tokensUsed += chunk.usage.inputTokens + chunk.usage.outputTokens;
+				}
+				continue;
+			}
 			if (chunk.type === 'text' && chunk.content) {
 				fullContent += chunk.content;
 				currentTurnContent += chunk.content;
 				yield { type: 'text', content: chunk.content };
 			} else if (chunk.type === 'tool_use' && chunk.toolCall) {
 				const { id, name, params } = chunk.toolCall;
+				if (model !== ESCALATION_MODEL && name === ESCALATION_TOOL_NAME) {
+					const reason = typeof params?.reason === 'string' ? params.reason : 'unspecified';
+					escalationReason = reason;
+					log.info({ chatId, reason }, 'CONTINUATION: Haiku requested model upgrade');
+					continue;
+				}
 				const toolId = id || `tool_${randomUUID().slice(0, 8)}`;
 
 				yield { type: 'tool_start', toolName: name, toolParams: params };
@@ -656,8 +739,26 @@ Continue with any remaining tasks from the original request. If there are more i
 					}
 				}
 			} else if (chunk.type === 'done' && chunk.usage) {
+				totalInputTokens += chunk.usage.inputTokens;
+				totalOutputTokens += chunk.usage.outputTokens;
 				tokensUsed += chunk.usage.inputTokens + chunk.usage.outputTokens;
 			}
+		}
+
+		// If Haiku requested escalation, log its usage and restart the continuation on Sonnet.
+		if (escalationReason) {
+			await logChatTokenUsage({
+				runId,
+				model,
+				inputTokens: totalInputTokens,
+				outputTokens: totalOutputTokens,
+				toolsUsed: [ESCALATION_TOOL_NAME],
+				actionsTaken: 0,
+				durationMs: Date.now() - startedAt
+			});
+			log.info({ chatId, from: model, to: ESCALATION_MODEL, escalationReason }, 'CONTINUATION: Escalating to Sonnet');
+			yield* continueAfterConfirmation(chatId, executedAction, requestingUserId, ESCALATION_MODEL);
+			return;
 		}
 
 		allToolCalls.push(...currentTurnToolCalls);
@@ -787,7 +888,9 @@ Continue with any remaining tasks from the original request. If there are more i
 						}
 					}
 				} else if (chunk.type === 'done' && chunk.usage) {
-					tokensUsed += chunk.usage.inputTokens + chunk.usage.outputTokens;
+					totalInputTokens += chunk.usage.inputTokens;
+				totalOutputTokens += chunk.usage.outputTokens;
+				tokensUsed += chunk.usage.inputTokens + chunk.usage.outputTokens;
 				}
 			}
 
@@ -815,6 +918,16 @@ Continue with any remaining tasks from the original request. If there are more i
 			: undefined;
 
 		await addAssistantMessage(chatId, responseContent, messageToolCalls);
+
+		await logChatTokenUsage({
+			runId,
+			model,
+			inputTokens: totalInputTokens,
+			outputTokens: totalOutputTokens,
+			toolsUsed: allToolCalls.map((tc) => tc.name),
+			actionsTaken: allToolCalls.filter((tc) => !tc.requiresConfirmation).length,
+			durationMs: Date.now() - startedAt
+		});
 
 		log.info({ chatId, totalToolCalls: allToolCalls.length, tokensUsed, pendingActionCount: pendingActions.length }, 'CONTINUATION COMPLETE');
 		yield { type: 'done', tokensUsed };
@@ -862,10 +975,11 @@ interface ExecutedToolCall {
 export async function* processUserMessageStream(
 	chatId: string,
 	userMessage: string,
-	model = 'claude-sonnet-4-20250514',
-	requestingUserId?: string
+	model = DEFAULT_CHAT_MODEL,
+	requestingUserId?: string,
+	isEscalationRetry = false
 ): AsyncGenerator<StreamEvent> {
-	log.info({ chatId, userMessage: userMessage.substring(0, 100), requestingUserId }, 'STREAM START: processUserMessageStream called');
+	log.info({ chatId, userMessage: userMessage.substring(0, 100), requestingUserId, model, isEscalationRetry }, 'STREAM START: processUserMessageStream called');
 
 	// Get the chat session
 	log.debug({ chatId }, 'STREAM: Getting chat session...');
@@ -880,10 +994,12 @@ export async function* processUserMessageStream(
 	// Use the session's userId if requestingUserId not provided
 	const userId = requestingUserId || session.userId;
 
-	// Add user message to chat
-	log.debug({ chatId }, 'STREAM: Adding user message to chat...');
-	await addUserMessage(chatId, userMessage);
-	log.debug({ chatId }, 'STREAM: User message added');
+	// Escalation retries re-run the same user message on Sonnet — don't re-save it.
+	if (!isEscalationRetry) {
+		log.debug({ chatId }, 'STREAM: Adding user message to chat...');
+		await addUserMessage(chatId, userMessage);
+		log.debug({ chatId }, 'STREAM: User message added');
+	}
 
 	// Assemble context with user permissions
 	log.debug({ chatId, userId }, 'STREAM: Assembling context...');
@@ -936,10 +1052,13 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 	};
 
 	const runId = randomUUID();
+	const startedAt = Date.now();
 	let fullContent = '';
 	const allToolCalls: ExecutedToolCall[] = [];
 	const pendingActions: PendingAction[] = [];
 	let tokensUsed = 0;
+	let totalInputTokens = 0;
+	let totalOutputTokens = 0;
 	const MAX_CONTINUATION_TURNS = 5; // Prevent infinite loops
 
 	log.info({ chatId, runId, model }, 'STREAM: Starting LLM request');
@@ -960,6 +1079,7 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 		let needsContinuation = false;
 		let currentTurnToolCalls: ExecutedToolCall[] = [];
 		let currentTurnContent = '';
+		let escalationReason: string | null = null;
 
 		log.info({ chatId, promptLength: userPrompt.length, toolCount: tools.length }, 'STREAM: Calling anthropicProvider.stream');
 		// First turn - use the normal stream
@@ -969,12 +1089,29 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 			if (chunkCount === 1) {
 				log.info({ chatId }, 'STREAM: First chunk received from LLM');
 			}
+			// Drain remaining chunks silently once escalation has been requested — we only
+			// want the final usage event for cost logging, no further user-visible output.
+			if (escalationReason) {
+				if (chunk.type === 'done' && chunk.usage) {
+					totalInputTokens += chunk.usage.inputTokens;
+					totalOutputTokens += chunk.usage.outputTokens;
+					tokensUsed += chunk.usage.inputTokens + chunk.usage.outputTokens;
+				}
+				continue;
+			}
 			if (chunk.type === 'text' && chunk.content) {
 				fullContent += chunk.content;
 				currentTurnContent += chunk.content;
 				yield { type: 'text', content: chunk.content };
 			} else if (chunk.type === 'tool_use' && chunk.toolCall) {
 				const { id, name, params } = chunk.toolCall;
+				// Intercept escalation signal before any user-visible event is yielded.
+				if (model !== ESCALATION_MODEL && name === ESCALATION_TOOL_NAME) {
+					const reason = typeof params?.reason === 'string' ? params.reason : 'unspecified';
+					escalationReason = reason;
+					log.info({ chatId, reason }, 'STREAM: Haiku requested model upgrade');
+					continue;
+				}
 				const toolId = id || `tool_${randomUUID().slice(0, 8)}`;
 				log.info({ toolName: name, params }, 'Tool called with params');
 				yield { type: 'tool_start', toolName: name, toolParams: params };
@@ -1086,12 +1223,31 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 					}
 				}
 			} else if (chunk.type === 'done' && chunk.usage) {
+				totalInputTokens += chunk.usage.inputTokens;
+				totalOutputTokens += chunk.usage.outputTokens;
 				tokensUsed += chunk.usage.inputTokens + chunk.usage.outputTokens;
 				log.info({ chatId, chunkCount, tokensUsed }, 'STREAM: First turn complete');
 			}
 		}
 
-		log.info({ chatId, toolCallCount: currentTurnToolCalls.length, needsContinuation, contentLength: currentTurnContent.length }, 'STREAM: First turn finished, checking continuation');
+		log.info({ chatId, toolCallCount: currentTurnToolCalls.length, needsContinuation, contentLength: currentTurnContent.length, escalationReason }, 'STREAM: First turn finished, checking continuation');
+
+		// If Haiku requested escalation, log its usage and restart the stream on Sonnet.
+		// The user message was already saved; pass isEscalationRetry=true to skip re-saving.
+		if (escalationReason) {
+			await logChatTokenUsage({
+				runId,
+				model,
+				inputTokens: totalInputTokens,
+				outputTokens: totalOutputTokens,
+				toolsUsed: [ESCALATION_TOOL_NAME],
+				actionsTaken: 0,
+				durationMs: Date.now() - startedAt
+			});
+			log.info({ chatId, from: model, to: ESCALATION_MODEL, escalationReason }, 'STREAM: Escalating to Sonnet');
+			yield* processUserMessageStream(chatId, userMessage, ESCALATION_MODEL, requestingUserId, true);
+			return;
+		}
 
 		// Add tool calls from first turn to the total
 		allToolCalls.push(...currentTurnToolCalls);
@@ -1249,7 +1405,9 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 						}
 					}
 				} else if (chunk.type === 'done' && chunk.usage) {
-					tokensUsed += chunk.usage.inputTokens + chunk.usage.outputTokens;
+					totalInputTokens += chunk.usage.inputTokens;
+				totalOutputTokens += chunk.usage.outputTokens;
+				tokensUsed += chunk.usage.inputTokens + chunk.usage.outputTokens;
 				}
 			}
 
@@ -1286,6 +1444,16 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 
 		log.debug({ chatId }, 'STREAM: Saving assistant message...');
 		await addAssistantMessage(chatId, responseContent, messageToolCalls);
+
+		await logChatTokenUsage({
+			runId,
+			model,
+			inputTokens: totalInputTokens,
+			outputTokens: totalOutputTokens,
+			toolsUsed: allToolCalls.map((tc) => tc.name),
+			actionsTaken: allToolCalls.filter((tc) => !tc.requiresConfirmation).length,
+			durationMs: Date.now() - startedAt
+		});
 
 		log.info({ chatId, totalToolCalls: allToolCalls.length, tokensUsed, pendingActionCount: pendingActions.length }, 'STREAM COMPLETE: Finished successfully');
 		yield { type: 'done', tokensUsed };

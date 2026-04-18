@@ -283,8 +283,8 @@
 						<!-- Enable Toggle -->
 						<div class="flex items-center justify-between">
 							<div>
-								<label class="font-medium">Enable Office Manager</label>
-								<p class="text-sm text-gray-500">Runs every 15 minutes during business hours</p>
+								<label class="font-medium">Enable Autonomous Cron Orchestrator</label>
+								<p class="text-sm text-gray-500">Runs every 15 minutes during business hours to proactively nag/reward staff. <span class="text-yellow-700 font-medium">⚠️ Under rework — leave disabled.</span> The interactive chat assistant (web + SMS) works regardless of this setting.</p>
 							</div>
 							<label class="relative inline-flex items-center cursor-pointer">
 								<input type="checkbox" name="enabled" checked={data.officeManager?.enabled ?? false} class="sr-only peer">

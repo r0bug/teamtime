@@ -54,6 +54,7 @@ export { saveWeekAsTemplateTool } from './save-week-as-template';
 export { applyScheduleTemplateTool } from './apply-schedule-template';
 export { validateScheduleAgainstTemplateTool } from './validate-schedule-against-template';
 export { setDefaultScheduleTemplateTool } from './set-default-schedule-template';
+export { requestModelUpgradeTool } from './request-model-upgrade';
 
 import { sendMessageTool } from './send-message';
 import { createTaskTool } from './create-task';
@@ -101,6 +102,7 @@ import { saveWeekAsTemplateTool } from './save-week-as-template';
 import { applyScheduleTemplateTool } from './apply-schedule-template';
 import { validateScheduleAgainstTemplateTool } from './validate-schedule-against-template';
 import { setDefaultScheduleTemplateTool } from './set-default-schedule-template';
+import { requestModelUpgradeTool } from './request-model-upgrade';
 import type { AITool } from '../../types';
 
 // Use explicit any for the tools array since each tool has its own type parameters
@@ -151,6 +153,8 @@ export const officeManagerTools: AITool<any, any>[] = [
 	createSocialMediaTaskTool,
 	processInventoryPhotosTool,
 	continueWorkTool,
+	// Escalation signal — intercepted by chat orchestrator to re-run on Sonnet
+	requestModelUpgradeTool,
 	// Task rule management tools
 	listTaskRulesTool,
 	toggleTaskRuleTool,

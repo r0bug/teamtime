@@ -1,8 +1,54 @@
 // Office Manager Chat Session Management
-import { db, officeManagerChats, officeManagerPendingActions, aiActions } from '$lib/server/db';
+import { db, officeManagerChats, officeManagerPendingActions, aiActions, aiTokenUsage } from '$lib/server/db';
 import { eq, desc, and, lt, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import type { OfficeManagerMessage } from '$lib/server/db/schema';
+import { anthropicProvider } from '../../providers/anthropic';
+import { createLogger } from '$lib/server/logger';
+
+const tokenLog = createLogger('ai:chat:token-usage');
+
+/**
+ * Log a single chat LLM invocation to ai_token_usage.
+ *
+ * Called once per completed user message (or per confirmed-action continuation)
+ * so the /admin/ai/usage dashboard reflects interactive chat spend, not just
+ * the cron orchestrator. Cost is derived from the provider's pricing table so
+ * every usage row has a real dollar figure.
+ */
+export async function logChatTokenUsage(params: {
+	runId: string;
+	model: string;
+	inputTokens: number;
+	outputTokens: number;
+	toolsUsed: string[];
+	actionsTaken: number;
+	durationMs: number;
+}): Promise<void> {
+	try {
+		const costCents = anthropicProvider.estimateCost
+			? anthropicProvider.estimateCost(params.inputTokens, params.outputTokens, params.model)
+			: 0;
+		await db.insert(aiTokenUsage).values({
+			agent: 'office_manager',
+			runId: params.runId,
+			provider: 'anthropic',
+			model: params.model,
+			inputTokens: params.inputTokens,
+			outputTokens: params.outputTokens,
+			costCents,
+			toolsUsed: params.toolsUsed,
+			actionsTaken: params.actionsTaken,
+			wasSkipped: false,
+			durationMs: params.durationMs
+		});
+	} catch (e) {
+		tokenLog.warn(
+			{ error: e instanceof Error ? e.message : 'unknown', runId: params.runId },
+			'Failed to log chat token usage'
+		);
+	}
+}
 
 export interface PendingAction {
 	id: string;
@@ -406,7 +452,7 @@ export async function trackActionPerformed(chatId: string, toolName: string): Pr
 export async function generateChatSummary(
 	chatId: string,
 	provider: { complete: (req: { model: string; systemPrompt: string; userPrompt: string; maxTokens: number; temperature: number }) => Promise<{ content: string }> },
-	model = 'claude-sonnet-4-20250514'
+	model = 'claude-haiku-4-5-20251001'
 ): Promise<{ summary: string; topics: string[] }> {
 	const session = await getChatSession(chatId);
 	if (!session) {
