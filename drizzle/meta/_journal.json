@@ -169,6 +169,13 @@
       "when": 1776446360338,
       "tag": "0023_tense_mesmero",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1776500186958,
+      "tag": "0024_open_loners",
+      "breakpoints": true
     }
   ]
 }

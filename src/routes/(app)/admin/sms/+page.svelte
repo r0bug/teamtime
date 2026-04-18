@@ -3,7 +3,10 @@
 
 	export let data: PageData;
 
-	let activeTab: 'overview' | 'delivery' | 'replies' | 'scheduled' = 'overview';
+	let activeTab: 'overview' | 'delivery' | 'replies' | 'scheduled' | 'conversations' | 'help' = 'overview';
+
+	let selectedConvoId: string | null = null;
+	$: selectedConvo = data.conversations?.find((c) => c.id === selectedConvoId) ?? null;
 
 	let testPhone = '';
 	let testResult: { success: boolean; sid?: string; error?: string } | null = null;
@@ -75,7 +78,9 @@
 					{ id: 'overview', label: 'Overview' },
 					{ id: 'delivery', label: 'Delivery Tracking' },
 					{ id: 'replies', label: `Replies & Opt-outs` },
-					{ id: 'scheduled', label: 'Scheduled Jobs' }
+					{ id: 'scheduled', label: 'Scheduled Jobs' },
+					{ id: 'conversations', label: 'AI Conversations' },
+					{ id: 'help', label: 'How to Use' }
 				] as tab}
 					<button
 						on:click={() => activeTab = tab.id}
@@ -86,6 +91,12 @@
 						{tab.label}
 						{#if tab.id === 'replies' && data.optOutCount > 0}
 							<span class="ml-1 px-1.5 py-0.5 rounded-full text-xs bg-red-100 text-red-700">{data.optOutCount}</span>
+						{/if}
+						{#if tab.id === 'conversations'}
+							{@const pendingTotal = (data.conversations ?? []).reduce((sum, c) => sum + c.pendingPinActions, 0)}
+							{#if pendingTotal > 0}
+								<span class="ml-1 px-1.5 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">{pendingTotal} pin</span>
+							{/if}
 						{/if}
 					</button>
 				{/each}
@@ -422,6 +433,174 @@
 						</table>
 					</div>
 				{/if}
+			</div>
+		{/if}
+
+		<!-- AI Conversations Tab -->
+		{#if activeTab === 'conversations'}
+			<div class="bg-white rounded-lg shadow p-6 mb-6">
+				<div class="flex items-center justify-between mb-4">
+					<h2 class="text-lg font-semibold">SMS Office-Manager Conversations</h2>
+					<p class="text-xs text-gray-500">
+						{data.viewerIsAdmin ? 'Showing all SMS chats (admin view)' : 'Showing your SMS chats'}
+					</p>
+				</div>
+
+				{#if (data.conversations ?? []).length === 0}
+					<p class="text-sm text-gray-500">No SMS conversations yet. See "How to Use" tab to get started.</p>
+				{:else}
+					<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+						<!-- Conversation list -->
+						<div class="md:col-span-1 border rounded-lg divide-y max-h-[600px] overflow-y-auto">
+							{#each data.conversations ?? [] as c}
+								<button
+									type="button"
+									on:click={() => (selectedConvoId = c.id)}
+									class="w-full text-left p-3 hover:bg-gray-50 transition-colors {selectedConvoId === c.id ? 'bg-primary-50' : ''}"
+								>
+									<div class="flex items-start justify-between gap-2">
+										<div class="min-w-0 flex-1">
+											<div class="font-medium text-sm truncate">{c.userName}</div>
+											<div class="text-xs text-gray-500 truncate">{c.lastMessagePreview || '(empty)'}</div>
+										</div>
+										<div class="flex flex-col items-end gap-1 flex-shrink-0">
+											{#if c.pendingPinActions > 0}
+												<span class="px-1.5 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">pin</span>
+											{/if}
+											<span class="text-xs text-gray-400 whitespace-nowrap">{formatDate(c.lastMessageAt)}</span>
+										</div>
+									</div>
+								</button>
+							{/each}
+						</div>
+
+						<!-- Transcript -->
+						<div class="md:col-span-2">
+							{#if selectedConvo}
+								<div class="border rounded-lg">
+									<div class="p-3 border-b bg-gray-50">
+										<div class="flex items-center justify-between">
+											<div>
+												<div class="font-medium text-sm">{selectedConvo.userName}</div>
+												<div class="text-xs text-gray-500">
+													{selectedConvo.messageCount} messages · Updated {formatDate(selectedConvo.lastMessageAt)}
+												</div>
+											</div>
+											{#if selectedConvo.pendingPinActions > 0}
+												<span class="px-2 py-1 rounded text-xs bg-amber-100 text-amber-700">
+													{selectedConvo.pendingPinActions} awaiting PIN
+												</span>
+											{/if}
+										</div>
+									</div>
+									<div class="p-3 space-y-3 max-h-[540px] overflow-y-auto">
+										{#each selectedConvo.messages as m}
+											<div class="flex {m.role === 'user' ? 'justify-end' : 'justify-start'}">
+												<div
+													class="max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words {m.role === 'user' ? 'bg-primary-100 text-primary-900' : 'bg-gray-100 text-gray-900'}"
+												>
+													<div class="text-xs opacity-60 mb-1">
+														{m.role === 'user' ? 'User' : 'Office Manager'} · {formatDate(m.timestamp)}
+													</div>
+													{m.content}
+												</div>
+											</div>
+										{/each}
+									</div>
+								</div>
+							{:else}
+								<div class="border rounded-lg p-6 text-center text-sm text-gray-500">
+									Select a conversation on the left to view the transcript.
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Help / How to Use Tab -->
+		{#if activeTab === 'help'}
+			<div class="bg-white rounded-lg shadow p-6 mb-6">
+				<h2 class="text-lg font-semibold mb-4">Texting the Office Manager</h2>
+				<p class="text-sm text-gray-700 mb-4">
+					Admins and managers can text the TeamTime Twilio number and converse with the Office Manager
+					AI just like the web chat — multi-turn, with context carried over within a session.
+				</p>
+
+				<div class="space-y-5">
+					<section>
+						<h3 class="text-sm font-semibold text-gray-900 mb-2">Who can use it</h3>
+						<ul class="text-sm text-gray-700 list-disc list-inside space-y-1">
+							<li>Users with role <strong>admin</strong> or <strong>manager</strong></li>
+							<li>Whose phone number is stored on their profile (match is done on E.164)</li>
+							<li>Not currently locked out (3 wrong PINs → 30 min lockout)</li>
+						</ul>
+					</section>
+
+					<section>
+						<h3 class="text-sm font-semibold text-gray-900 mb-2">How a session works</h3>
+						<ol class="text-sm text-gray-700 list-decimal list-inside space-y-1">
+							<li>Text the TeamTime number in natural language ("who's late right now?")</li>
+							<li>The Office Manager texts back with its answer or proposed action</li>
+							<li>If the action is <strong>destructive</strong>, it replies: <em>"PIN required to confirm: &lt;action&gt;. Reply with your PIN."</em></li>
+							<li>Reply with your 4-8 digit login PIN to approve, or <code>cancel</code> to abort</li>
+							<li>Context persists for 2 hours of inactivity, then a fresh session starts</li>
+						</ol>
+					</section>
+
+					<section>
+						<h3 class="text-sm font-semibold text-gray-900 mb-2">What you can do (no PIN)</h3>
+						<ul class="text-sm text-gray-700 list-disc list-inside space-y-1">
+							<li>View the schedule, see who's clocked in, check available staff</li>
+							<li>Review sales data, query metrics, analyze staffing patterns</li>
+							<li>Get your own permissions, look up past conversations</li>
+							<li>View scheduled SMS jobs and task rules</li>
+						</ul>
+					</section>
+
+					<section>
+						<h3 class="text-sm font-semibold text-gray-900 mb-2">What requires a PIN</h3>
+						<ul class="text-sm text-gray-700 list-disc list-inside space-y-1">
+							<li><strong>Schedule/payroll:</strong> create / update / delete / copy / trade shifts, apply templates, create or edit time entries</li>
+							<li><strong>Tasks:</strong> create / complete / delete tasks, create or toggle task rules, create cash-count or social-media tasks</li>
+							<li><strong>Communication:</strong> send SMS, schedule SMS, cancel scheduled SMS</li>
+							<li><strong>Permissions & discipline:</strong> grant/revoke permissions, run the sales scraper, process inventory photos</li>
+						</ul>
+						<p class="text-xs text-gray-500 mt-2">This list mirrors the confirmation gate already used in the web chat — the PIN replaces the "click to confirm" step.</p>
+					</section>
+
+					<section>
+						<h3 class="text-sm font-semibold text-gray-900 mb-2">Safety guardrails</h3>
+						<ul class="text-sm text-gray-700 list-disc list-inside space-y-1">
+							<li><strong>Rate limit:</strong> 10 inbound messages per 15 minutes per user</li>
+							<li><strong>PIN attempts:</strong> 3 wrong tries → action cancelled + SMS commands locked for 30 minutes</li>
+							<li><strong>PIN expires:</strong> pending actions auto-expire after 30 minutes</li>
+							<li><strong>All activity logged:</strong> inbound/outbound SMS visible on this dashboard; AI actions audited</li>
+							<li><strong>Admin visibility:</strong> admins see every manager's SMS conversation in the AI Conversations tab</li>
+						</ul>
+					</section>
+
+					<section>
+						<h3 class="text-sm font-semibold text-gray-900 mb-2">Example</h3>
+						<div class="text-sm text-gray-700 space-y-2 bg-gray-50 p-3 rounded border">
+							<div><strong>You:</strong> send joe home, excuse his 2pm shift — slow day</div>
+							<div><strong>Office Manager:</strong> PIN required to confirm: Delete Joe Smith's shift on Thu Apr 18, 2:00 PM–10:00 PM. Reply with your PIN (4-8 digits) to approve, or "cancel".</div>
+							<div><strong>You:</strong> 481234</div>
+							<div><strong>Office Manager:</strong> Done. Delete Joe Smith's shift on Thu Apr 18, 2:00 PM–10:00 PM.</div>
+						</div>
+					</section>
+
+					<section>
+						<h3 class="text-sm font-semibold text-gray-900 mb-2">What you can't do over SMS</h3>
+						<ul class="text-sm text-gray-700 list-disc list-inside space-y-1">
+							<li>View images, files, or rich attachments — SMS is text-only</li>
+							<li>Stream long responses — replies are truncated to a few SMS segments</li>
+							<li>Receive raw tool output — the Office Manager always summarizes</li>
+							<li>Use it if you are <strong>not</strong> an admin or manager — regular staff are ignored</li>
+						</ul>
+					</section>
+				</div>
 			</div>
 		{/if}
 

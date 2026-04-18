@@ -1,9 +1,10 @@
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { isManager } from '$lib/server/auth/roles';
+import { isAdmin, isManager } from '$lib/server/auth/roles';
 import { isTwilioConfigured } from '$lib/server/twilio';
-import { db, jobs, users, smsLogs } from '$lib/server/db';
-import { eq, desc, sql, and } from 'drizzle-orm';
+import { db, jobs, users, smsLogs, officeManagerChats, officeManagerPendingActions } from '$lib/server/db';
+import { eq, desc, sql, and, gte, inArray } from 'drizzle-orm';
+import type { OfficeManagerMessage } from '$lib/server/db/schema';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!isManager(locals.user)) {
@@ -149,6 +150,81 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.from(smsLogs)
 		.where(and(eq(smsLogs.direction, 'inbound'), eq(smsLogs.status, 'opt_out')));
 
+	// --- SMS Office-Manager Conversations ---
+	// Admins see all channel='sms' chats; managers see only their own.
+	const userIsAdmin = isAdmin(locals.user);
+	const conversationFilter = userIsAdmin
+		? eq(officeManagerChats.channel, 'sms')
+		: and(eq(officeManagerChats.channel, 'sms'), eq(officeManagerChats.userId, locals.user!.id));
+
+	const smsChats = await db
+		.select({
+			id: officeManagerChats.id,
+			userId: officeManagerChats.userId,
+			title: officeManagerChats.title,
+			messages: officeManagerChats.messages,
+			createdAt: officeManagerChats.createdAt,
+			updatedAt: officeManagerChats.updatedAt
+		})
+		.from(officeManagerChats)
+		.where(conversationFilter)
+		.orderBy(desc(officeManagerChats.updatedAt))
+		.limit(25);
+
+	// Pending actions for those chats (to show "awaiting PIN" indicators)
+	const chatIds = smsChats.map((c) => c.id);
+	const pendingByChat = new Map<string, number>();
+	if (chatIds.length > 0) {
+		const pending = await db
+			.select({
+				chatId: officeManagerPendingActions.chatId,
+				count: sql<number>`count(*)::int`
+			})
+			.from(officeManagerPendingActions)
+			.where(
+				and(
+					inArray(officeManagerPendingActions.chatId, chatIds),
+					eq(officeManagerPendingActions.status, 'pending'),
+					eq(officeManagerPendingActions.requiresPin, true),
+					gte(officeManagerPendingActions.expiresAt, new Date())
+				)
+			)
+			.groupBy(officeManagerPendingActions.chatId);
+		for (const row of pending) {
+			pendingByChat.set(row.chatId, Number(row.count));
+		}
+	}
+
+	// Enrich with user name
+	const chatUserIds = [...new Set(smsChats.map((c) => c.userId))];
+	const chatUserNames = new Map<string, string>();
+	if (chatUserIds.length > 0) {
+		const rows = await db
+			.select({ id: users.id, name: users.name, role: users.role, smsLockedUntil: users.smsLockedUntil })
+			.from(users)
+			.where(inArray(users.id, chatUserIds));
+		for (const r of rows) {
+			chatUserNames.set(r.id, r.name);
+		}
+	}
+
+	const conversations = smsChats.map((c) => {
+		const msgs = (c.messages || []) as OfficeManagerMessage[];
+		const lastMsg = msgs[msgs.length - 1];
+		return {
+			id: c.id,
+			userId: c.userId,
+			userName: chatUserNames.get(c.userId) || 'Unknown',
+			title: c.title,
+			messageCount: msgs.length,
+			lastMessageAt: c.updatedAt,
+			lastMessagePreview: lastMsg ? lastMsg.content.slice(0, 160) : '',
+			lastMessageRole: lastMsg?.role ?? null,
+			pendingPinActions: pendingByChat.get(c.id) ?? 0,
+			messages: msgs.slice(-30) // last 30 messages for the drawer
+		};
+	});
+
 	return {
 		configured,
 		stats,
@@ -162,6 +238,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		deliveryLog: enrichedDeliveryLog,
 		deliveryStats: dStats,
 		inboundMessages: enrichedInbound,
-		optOutCount: Number(optOutCount[0]?.count || 0)
+		optOutCount: Number(optOutCount[0]?.count || 0),
+		conversations,
+		viewerIsAdmin: userIsAdmin
 	};
 };

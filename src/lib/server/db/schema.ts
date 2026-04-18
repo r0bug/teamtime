@@ -339,6 +339,7 @@ export const users = pgTable('users', {
 	twoFactorEnabled: boolean('two_factor_enabled').notNull().default(true),
 	canListOnEbay: boolean('can_list_on_ebay').notNull().default(false), // User can claim eBay listing tasks
 	includeInLaborCost: boolean('include_in_labor_cost').notNull().default(true), // Include hours in sales-screen labor cost calc
+	smsLockedUntil: timestamp('sms_locked_until', { withTimezone: true }), // If set, SMS office-manager commands are locked (after 3 failed PIN attempts)
 	isActive: boolean('is_active').notNull().default(true),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
@@ -1337,9 +1338,12 @@ export const officeManagerChats = pgTable('office_manager_chats', {
 	summary: text('summary'), // AI-generated summary for long-term memory
 	topics: jsonb('topics').$type<string[]>().default([]), // Key topics for searchability
 	actionsPerformed: jsonb('actions_performed').$type<string[]>().default([]), // Tools used in this chat
+	channel: text('channel').notNull().default('web'), // 'web' | 'sms' — how the user is talking to the office manager
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => ({
+	userChannelIdx: index('office_manager_chats_user_channel_idx').on(table.userId, table.channel, table.updatedAt)
+}));
 
 // Office Manager Message type
 export interface OfficeManagerMessage {
@@ -1365,6 +1369,8 @@ export const officeManagerPendingActions = pgTable('office_manager_pending_actio
 	toolArgs: jsonb('tool_args').$type<Record<string, unknown>>().notNull(),
 	confirmationMessage: text('confirmation_message').notNull(),
 	status: pendingActionStatusEnum('status').notNull().default('pending'),
+	requiresPin: boolean('requires_pin').notNull().default(false), // SMS-originated destructive actions require PIN to approve
+	pinAttempts: integer('pin_attempts').notNull().default(0), // Wrong PIN attempts for this action
 	executionResult: jsonb('execution_result').$type<Record<string, unknown>>(),
 	executedAt: timestamp('executed_at', { withTimezone: true }),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

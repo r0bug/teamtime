@@ -2717,7 +2717,7 @@ The Gamification Config page allows administrators to tune game mechanics (point
 
 ## SMS Dashboard & Delivery Tracking
 
-Full SMS management dashboard at `/admin/sms` with four tabs:
+Full SMS management dashboard at `/admin/sms` with six tabs:
 
 ### Overview Tab
 - **Configuration status** — green/red indicator for Twilio credentials
@@ -2743,10 +2743,54 @@ Full SMS management dashboard at `/admin/sms` with four tabs:
 - **Job queue stats** — pending, running, completed, failed, cancelled counts
 - **Scheduled SMS history** — all AI-scheduled messages with payload and result details
 
+### AI Conversations Tab
+- **SMS Office-Manager threads** — admin/manager SMS chats with the Office Manager AI
+- **Admin view** — admins see every manager's SMS conversation; managers see only their own
+- **Transcript drawer** — select a conversation to see the full message history inline
+- **PIN-pending indicator** — amber badge shows actions awaiting PIN confirmation per chat
+
+### How to Use Tab
+- In-app documentation for using SMS to talk to the Office Manager
+- Explains who's eligible, how multi-turn sessions work, what's allowed without a PIN, what requires a PIN, safety guardrails, and an example flow
+- Mirrors this FEATURES section for users who prefer in-app help
+
 ### Phone Number Validation
 - Phone numbers are validated and normalized to E.164 format when saved on user profiles
 - Accepts formats: `(555) 123-4567`, `555-123-4567`, `5551234567`, `+15551234567`
 - Invalid numbers are rejected with a clear error message
+
+### SMS Office-Manager (two-way AI chat via SMS)
+
+Admins and managers can text the TeamTime Twilio number and have a full multi-turn conversation with the Office Manager AI — the same agent available in the web chat. Regular staff messages (non-clock-out-reply) are ignored.
+
+**Session model**
+- One rolling SMS chat session per user, keyed on `officeManagerChats.channel = 'sms'`
+- Session extends on each message; after 2 hours of inactivity a fresh session starts
+- Transcripts are visible on the `/admin/sms` **AI Conversations** tab
+
+**Access control**
+- Sender phone number must match `users.phone` (normalized to E.164)
+- Sender must have role `admin` or `manager`
+- User must be active and not currently SMS-locked
+
+**Destructive action gating (PIN)**
+- Any tool with `requiresConfirmation: true` in the web chat requires a PIN over SMS
+- Coverage includes: schedule create/update/delete/copy/trade, template apply, time entry create/edit, task create/complete/delete, task rules, all SMS send/schedule/cancel, permission grants, inventory photo processing, sales scraper
+- The AI replies: *"PIN required to confirm: &lt;summary&gt;. Reply with your PIN (4-8 digits) to approve, or 'cancel'."*
+- User replies with their 4-8 digit login PIN (same as used for web login); verified with Argon2
+
+**Guardrails**
+- **Rate limit:** 10 inbound messages per 15 minutes per user (counted from `smsLogs`)
+- **PIN attempts:** 3 wrong tries → pending action auto-rejected + SMS commands locked for 30 minutes via `users.sms_locked_until`
+- **Pending expiry:** 30 minutes — stale PIN prompts won't silently fire later
+- **Reply truncation:** outbound SMS responses capped to ~1400 chars (several segments)
+- **Audit trail:** every inbound/outbound SMS logged in `smsLogs`; every executed AI action logged in `aiActions`
+
+**Key files**
+- `src/lib/server/services/sms-chat-service.ts` — session lookup, PIN verify, rate limit, lockout
+- `src/routes/api/sms/webhook/inbound/+server.ts` — routes admin/manager messages to `processUserMessage` after clock-out-reply parsing fails
+- `src/routes/(app)/admin/sms/+page.svelte` — AI Conversations + How to Use tabs
+- Schema: `office_manager_chats.channel`, `office_manager_pending_actions.requires_pin` / `pin_attempts`, `users.sms_locked_until`
 
 ### Job Processing Fix
 - Scheduled SMS jobs are now processed every 15 minutes via the clock cron endpoint

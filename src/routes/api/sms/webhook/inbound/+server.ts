@@ -17,7 +17,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db, smsLogs, users, clockOutWarnings, timeEntries } from '$lib/server/db';
 import { eq, and, gte, isNull, isNotNull, desc } from 'drizzle-orm';
-import { validateTwilioSignature, formatPhoneToE164 } from '$lib/server/twilio';
+import { validateTwilioSignature, formatPhoneToE164, sendSMS } from '$lib/server/twilio';
 import { env } from '$env/dynamic/private';
 import { createLogger } from '$lib/server/logger';
 import { awardClockOutPoints } from '$lib/server/services/points-service';
@@ -26,6 +26,25 @@ import { auditClockEvent } from '$lib/server/services/audit-service';
 import { parseTimeReply } from '$lib/server/utils/parse-time-reply';
 import { SMS_MESSAGES } from '$lib/server/services/clock-out-warning-service';
 import { toPacificTimeString } from '$lib/server/utils/timezone';
+import {
+	getOrCreateSmsChat,
+	isSmsLocked,
+	checkSmsRateLimit,
+	findAwaitingPinAction,
+	verifyUserPin,
+	recordPinAttempt,
+	markRecentActionsRequirePin,
+	SMS_PIN_MAX_ATTEMPTS
+} from '$lib/server/services/sms-chat-service';
+import {
+	processUserMessage,
+	executeConfirmedAction,
+	approvePendingAction,
+	rejectPendingAction,
+	getPendingAction
+} from '$lib/ai/office-manager/chat';
+import { isManager } from '$lib/server/auth/roles';
+import { validatePinFormat } from '$lib/server/auth/pin';
 
 const log = createLogger('api:sms:webhook:inbound');
 
@@ -393,6 +412,149 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		}
 	}
 
+	// --- Office-Manager SMS channel ---
+	// Admins and managers can converse with the Office Manager AI via SMS.
+	// Destructive actions (any tool that requires confirmation in the web chat) require
+	// the user to reply with their login PIN to approve.
+	if (userId && !isOptOut) {
+		try {
+			const [userRow] = await db
+				.select({ id: users.id, role: users.role, name: users.name, isActive: users.isActive })
+				.from(users)
+				.where(eq(users.id, userId))
+				.limit(1);
+
+			if (userRow?.isActive && isManager(userRow as Parameters<typeof isManager>[0])) {
+				// Fire-and-forget: Twilio only allows ~15s and the LLM takes longer.
+				// Respond with empty TwiML immediately; we'll send outbound SMS when ready.
+				handleOfficeManagerInbound(userRow.id, from, body.trim()).catch((err) => {
+					log.error({ err, userId: userRow.id }, 'office-manager SMS handler error');
+				});
+				return twimlEmpty();
+			}
+		} catch (err) {
+			log.error({ error: err, userId }, 'Error checking office-manager SMS eligibility');
+		}
+	}
+
 	// Return empty TwiML response (no matching reply context)
 	return twimlEmpty();
 };
+
+/** Truncate a reply to fit comfortably in a few SMS segments. */
+function truncateForSms(body: string, max = 1400): string {
+	if (body.length <= max) return body;
+	return body.slice(0, max - 3) + '...';
+}
+
+/**
+ * Handle an inbound SMS from a manager/admin as an office-manager command.
+ * Called fire-and-forget; sends outbound SMS with the reply when done.
+ */
+async function handleOfficeManagerInbound(userId: string, fromPhone: string, text: string): Promise<void> {
+	// Lockout check
+	const lockStatus = await isSmsLocked(userId);
+	if (lockStatus.locked) {
+		const untilStr = lockStatus.until ? toPacificTimeString(lockStatus.until) : 'soon';
+		await sendSMS(fromPhone, `SMS commands locked until ~${untilStr} (too many wrong PIN attempts). Use the web app.`);
+		return;
+	}
+
+	// Rate limit
+	const rateLimit = await checkSmsRateLimit(userId);
+	if (!rateLimit.allowed) {
+		await sendSMS(fromPhone, `Rate limit hit. Try again in a few minutes.`);
+		log.warn({ userId, fromPhone }, 'SMS office-manager rate limit exceeded');
+		return;
+	}
+
+	// Get or create the active SMS chat session
+	const { id: chatId, createdNew } = await getOrCreateSmsChat(userId);
+	if (createdNew) {
+		log.info({ userId, chatId }, 'Created new SMS chat session');
+	}
+
+	// --- Check for a pending PIN-required action. If one exists, treat this
+	//     message as a PIN (or a cancel). ---
+	const awaiting = await findAwaitingPinAction(chatId);
+	if (awaiting) {
+		const cleaned = text.trim();
+		const lowerCleaned = cleaned.toLowerCase();
+
+		if (lowerCleaned === 'cancel' || lowerCleaned === 'no' || lowerCleaned === 'n') {
+			await rejectPendingAction(awaiting.id);
+			await sendSMS(fromPhone, `Cancelled. No action taken.`);
+			return;
+		}
+
+		if (!validatePinFormat(cleaned)) {
+			await sendSMS(
+				fromPhone,
+				`Waiting for PIN to confirm: ${truncateForSms(awaiting.confirmationMessage, 200)}\nReply with your PIN (4-8 digits), or "cancel".`
+			);
+			return;
+		}
+
+		const ok = await verifyUserPin(userId, cleaned);
+		if (!ok) {
+			const result = await recordPinAttempt(awaiting.id, userId, false);
+			if (result.lockedOut) {
+				await sendSMS(
+					fromPhone,
+					`Wrong PIN. Action cancelled. SMS commands locked for 30 min after ${SMS_PIN_MAX_ATTEMPTS} wrong attempts.`
+				);
+			} else {
+				await sendSMS(
+					fromPhone,
+					`Wrong PIN. ${result.attemptsRemaining} attempt${result.attemptsRemaining === 1 ? '' : 's'} left. Reply with your PIN or "cancel".`
+				);
+			}
+			return;
+		}
+
+		// PIN correct — execute the action
+		const pending = await getPendingAction(awaiting.id);
+		if (!pending) {
+			await sendSMS(fromPhone, `That pending action is no longer available.`);
+			return;
+		}
+		const exec = await executeConfirmedAction(pending.id, pending, userId);
+		// Mark approved regardless of success so it doesn't re-trigger
+		await approvePendingAction(pending.id, (exec.result as Record<string, unknown>) ?? {});
+		if (exec.success) {
+			await sendSMS(fromPhone, `Done. ${truncateForSms(awaiting.confirmationMessage, 1000)}`);
+		} else {
+			const err = (exec.result as { error?: string })?.error ?? 'unknown error';
+			await sendSMS(fromPhone, `Action failed: ${truncateForSms(err, 300)}`);
+		}
+		return;
+	}
+
+	// --- Normal conversation turn ---
+	const startMs = Date.now();
+	try {
+		const result = await processUserMessage(chatId, text, undefined, userId);
+
+		// Flag any newly-created pending actions as PIN-required (SMS channel policy)
+		const flagged = await markRecentActionsRequirePin(chatId, startMs - 1_000);
+		if (flagged > 0) {
+			log.info({ userId, chatId, flagged }, 'Flagged SMS pending actions as requiring PIN');
+		}
+
+		// Build reply. If the LLM scheduled destructive actions, give the user the
+		// PIN prompt instead of the verbose response.
+		let reply: string;
+		if (result.pendingActions.length > 0) {
+			const first = result.pendingActions[0];
+			const extra = result.pendingActions.length > 1 ? ` (+${result.pendingActions.length - 1} more pending)` : '';
+			reply = `PIN required to confirm:\n${first.confirmationMessage}${extra}\n\nReply with your PIN (4-8 digits) to approve, or "cancel".`;
+		} else {
+			reply = result.response || '(no response)';
+		}
+
+		await sendSMS(fromPhone, truncateForSms(reply));
+	} catch (err) {
+		log.error({ err, userId, chatId }, 'Office-manager SMS processing failed');
+		await sendSMS(fromPhone, `Sorry, something went wrong processing that. Try again or use the web app.`);
+	}
+}
