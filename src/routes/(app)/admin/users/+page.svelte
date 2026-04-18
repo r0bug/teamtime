@@ -103,6 +103,7 @@
 						{#if data.showLaborCost}
 							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" title="Rounded overhead cost per hour (pay + employer match)">Labor Cost</th>
 						{/if}
+						<th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider" title="Include this user's hours in the Sales screen labor cost calculation">In Labor Calc</th>
 						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">2FA</th>
 						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
 						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -128,6 +129,22 @@
 									{user.hourlyRate ? `$${user.hourlyRate}/hr` : '-'}
 								</td>
 							{/if}
+							<td class="px-4 py-3 whitespace-nowrap text-center">
+								<form method="POST" action="?/toggleLaborCost" use:enhance class="inline">
+									<input type="hidden" name="userId" value={user.id} />
+									<input type="hidden" name="include" value={!user.includeInLaborCost} />
+									<button
+										type="submit"
+										class="w-5 h-5 rounded border inline-flex items-center justify-center {user.includeInLaborCost ? 'bg-primary-600 border-primary-600 text-white' : 'bg-white border-gray-300 text-transparent'} hover:opacity-80"
+										title={user.includeInLaborCost ? 'Included in labor cost — click to exclude' : 'Excluded from labor cost — click to include'}
+										aria-label="Toggle include in labor cost"
+									>
+										<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+										</svg>
+									</button>
+								</form>
+							</td>
 							<td class="px-4 py-3 whitespace-nowrap">
 								{#if data.isAdmin}
 									<form method="POST" action="?/toggleTwoFactor" use:enhance class="inline">

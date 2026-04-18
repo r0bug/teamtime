@@ -151,7 +151,8 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		.where(
 			and(
 				lt(timeEntries.clockIn, dayEnd),
-				or(isNull(timeEntries.clockOut), gt(timeEntries.clockOut, dayStart))
+				or(isNull(timeEntries.clockOut), gt(timeEntries.clockOut, dayStart)),
+				eq(users.includeInLaborCost, true)
 			)
 		);
 

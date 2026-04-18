@@ -1157,25 +1157,27 @@ The Sales Dashboard provides visibility into daily sales, vendor performance, an
 
 #### Summary Dashboard (`/sales`)
 
-**Summary Cards**:
-- **Total Retained**: Sum of retained earnings for the period
+**Range Control**: A page-level range selector (7 / 14 / 30 / 60 / 90 / 180 days, 1 year, 2 years) drives the server-side fetch via `?days=N`, allowed values are clamped server-side to prevent unbounded queries.
+
+**Summary Cards** (six, adapt to the selected range):
 - **Total Sales**: Gross sales for the period
-- **Avg Daily Retained**: Average daily retained earnings
-- **Avg Daily Sales**: Average gross daily sales
+- **Total Retained**: Sum of retained earnings for the period
+- **Total Labor**: Labor cost from `time_entries.clockIn/clockOut × users.hourly_rate`, excluding users whose `include_in_labor_cost` flag is off
+- **Net (Retained − Labor)**: Period-level profit after labor, green when ≥ 0 else red
+- **Avg Daily Sales** / **Avg Daily Net**
 
 **View Modes**:
 
 **Daily View**:
-- Interactive line chart showing Sales vs Retained over time
-- Configurable date range (7, 14, or 30 days)
-- Hover tooltips on data points
-- Detailed table with date, sales, vendor payout, retained, and vendor count
+- Interactive line chart with three series: **Sales** (blue), **Retained** (green), **Labor Cost** (dashed red)
+- Hover tooltips show all four of sales / retained / labor / net per day
+- Detailed table: date, sales, vendor payout, retained, labor, net, and vendor count
+- Window selector (7–730 days, capped at the server range) adjusts the chart viewport client-side
 - **Clickable dates** link to the detail drill-down page
 
 **Weekly View**:
 - Horizontal bar chart aggregating by week
-- Shows total retained with gradient bars
-- Displays number of days with data per week
+- Each week row shows Sales / Labor / Net alongside the bar
 
 **Vendor View**:
 - Top vendors ranked by total sales
@@ -1286,6 +1288,17 @@ The Office Manager's `run_sales_scraper` tool supports two methods:
 - `method: 'scraper'` — Legacy Python web scraper (fallback)
 
 Also has `view_sales` tool to query any date's sales data, calculate profitability, and show top vendors.
+
+### Labor Cost Inclusion
+
+Per-user admin-controlled flag determines whether an employee's clocked hours count toward the Sales screen's Labor Cost and Net calculations.
+
+- **Column**: `users.include_in_labor_cost` (boolean, default `true`)
+- **Admin UI**:
+  - `/admin/users` list → **In Labor Calc** column with inline checkbox per user
+  - `/admin/users/[id]` edit page → "Include in Labor Cost" checkbox under Special Permissions
+- **Scope**: Both `/sales` (daily/weekly rollups) and `/sales/detail` (hourly breakdown) honor the flag
+- **Use case**: Exclude employees tied to a separate business unit (e.g. Yakima Networking staff) from retail labor metrics without losing their time entries or payroll data
 
 ### Files
 

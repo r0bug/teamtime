@@ -272,15 +272,15 @@
 												{msg.toNumber}
 											{/if}
 										</td>
-										<td class="py-2 pr-4 max-w-[250px] truncate text-gray-600" title={msg.body || ''}>
+										<td class="py-2 pr-4 text-gray-600 align-top whitespace-pre-wrap break-words min-w-[240px] max-w-[480px]">
 											{msg.body || '-'}
 										</td>
 										<td class="py-2 pr-4 whitespace-nowrap text-gray-500 text-xs">{formatDate(msg.createdAt)}</td>
 										<td class="py-2 pr-4 whitespace-nowrap text-gray-500 text-xs">{formatDate(msg.statusUpdatedAt)}</td>
-										<td class="py-2 text-xs">
+										<td class="py-2 text-xs align-top whitespace-pre-wrap break-words max-w-[320px]">
 											{#if msg.errorCode || msg.errorMessage}
-												<span class="text-red-600" title="{msg.errorCode}: {msg.errorMessage}">
-													{msg.errorCode || ''} {msg.errorMessage ? msg.errorMessage.slice(0, 30) : ''}
+												<span class="text-red-600">
+													{msg.errorCode ? msg.errorCode + ' ' : ''}{msg.errorMessage || ''}
 												</span>
 											{:else}
 												-
@@ -402,7 +402,7 @@
 											</span>
 										</td>
 										<td class="py-2 pr-4 whitespace-nowrap">{getPayloadSummary(job.payload)}</td>
-										<td class="py-2 pr-4 max-w-[200px] truncate" title={job.payload?.message ? String(job.payload.message) : ''}>
+										<td class="py-2 pr-4 align-top whitespace-pre-wrap break-words min-w-[240px] max-w-[480px]">
 											{job.payload?.message || '-'}
 										</td>
 										<td class="py-2 pr-4 whitespace-nowrap text-gray-500 text-xs">{formatDate(job.runAt)}</td>

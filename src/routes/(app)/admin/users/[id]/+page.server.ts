@@ -20,6 +20,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			role: users.role,
 			isActive: users.isActive,
 			canListOnEbay: users.canListOnEbay,
+			includeInLaborCost: users.includeInLaborCost,
 			avatarUrl: users.avatarUrl,
 			primaryLocationId: users.primaryLocationId,
 			createdAt: users.createdAt
@@ -56,6 +57,7 @@ export const actions: Actions = {
 		const role = formData.get('role')?.toString() as 'manager' | 'purchaser' | 'staff';
 		const isActive = formData.get('isActive') === 'on';
 		const canListOnEbay = formData.get('canListOnEbay') === 'on';
+		const includeInLaborCost = formData.get('includeInLaborCost') === 'on';
 		const primaryLocationId = formData.get('primaryLocationId')?.toString() || null;
 
 		if (!email || !username || !name || !role) {
@@ -98,6 +100,7 @@ export const actions: Actions = {
 				role,
 				isActive,
 				canListOnEbay,
+				includeInLaborCost,
 				primaryLocationId,
 				updatedAt: new Date()
 			})

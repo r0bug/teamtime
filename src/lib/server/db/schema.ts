@@ -338,6 +338,7 @@ export const users = pgTable('users', {
 	hourlyRate: decimal('hourly_rate', { precision: 10, scale: 2 }),
 	twoFactorEnabled: boolean('two_factor_enabled').notNull().default(true),
 	canListOnEbay: boolean('can_list_on_ebay').notNull().default(false), // User can claim eBay listing tasks
+	includeInLaborCost: boolean('include_in_labor_cost').notNull().default(true), // Include hours in sales-screen labor cost calc
 	isActive: boolean('is_active').notNull().default(true),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()

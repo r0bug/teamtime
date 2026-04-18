@@ -120,6 +120,8 @@ function getToolPermissionsFromCapabilities(capabilities: PermissionsContext['ca
 		{ tool: 'run_sales_scraper', allowed: capabilities.canAccessAdmin, reason: 'Requires manager role' },
 		{ tool: 'view_user_permissions', allowed: capabilities.canAccessAdmin, reason: 'Requires manager role' },
 		{ tool: 'view_pending_approvals', allowed: capabilities.canAccessAdmin, reason: 'Requires manager role' },
+		{ tool: 'edit_time_entry', allowed: capabilities.canAccessAdmin, reason: 'Requires manager role' },
+		{ tool: 'create_time_entry', allowed: capabilities.canAccessAdmin, reason: 'Requires manager role' },
 		// Admin required
 		{ tool: 'grant_temporary_permission', allowed: capabilities.canManagePermissions, reason: 'Requires admin role' },
 		{ tool: 'change_user_type_temporarily', allowed: capabilities.canManagePermissions, reason: 'Requires admin role' },

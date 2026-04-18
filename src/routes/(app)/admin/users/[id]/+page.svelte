@@ -155,6 +155,18 @@
 									<p class="text-sm text-gray-500">Allow this user to claim and complete eBay listing tasks</p>
 								</div>
 							</label>
+							<label class="flex items-center gap-3">
+								<input
+									type="checkbox"
+									name="includeInLaborCost"
+									checked={user.includeInLaborCost}
+									class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+								/>
+								<div>
+									<span class="font-medium text-gray-900">Include in Labor Cost</span>
+									<p class="text-sm text-gray-500">Count this user's hours toward the labor cost shown on the Sales screen</p>
+								</div>
+							</label>
 						</div>
 					</div>
 

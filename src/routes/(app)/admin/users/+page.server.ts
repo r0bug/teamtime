@@ -30,6 +30,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			role: users.role,
 			isActive: users.isActive,
 			hourlyRate: users.hourlyRate,
+			includeInLaborCost: users.includeInLaborCost,
 			twoFactorEnabled: users.twoFactorEnabled,
 			createdAt: users.createdAt
 		})
@@ -82,6 +83,31 @@ export const actions: Actions = {
 		} catch (error) {
 			log.error({ error, userId }, 'Error updating user');
 			return fail(500, { error: 'Failed to update user' });
+		}
+	},
+
+	toggleLaborCost: async ({ request, locals }) => {
+		if (!isManager(locals.user)) {
+			return fail(403, { error: 'Not authorized' });
+		}
+
+		const formData = await request.formData();
+		const userId = formData.get('userId') as string;
+		const include = formData.get('include') === 'true';
+
+		if (!userId) {
+			return fail(400, { error: 'User ID required' });
+		}
+
+		try {
+			await db
+				.update(users)
+				.set({ includeInLaborCost: include, updatedAt: new Date() })
+				.where(eq(users.id, userId));
+			return { success: true, message: 'Labor cost inclusion updated' };
+		} catch (error) {
+			log.error({ error, userId, include }, 'Error toggling labor cost inclusion');
+			return fail(500, { error: 'Failed to update labor cost inclusion' });
 		}
 	},
 

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
@@ -7,8 +9,23 @@
 	// View mode: daily, weekly, vendor
 	let viewMode: 'daily' | 'weekly' | 'vendor' = 'daily';
 
-	// Date range filter
+	// Server-fetched range (days)
+	$: serverRange = data.rangeDays;
+	let rangeSelection = data.rangeDays;
+	$: if (rangeSelection !== data.rangeDays) rangeSelection = data.rangeDays;
+
+	function changeRange(e: Event) {
+		const val = parseInt((e.target as HTMLSelectElement).value, 10);
+		const url = new URL($page.url);
+		url.searchParams.set('days', String(val));
+		goto(url.pathname + '?' + url.searchParams.toString(), { noScroll: true });
+	}
+
+	// Client-side daily chart window (within the server-fetched range)
 	let daysToShow = 14;
+	$: if (daysToShow > serverRange) daysToShow = serverRange;
+
+	$: clientWindowOptions = [7, 14, 30, 60, 90, 180, 365, 730].filter((n) => n <= serverRange);
 
 	$: filteredDailyData = data.salesData.slice(-daysToShow);
 	$: filteredWeeklyData = data.weeklyData;
@@ -17,8 +34,11 @@
 	const chartHeight = 200;
 	const chartPadding = { top: 20, right: 20, bottom: 30, left: 60 };
 
-	// Calculate chart scales for daily data
-	$: dailyMaxValue = Math.max(...filteredDailyData.map(d => Math.max(d.totalSales, d.totalRetained)), 1);
+	// Calculate chart scales for daily data (include labor — typically small vs. sales)
+	$: dailyMaxValue = Math.max(
+		...filteredDailyData.map(d => Math.max(d.totalSales, d.totalRetained, d.labor)),
+		1
+	);
 	$: dailyChartWidth = browser ? Math.min(800, window.innerWidth - 48) : 800;
 
 	// SVG path generators
@@ -99,7 +119,7 @@
 	}
 
 	// Tooltip state
-	let tooltipData: { x: number; y: number; date: string; sales: number; retained: number } | null = null;
+	let tooltipData: { x: number; y: number; date: string; sales: number; retained: number; labor: number; net: number } | null = null;
 
 	function showTooltip(event: MouseEvent, day: typeof filteredDailyData[0], index: number) {
 		const rect = (event.target as Element).getBoundingClientRect();
@@ -108,7 +128,9 @@
 			y: rect.top - 10,
 			date: day.date,
 			sales: day.totalSales,
-			retained: day.totalRetained
+			retained: day.totalRetained,
+			labor: day.labor,
+			net: day.net
 		};
 	}
 
@@ -131,34 +153,60 @@
 			</svg>
 			<span class="text-gray-900">Sales</span>
 		</div>
-		<h1 class="text-2xl font-bold text-gray-900">Sales Dashboard</h1>
-		<p class="text-gray-600">Track daily and weekly sales performance</p>
+		<div class="flex items-end justify-between gap-4 flex-wrap">
+			<div>
+				<h1 class="text-2xl font-bold text-gray-900">Sales Dashboard</h1>
+				<p class="text-gray-600">Track daily and weekly sales performance</p>
+			</div>
+			<label class="flex items-center gap-2 text-sm text-gray-700">
+				<span class="whitespace-nowrap">Range:</span>
+				<select
+					value={rangeSelection}
+					on:change={changeRange}
+					class="text-sm border-gray-300 rounded-md shadow-sm focus:border-primary-500 focus:ring-primary-500"
+				>
+					{#each data.allowedRangeDays as n}
+						<option value={n}>
+							{n >= 365 ? (n === 365 ? '1 year' : '2 years') : `${n} days`}
+						</option>
+					{/each}
+				</select>
+			</label>
+		</div>
 	</div>
 
 	<!-- Summary Cards -->
-	<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-		<div class="card">
-			<div class="card-body text-center">
-				<p class="text-2xl lg:text-3xl font-bold text-green-600">
-					{formatCurrency(data.summary.totalRetained)}
-				</p>
-				<p class="text-sm text-gray-600">Total Retained ({data.summary.daysWithData} days)</p>
-			</div>
-		</div>
+	<div class="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
 		<div class="card">
 			<div class="card-body text-center">
 				<p class="text-2xl lg:text-3xl font-bold text-blue-600">
 					{formatCurrency(data.summary.totalSales)}
 				</p>
-				<p class="text-sm text-gray-600">Total Sales</p>
+				<p class="text-sm text-gray-600">Total Sales ({data.summary.daysWithData} days)</p>
 			</div>
 		</div>
 		<div class="card">
 			<div class="card-body text-center">
 				<p class="text-2xl lg:text-3xl font-bold text-green-600">
-					{formatCurrency(data.summary.avgDailyRetained)}
+					{formatCurrency(data.summary.totalRetained)}
 				</p>
-				<p class="text-sm text-gray-600">Avg Daily Retained</p>
+				<p class="text-sm text-gray-600">Total Retained</p>
+			</div>
+		</div>
+		<div class="card">
+			<div class="card-body text-center">
+				<p class="text-2xl lg:text-3xl font-bold text-red-600">
+					{formatCurrency(data.summary.totalLabor)}
+				</p>
+				<p class="text-sm text-gray-600">Total Labor</p>
+			</div>
+		</div>
+		<div class="card">
+			<div class="card-body text-center">
+				<p class="text-2xl lg:text-3xl font-bold {data.summary.totalNet >= 0 ? 'text-emerald-600' : 'text-red-700'}">
+					{formatCurrency(data.summary.totalNet)}
+				</p>
+				<p class="text-sm text-gray-600">Net (Retained − Labor)</p>
 			</div>
 		</div>
 		<div class="card">
@@ -167,6 +215,14 @@
 					{formatCurrency(data.summary.avgDailySales)}
 				</p>
 				<p class="text-sm text-gray-600">Avg Daily Sales</p>
+			</div>
+		</div>
+		<div class="card">
+			<div class="card-body text-center">
+				<p class="text-2xl lg:text-3xl font-bold {data.summary.avgDailyNet >= 0 ? 'text-emerald-600' : 'text-red-700'}">
+					{formatCurrency(data.summary.avgDailyNet)}
+				</p>
+				<p class="text-sm text-gray-600">Avg Daily Net</p>
 			</div>
 		</div>
 	</div>
@@ -212,9 +268,9 @@
 						bind:value={daysToShow}
 						class="text-sm border-gray-300 rounded-md shadow-sm focus:border-primary-500 focus:ring-primary-500"
 					>
-						<option value={7}>Last 7 days</option>
-						<option value={14}>Last 14 days</option>
-						<option value={30}>Last 30 days</option>
+						{#each clientWindowOptions as n}
+							<option value={n}>Last {n} days</option>
+						{/each}
 					</select>
 				</div>
 
@@ -276,6 +332,18 @@
 							stroke="#10b981"
 							stroke-width="2"
 						/>
+						<path
+							d={generateLinePath(
+								filteredDailyData.map((d) => ({ value: d.labor })),
+								dailyMaxValue,
+								dailyChartWidth,
+								chartHeight
+							)}
+							fill="none"
+							stroke="#ef4444"
+							stroke-width="2"
+							stroke-dasharray="4 3"
+						/>
 
 						<!-- Data points -->
 						{#each filteredDailyData as day, i}
@@ -303,6 +371,12 @@
 
 							<!-- Retained point -->
 							<circle cx={x} cy={yRetained} r="4" fill="#10b981" />
+							<!-- Labor point -->
+							{@const yLabor =
+								chartPadding.top +
+								(chartHeight - chartPadding.top - chartPadding.bottom) -
+								(day.labor / dailyMaxValue) * (chartHeight - chartPadding.top - chartPadding.bottom)}
+							<circle cx={x} cy={yLabor} r="3" fill="#ef4444" />
 						{/each}
 
 						<!-- X-axis labels -->
@@ -334,7 +408,7 @@
 				</div>
 
 				<!-- Legend -->
-				<div class="flex items-center justify-center gap-6 mt-4 text-sm">
+				<div class="flex items-center justify-center gap-6 mt-4 text-sm flex-wrap">
 					<div class="flex items-center gap-2">
 						<div class="w-3 h-3 rounded-full bg-blue-500"></div>
 						<span class="text-gray-600">Total Sales</span>
@@ -342,6 +416,10 @@
 					<div class="flex items-center gap-2">
 						<div class="w-3 h-3 rounded-full bg-green-500"></div>
 						<span class="text-gray-600">Retained</span>
+					</div>
+					<div class="flex items-center gap-2">
+						<div class="w-3 h-3 rounded-full bg-red-500"></div>
+						<span class="text-gray-600">Labor Cost</span>
 					</div>
 				</div>
 
@@ -354,6 +432,8 @@
 								<th class="text-right py-2 px-3 font-medium text-gray-600">Sales</th>
 								<th class="text-right py-2 px-3 font-medium text-gray-600">Vendor Payout</th>
 								<th class="text-right py-2 px-3 font-medium text-gray-600">Retained</th>
+								<th class="text-right py-2 px-3 font-medium text-gray-600">Labor</th>
+								<th class="text-right py-2 px-3 font-medium text-gray-600">Net</th>
 								<th class="text-right py-2 px-3 font-medium text-gray-600">Vendors</th>
 							</tr>
 						</thead>
@@ -368,6 +448,8 @@
 									<td class="py-2 px-3 text-right text-blue-600">{formatCurrency(day.totalSales)}</td>
 									<td class="py-2 px-3 text-right text-gray-600">{formatCurrency(day.totalVendorAmount)}</td>
 									<td class="py-2 px-3 text-right text-green-600 font-medium">{formatCurrency(day.totalRetained)}</td>
+									<td class="py-2 px-3 text-right text-red-600">{formatCurrency(day.labor)}</td>
+									<td class="py-2 px-3 text-right font-medium {day.net >= 0 ? 'text-emerald-600' : 'text-red-700'}">{formatCurrency(day.net)}</td>
 									<td class="py-2 px-3 text-right text-gray-500">{day.vendorCount}</td>
 								</tr>
 							{/each}
@@ -407,8 +489,10 @@
 									<span class="text-sm font-medium text-green-600 w-20 text-right">{formatCurrency(week.totalRetained)}</span>
 								{/if}
 							</div>
-							<div class="text-xs text-gray-500 mt-1">
-								Total Sales: {formatCurrency(week.totalSales)}
+							<div class="flex gap-4 text-xs text-gray-500 mt-1 flex-wrap">
+								<span>Sales: <span class="text-blue-600">{formatCurrency(week.totalSales)}</span></span>
+								<span>Labor: <span class="text-red-600">{formatCurrency(week.labor)}</span></span>
+								<span>Net: <span class="{week.net >= 0 ? 'text-emerald-600' : 'text-red-700'} font-medium">{formatCurrency(week.net)}</span></span>
 							</div>
 						</div>
 					{/each}
@@ -462,6 +546,8 @@
 			<div class="font-medium">{formatDate(tooltipData.date)}</div>
 			<div class="text-blue-300">Sales: {formatCurrency(tooltipData.sales)}</div>
 			<div class="text-green-300">Retained: {formatCurrency(tooltipData.retained)}</div>
+			<div class="text-red-300">Labor: {formatCurrency(tooltipData.labor)}</div>
+			<div class="{tooltipData.net >= 0 ? 'text-emerald-300' : 'text-red-200'} font-medium">Net: {formatCurrency(tooltipData.net)}</div>
 		</div>
 	{/if}
 </div>
