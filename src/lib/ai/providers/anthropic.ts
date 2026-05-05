@@ -93,7 +93,9 @@ export const anthropicProvider: LLMProvider = {
 			throw new Error(`${providerKey} API key not configured`);
 		}
 
-		const messages: AnthropicMessage[] = [{ role: 'user', content: request.userPrompt }];
+		const messages: AnthropicMessage[] = request.messages
+			? request.messages.map((m) => ({ role: m.role, content: m.content }))
+			: [{ role: 'user', content: request.userPrompt }];
 
 		const body: Record<string, unknown> = {
 			model: request.model,
@@ -162,7 +164,9 @@ export const anthropicProvider: LLMProvider = {
 			throw new Error(`${providerKey} API key not configured`);
 		}
 
-		const messages: AnthropicMessage[] = [{ role: 'user', content: request.userPrompt }];
+		const messages: AnthropicMessage[] = request.messages
+			? request.messages.map((m) => ({ role: m.role, content: m.content }))
+			: [{ role: 'user', content: request.userPrompt }];
 
 		const body: Record<string, unknown> = {
 			model: request.model,

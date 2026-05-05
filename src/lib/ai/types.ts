@@ -99,10 +99,28 @@ export interface LLMProvider {
 	estimateCost: (inputTokens: number, outputTokens: number, model: string) => number;
 }
 
+/**
+ * A single conversation turn. Used when callers want to send a multi-turn
+ * conversation to the model instead of a single concatenated user prompt.
+ * Anthropic providers preserve role+text; tool_use/tool_result blocks for
+ * past turns are flattened into the assistant's text since stable tool_use
+ * IDs aren't persisted across turns.
+ */
+export interface ConversationTurn {
+	role: 'user' | 'assistant';
+	content: string;
+}
+
 export interface LLMRequest {
 	model: string;
 	systemPrompt: string;
 	userPrompt: string;
+	/**
+	 * Optional structured conversation. When provided, the provider sends
+	 * these as a real `messages` array instead of stuffing history into
+	 * `userPrompt`. The last entry should be the current user request.
+	 */
+	messages?: ConversationTurn[];
 	tools?: AITool[];
 	maxTokens?: number;
 	temperature?: number;

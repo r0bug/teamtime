@@ -35,7 +35,7 @@ import {
 	type PendingAction
 } from './session';
 import { assembleOfficeManagerContext } from '../context';
-import type { AITool, ToolExecutionContext, LLMRequest } from '../../types';
+import type { AITool, ToolExecutionContext, LLMRequest, ConversationTurn } from '../../types';
 import type { OfficeManagerMessage } from '$lib/server/db/schema';
 import { createLogger } from '$lib/server/logger';
 import { db, users } from '$lib/server/db';
@@ -264,26 +264,16 @@ export async function processUserMessage(
 	// Assemble context with user permissions
 	const context = await assembleOfficeManagerContext(3000, userId);
 
-	// Build conversation history for the LLM
-	const conversationHistory = buildConversationHistory(session.messages);
+	// Real Anthropic messages array (past turns + new user request with fresh context)
+	const turns: ConversationTurn[] = buildConversationTurns(session.messages, context, userMessage);
 
-	// Build the user prompt with context
-	const userPrompt = `${conversationHistory}
-
-## Current Context
-${context}
-
-## User Message
-${userMessage}`;
-
-	// Get tools formatted for the LLM
 	const tools = officeManagerTools;
 
-	// Make the LLM request
 	const request: LLMRequest = {
 		model,
 		systemPrompt: OFFICE_MANAGER_SYSTEM_PROMPT,
-		userPrompt,
+		userPrompt: '', // unused when messages is set; kept for type compat
+		messages: turns,
 		tools,
 		maxTokens: 2048,
 		temperature: 0.3
@@ -583,35 +573,33 @@ export async function* continueAfterConfirmation(
 		// Assemble context with user permissions
 		const context = await assembleOfficeManagerContext(3000, userId);
 
-		// Build conversation history
-		const conversationHistory = buildConversationHistory(session.messages);
-
-		// Build continuation prompt - the AI should know the action was just completed
-		const tool = officeManagerTools.find(t => t.name === executedAction.toolName);
+		const tool = officeManagerTools.find((t) => t.name === executedAction.toolName);
 		const formattedResult = tool?.formatResult
 			? tool.formatResult(executedAction.result)
 			: JSON.stringify(executedAction.result);
 
-		const continuationPrompt = `${conversationHistory}
-
-## Current Context
-${context}
-
-## Action Just Completed
+		// Synthetic "user" turn that represents the action completion event,
+		// since the previous assistant turn left a tool awaiting confirmation.
+		const continuationUserMessage = `## Action Just Completed
 The user approved and the following action was just executed:
 - Tool: ${executedAction.toolName}
 - Result: ${formattedResult}
 
-Continue with any remaining tasks from the original request. If there are more items to process (like deleting more duplicate schedules), proceed with the next one. If all tasks are complete, summarize what was accomplished.`;
+Continue with any remaining tasks from the original request. If there are more items to process, proceed with the next one. If all tasks are complete, summarize what was accomplished.`;
 
-		// Get tools
+		const turns: ConversationTurn[] = buildConversationTurns(
+			session.messages,
+			context,
+			continuationUserMessage
+		);
+
 		const tools = officeManagerTools;
 
-		// Build LLM request
 		const request: LLMRequest = {
 			model,
 			systemPrompt: OFFICE_MANAGER_SYSTEM_PROMPT,
-			userPrompt: continuationPrompt,
+			userPrompt: '',
+			messages: turns,
 			tools,
 			maxTokens: 4096,
 			temperature: 0.7
@@ -765,8 +753,9 @@ Continue with any remaining tasks from the original request. If there are more i
 
 		allToolCalls.push(...currentTurnToolCalls);
 
-		// Multi-turn continuation (same logic as processUserMessageStream)
-		const messages: AnthropicMessage[] = [];
+		// Multi-turn continuation buffer. Seed with the full structured turns
+		// so streamWithToolResults sees the same context the first stream did.
+		const messages: AnthropicMessage[] = turns.map((t) => ({ role: t.role, content: t.content }));
 		while (needsContinuation && continuationTurn < MAX_CONTINUATION_TURNS) {
 			continuationTurn++;
 			needsContinuation = false;
@@ -1017,38 +1006,34 @@ export async function* processUserMessageStream(
 		log.debug({ chatId, staffContextLength: staffContext.length }, 'STREAM: Staff context fetched');
 	}
 
-	// Build conversation history for the LLM
-	const conversationHistory = buildConversationHistory(session.messages);
-	log.debug({ chatId, historyLength: conversationHistory.length }, 'STREAM: Conversation history built');
+	// Merge staff list (when matched) into the per-turn context so it lives
+	// in the final user message alongside the request, not stuffed into history.
+	const fullContext = staffContext ? `${context}\n${staffContext}` : context;
+	const userTurnText = staffContext
+		? `${userMessage}\n\n**IMPORTANT**: Staff IDs are provided in the context above. Use them directly with create_schedule — do NOT call get_available_staff first.`
+		: userMessage;
 
-	// Build the user prompt with context
-	const userPrompt = `${conversationHistory}
+	const turns: ConversationTurn[] = buildConversationTurns(
+		session.messages,
+		fullContext,
+		userTurnText
+	);
+	log.debug({ chatId, turns: turns.length }, 'STREAM: Conversation turns built');
 
-## Current Context
-${context}
-${staffContext ? '\n' + staffContext : ''}
-
-## User Message
-${userMessage}
-
-${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly with create_schedule - do NOT call get_available_staff first.' : ''}`;
-
-	// Get tools formatted for the LLM
 	const tools = officeManagerTools;
 
-	// Check if we should force a specific tool (using database-configured keywords)
 	const forcedToolName = await findForcedTool(userMessage);
 	if (forcedToolName) {
 		log.info({ chatId, forcedTool: forcedToolName }, 'STREAM: Force keyword matched, forcing tool');
 	}
 
-	// Make the streaming LLM request
 	const request: LLMRequest = {
 		model,
 		systemPrompt: OFFICE_MANAGER_SYSTEM_PROMPT,
-		userPrompt,
+		userPrompt: '',
+		messages: turns,
 		tools,
-		maxTokens: 4096, // Increased for large schedule creation
+		maxTokens: 4096,
 		temperature: 0.3,
 		forcedTool: forcedToolName || undefined
 	};
@@ -1071,11 +1056,10 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 			throw new Error('Streaming not supported by this provider');
 		}
 
-		// Track messages for multi-turn continuation
-		// For Anthropic API, we need: user message, then assistant response with tool_use
-		const messages: AnthropicMessage[] = [
-			{ role: 'user', content: userPrompt }
-		];
+		// Track messages for multi-turn continuation. Seeded from the structured
+		// turns we built (history + final user request), then extended with each
+		// assistant tool_use response and corresponding tool_result user message.
+		const messages: AnthropicMessage[] = turns.map((t) => ({ role: t.role, content: t.content }));
 
 		let continuationTurn = 0;
 		let needsContinuation = false;
@@ -1083,7 +1067,9 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 		let currentTurnContent = '';
 		let escalationReason: string | null = null;
 
-		log.info({ chatId, promptLength: userPrompt.length, toolCount: tools.length }, 'STREAM: Calling anthropicProvider.stream');
+		const lastUserContent = messages[messages.length - 1]?.content;
+		const lastUserLen = typeof lastUserContent === 'string' ? lastUserContent.length : 0;
+		log.info({ chatId, lastUserLen, turnCount: messages.length, toolCount: tools.length }, 'STREAM: Calling anthropicProvider.stream');
 		// First turn - use the normal stream
 		let chunkCount = 0;
 		for await (const chunk of anthropicProvider.stream(request)) {
@@ -1470,27 +1456,54 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 /**
  * Build conversation history string for the LLM
  */
-function buildConversationHistory(messages: OfficeManagerMessage[]): string {
-	if (messages.length === 0) {
-		return '';
-	}
+/**
+ * Convert stored chat history + the new user input into a real Anthropic
+ * `messages` array. The fresh dynamic context (staff, tasks, etc.) is
+ * prepended to the FINAL user message so the system prompt stays cacheable.
+ *
+ * Past assistant tool calls are flattened to a one-line annotation in the
+ * assistant text (we don't persist stable tool_use IDs to round-trip them
+ * as structured blocks). Adjacent same-role turns are merged so the wire
+ * payload alternates user/assistant, which Anthropic requires.
+ */
+function buildConversationTurns(
+	history: OfficeManagerMessage[],
+	context: string,
+	currentUserMessage: string
+): ConversationTurn[] {
+	const recent = history.slice(-10);
+	const turns: ConversationTurn[] = [];
 
-	let history = '## Conversation History\n';
+	for (const msg of recent) {
+		let text = (msg.content || '').trim();
 
-	// Only include last 10 messages to save tokens
-	const recentMessages = messages.slice(-10);
+		if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
+			const summary = msg.toolCalls
+				.map((tc) => {
+					const status = tc.result === undefined ? 'pending' : tc.pendingActionId ? 'awaiting confirmation' : 'done';
+					return `[${tc.name}: ${status}]`;
+				})
+				.join(' ');
+			text = text ? `${text}\n${summary}` : summary;
+		}
 
-	for (const msg of recentMessages) {
-		const role = msg.role === 'user' ? 'User' : 'Assistant';
-		history += `\n**${role}:** ${msg.content}\n`;
+		if (!text) continue;
 
-		if (msg.toolCalls && msg.toolCalls.length > 0) {
-			history += `\n*Tool calls:*\n`;
-			for (const tc of msg.toolCalls) {
-				history += `- ${tc.name}: ${JSON.stringify(tc.result || 'pending')}\n`;
-			}
+		const last = turns[turns.length - 1];
+		if (last && last.role === msg.role) {
+			last.content = `${last.content}\n\n${text}`;
+		} else {
+			turns.push({ role: msg.role, content: text });
 		}
 	}
 
-	return history;
+	const finalContent = `## Current Context\n${context}\n\n## Request\n${currentUserMessage}`;
+	const last = turns[turns.length - 1];
+	if (last && last.role === 'user') {
+		last.content = `${last.content}\n\n${finalContent}`;
+	} else {
+		turns.push({ role: 'user', content: finalContent });
+	}
+
+	return turns;
 }
