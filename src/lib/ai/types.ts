@@ -4,7 +4,7 @@
 export type AIAgent = 'office_manager' | 'revenue_optimizer' | 'architect';
 
 // LLM Providers
-export type AIProvider = 'anthropic' | 'openai' | 'segmind';
+export type AIProvider = 'anthropic' | 'openai' | 'segmind' | 'deepseek';
 
 // Tone options
 export type AITone = 'helpful_parent' | 'professional' | 'casual' | 'formal';
@@ -142,6 +142,7 @@ export interface AIKeysConfig {
 	anthropic?: string;
 	openai?: string;
 	segmind?: string;
+	deepseek?: string;
 }
 
 // Runtime AI configuration (passed to services)

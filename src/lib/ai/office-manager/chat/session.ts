@@ -347,7 +347,7 @@ export async function deleteChatSession(chatId: string): Promise<void> {
  */
 export async function logAIAction(params: {
 	runId: string;
-	provider?: 'anthropic' | 'openai' | 'segmind';
+	provider?: 'anthropic' | 'openai' | 'segmind' | 'deepseek';
 	model?: string;
 	toolName: string;
 	toolParams: Record<string, unknown>;

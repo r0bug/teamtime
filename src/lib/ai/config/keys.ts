@@ -60,5 +60,6 @@ export function getAvailableProviders(): AIProvider[] {
 	if (keys.anthropic) available.push('anthropic');
 	if (keys.openai) available.push('openai');
 	if (keys.segmind) available.push('segmind');
+	if (keys.deepseek) available.push('deepseek');
 	return available;
 }

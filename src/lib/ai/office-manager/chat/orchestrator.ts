@@ -20,7 +20,7 @@
  * }
  */
 import { randomUUID } from 'crypto';
-import { anthropicProvider, streamWithToolResults, type ToolResult, type AnthropicMessage, type AnthropicContentBlock } from '../../providers/anthropic';
+import { anthropicProvider, streamWithToolResults, providerForModel, type ToolResult, type AnthropicMessage, type AnthropicContentBlock } from '../../providers/anthropic';
 import { officeManagerTools } from '../../tools/office-manager';
 import {
 	getChatSession,
@@ -44,9 +44,10 @@ import { aiConfigService } from '../../services/config-service';
 
 const log = createLogger('ai:office-manager:chat');
 
-// When Haiku invokes request_model_upgrade, the chat re-runs on this model.
-// One-shot: the re-run does not escalate again.
-const DEFAULT_CHAT_MODEL = 'claude-haiku-4-5-20251001';
+// Default chat model is DeepSeek V4 Flash via DeepSeek's Anthropic-compatible
+// endpoint (~18× cheaper than Sonnet, similar quality envelope on tool use).
+// If it requests a model upgrade we re-run the same turn on Sonnet 4 once.
+const DEFAULT_CHAT_MODEL = 'deepseek-v4-flash';
 const ESCALATION_MODEL = 'claude-sonnet-4-20250514';
 const ESCALATION_TOOL_NAME = 'request_model_upgrade';
 
@@ -245,7 +246,7 @@ export interface ProcessMessageResult {
 export async function processUserMessage(
 	chatId: string,
 	userMessage: string,
-	model = 'claude-haiku-4-5-20251001',
+	model = DEFAULT_CHAT_MODEL,
 	requestingUserId?: string
 ): Promise<ProcessMessageResult> {
 	// Get the chat session
@@ -353,7 +354,7 @@ ${userMessage}`;
 				// Log the action (not yet executed)
 				await logAIAction({
 					runId,
-					provider: 'anthropic',
+					provider: providerForModel(activeModel),
 					model: activeModel,
 					toolName: toolCall.name,
 					toolParams: toolCall.params,
@@ -366,7 +367,7 @@ ${userMessage}`;
 					agent: 'office_manager',
 					dryRun: false,
 					config: {
-						provider: 'anthropic',
+						provider: providerForModel(activeModel),
 						model: activeModel
 					},
 					chatId,
@@ -397,7 +398,7 @@ ${userMessage}`;
 					// Log the action
 					await logAIAction({
 						runId,
-						provider: 'anthropic',
+						provider: providerForModel(activeModel),
 						model: activeModel,
 						toolName: toolCall.name,
 						toolParams: toolCall.params,
@@ -415,7 +416,7 @@ ${userMessage}`;
 
 					await logAIAction({
 						runId,
-						provider: 'anthropic',
+						provider: providerForModel(activeModel),
 						model: activeModel,
 						toolName: toolCall.name,
 						toolParams: toolCall.params,
@@ -501,13 +502,14 @@ export async function executeConfirmedAction(
 	}
 
 	const runId = randomUUID();
+	const provider = providerForModel(DEFAULT_CHAT_MODEL);
 	const executionContext: ToolExecutionContext = {
 		runId,
 		agent: 'office_manager',
 		dryRun: false,
 		config: {
-			provider: 'anthropic',
-			model: 'claude-haiku-4-5-20251001'
+			provider,
+			model: DEFAULT_CHAT_MODEL
 		},
 		chatId: pendingAction.chatId,
 		userId: requestingUserId
@@ -523,8 +525,8 @@ export async function executeConfirmedAction(
 
 		await logAIAction({
 			runId,
-			provider: 'anthropic',
-			model: 'claude-haiku-4-5-20251001',
+			provider,
+			model: DEFAULT_CHAT_MODEL,
 			toolName: pendingAction.toolName,
 			toolParams: pendingAction.toolArgs,
 			executed: true,
@@ -537,8 +539,8 @@ export async function executeConfirmedAction(
 
 		await logAIAction({
 			runId,
-			provider: 'anthropic',
-			model: 'claude-haiku-4-5-20251001',
+			provider,
+			model: DEFAULT_CHAT_MODEL,
 			toolName: pendingAction.toolName,
 			toolParams: pendingAction.toolArgs,
 			executed: false,
@@ -561,7 +563,7 @@ export async function* continueAfterConfirmation(
 	chatId: string,
 	executedAction: { toolName: string; toolArgs: Record<string, unknown>; result: unknown },
 	requestingUserId: string,
-	model = 'claude-haiku-4-5-20251001'
+	model = DEFAULT_CHAT_MODEL
 ): AsyncGenerator<StreamEvent> {
 	log.info({ chatId, toolName: executedAction.toolName, requestingUserId }, 'CONTINUATION: Starting post-confirmation continuation');
 
@@ -698,7 +700,7 @@ Continue with any remaining tasks from the original request. If there are more i
 						runId,
 						agent: 'office_manager',
 						dryRun: false,
-						config: { provider: 'anthropic', model },
+						config: { provider: providerForModel(model), model },
 						chatId,
 						userId
 					};
@@ -721,7 +723,7 @@ Continue with any remaining tasks from the original request. If there are more i
 
 						await logAIAction({
 							runId,
-							provider: 'anthropic',
+							provider: providerForModel(model),
 							model,
 							toolName: name,
 							toolParams: params,
@@ -847,7 +849,7 @@ Continue with any remaining tasks from the original request. If there are more i
 							runId,
 							agent: 'office_manager',
 							dryRun: false,
-							config: { provider: 'anthropic', model },
+							config: { provider: providerForModel(model), model },
 							chatId,
 							userId
 						};
@@ -870,7 +872,7 @@ Continue with any remaining tasks from the original request. If there are more i
 
 							await logAIAction({
 								runId,
-								provider: 'anthropic',
+								provider: providerForModel(model),
 								model,
 								toolName: name,
 								toolParams: params,
@@ -1157,7 +1159,7 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 
 					await logAIAction({
 						runId,
-						provider: 'anthropic',
+						provider: providerForModel(model),
 						model,
 						toolName: name,
 						toolParams: params,
@@ -1170,7 +1172,7 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 						runId,
 						agent: 'office_manager',
 						dryRun: false,
-						config: { provider: 'anthropic', model },
+						config: { provider: providerForModel(model), model },
 						chatId,
 						userId
 					};
@@ -1194,7 +1196,7 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 
 						await logAIAction({
 							runId,
-							provider: 'anthropic',
+							provider: providerForModel(model),
 							model,
 							toolName: name,
 							toolParams: params,
@@ -1213,7 +1215,7 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 
 						await logAIAction({
 							runId,
-							provider: 'anthropic',
+							provider: providerForModel(model),
 							model,
 							toolName: name,
 							toolParams: params,
@@ -1364,7 +1366,7 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 							runId,
 							agent: 'office_manager',
 							dryRun: false,
-							config: { provider: 'anthropic', model },
+							config: { provider: providerForModel(model), model },
 							chatId,
 							userId
 						};
@@ -1387,7 +1389,7 @@ ${staffContext ? '**IMPORTANT**: Staff IDs are provided above. Use them directly
 
 							await logAIAction({
 								runId,
-								provider: 'anthropic',
+								provider: providerForModel(model),
 								model,
 								toolName: name,
 								toolParams: params,

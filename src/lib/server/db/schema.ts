@@ -6,7 +6,7 @@ export const userRoleEnum = pgEnum('user_role', ['admin', 'manager', 'purchaser'
 
 // AI System Enums
 export const aiAgentEnum = pgEnum('ai_agent', ['office_manager', 'revenue_optimizer', 'architect']);
-export const aiProviderEnum = pgEnum('ai_provider', ['anthropic', 'openai', 'segmind']);
+export const aiProviderEnum = pgEnum('ai_provider', ['anthropic', 'openai', 'segmind', 'deepseek']);
 export const aiMemoryScopeEnum = pgEnum('ai_memory_scope', ['user', 'location', 'global']);
 export const aiPolicyScopeEnum = pgEnum('ai_policy_scope', ['global', 'location', 'role']);
 export const aiToneEnum = pgEnum('ai_tone', ['helpful_parent', 'professional', 'casual', 'formal']);

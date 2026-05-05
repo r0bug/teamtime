@@ -1,9 +1,30 @@
 // Anthropic Claude Provider
-import type { LLMProvider, LLMRequest, LLMResponse, LLMStreamEvent, AITool } from '../types';
+// Also routes deepseek-* models to DeepSeek's Anthropic-compatible endpoint.
+import type { AIProvider, LLMProvider, LLMRequest, LLMResponse, LLMStreamEvent, AITool } from '../types';
 import { getAPIKey } from '../config/keys';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('ai:anthropic');
+
+const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+const DEEPSEEK_API_URL = 'https://api.deepseek.com/anthropic/v1/messages';
+
+/**
+ * DeepSeek's `/anthropic` endpoint speaks the same JSON shape as Anthropic
+ * (same content blocks, tool_use/tool_result, streaming events). We can reuse
+ * this provider for both — route by model prefix.
+ */
+function routeForModel(model: string): { apiUrl: string; providerKey: AIProvider } {
+	if (model.startsWith('deepseek-')) {
+		return { apiUrl: DEEPSEEK_API_URL, providerKey: 'deepseek' };
+	}
+	return { apiUrl: ANTHROPIC_API_URL, providerKey: 'anthropic' };
+}
+
+/** Public: which provider serves a given model. Used for token-usage logging. */
+export function providerForModel(model: string): AIProvider {
+	return routeForModel(model).providerKey;
+}
 
 export interface AnthropicMessage {
 	role: 'user' | 'assistant';
@@ -66,9 +87,10 @@ export const anthropicProvider: LLMProvider = {
 	name: 'anthropic',
 
 	async complete(request: LLMRequest): Promise<LLMResponse> {
-		const apiKey = getAPIKey('anthropic');
+		const { apiUrl, providerKey } = routeForModel(request.model);
+		const apiKey = getAPIKey(providerKey);
 		if (!apiKey) {
-			throw new Error('Anthropic API key not configured');
+			throw new Error(`${providerKey} API key not configured`);
 		}
 
 		const messages: AnthropicMessage[] = [{ role: 'user', content: request.userPrompt }];
@@ -88,7 +110,7 @@ export const anthropicProvider: LLMProvider = {
 			body.temperature = request.temperature;
 		}
 
-		const response = await fetch('https://api.anthropic.com/v1/messages', {
+		const response = await fetch(apiUrl, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
@@ -100,7 +122,7 @@ export const anthropicProvider: LLMProvider = {
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			throw new Error(`Anthropic API error: ${response.status} - ${errorText}`);
+			throw new Error(`${providerKey} API error: ${response.status} - ${errorText}`);
 		}
 
 		const data = (await response.json()) as AnthropicResponse;
@@ -132,11 +154,12 @@ export const anthropicProvider: LLMProvider = {
 	},
 
 	async *stream(request: LLMRequest): AsyncGenerator<LLMStreamEvent> {
-		log.info({ model: request.model }, 'ANTHROPIC STREAM: Starting stream request');
-		const apiKey = getAPIKey('anthropic');
+		const { apiUrl, providerKey } = routeForModel(request.model);
+		log.info({ model: request.model, providerKey }, 'ANTHROPIC STREAM: Starting stream request');
+		const apiKey = getAPIKey(providerKey);
 		if (!apiKey) {
-			log.error('ANTHROPIC STREAM: No API key configured');
-			throw new Error('Anthropic API key not configured');
+			log.error({ providerKey }, 'ANTHROPIC STREAM: No API key configured');
+			throw new Error(`${providerKey} API key not configured`);
 		}
 
 		const messages: AnthropicMessage[] = [{ role: 'user', content: request.userPrompt }];
@@ -165,8 +188,8 @@ export const anthropicProvider: LLMProvider = {
 			body.temperature = request.temperature;
 		}
 
-		log.info({ model: request.model, promptLength: request.userPrompt.length }, 'ANTHROPIC STREAM: Calling API...');
-		const response = await fetch('https://api.anthropic.com/v1/messages', {
+		log.info({ model: request.model, promptLength: request.userPrompt.length, apiUrl }, 'ANTHROPIC STREAM: Calling API...');
+		const response = await fetch(apiUrl, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
@@ -325,11 +348,12 @@ export async function* streamWithToolResults(
 	previousMessages: AnthropicMessage[],
 	toolResults: ToolResult[]
 ): AsyncGenerator<LLMStreamEvent> {
-	log.info({ model: request.model, toolResultCount: toolResults.length, messageCount: previousMessages.length }, 'ANTHROPIC CONTINUE: Starting continuation stream');
-	const apiKey = getAPIKey('anthropic');
+	const { apiUrl, providerKey } = routeForModel(request.model);
+	log.info({ model: request.model, providerKey, toolResultCount: toolResults.length, messageCount: previousMessages.length }, 'ANTHROPIC CONTINUE: Starting continuation stream');
+	const apiKey = getAPIKey(providerKey);
 	if (!apiKey) {
-		log.error('ANTHROPIC CONTINUE: No API key configured');
-		throw new Error('Anthropic API key not configured');
+		log.error({ providerKey }, 'ANTHROPIC CONTINUE: No API key configured');
+		throw new Error(`${providerKey} API key not configured`);
 	}
 
 	// Build the tool results as a user message with tool_result content blocks
@@ -376,8 +400,8 @@ export async function* streamWithToolResults(
 		body.temperature = request.temperature;
 	}
 
-	log.info({ model: request.model, messageCount: messages.length }, 'ANTHROPIC CONTINUE: Calling API...');
-	const response = await fetch('https://api.anthropic.com/v1/messages', {
+	log.info({ model: request.model, messageCount: messages.length, apiUrl }, 'ANTHROPIC CONTINUE: Calling API...');
+	const response = await fetch(apiUrl, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
@@ -389,8 +413,8 @@ export async function* streamWithToolResults(
 
 	if (!response.ok) {
 		const errorText = await response.text();
-		log.error({ status: response.status, error: errorText }, 'ANTHROPIC CONTINUE: API error');
-		throw new Error(`Anthropic API error: ${response.status} - ${errorText}`);
+		log.error({ status: response.status, error: errorText, providerKey }, 'ANTHROPIC CONTINUE: API error');
+		throw new Error(`${providerKey} API error: ${response.status} - ${errorText}`);
 	}
 
 	log.info({ status: response.status }, 'ANTHROPIC CONTINUE: Got response, starting to read stream');
