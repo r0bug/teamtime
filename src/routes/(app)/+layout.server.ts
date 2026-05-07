@@ -1,7 +1,7 @@
 import type { LayoutServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { db, users, appSettings } from '$lib/server/db';
-import { eq } from 'drizzle-orm';
+import { db, users, userTypes, appSettings, vendors } from '$lib/server/db';
+import { eq, and } from 'drizzle-orm';
 
 // Default module states - all enabled
 const DEFAULT_MODULES: Record<string, boolean> = {
@@ -21,9 +21,34 @@ const DEFAULT_MODULES: Record<string, boolean> = {
 	ebay: true
 };
 
-export const load: LayoutServerLoad = async ({ locals }) => {
+export const load: LayoutServerLoad = async ({ locals, url }) => {
 	if (!locals.user) {
 		throw redirect(302, '/login');
+	}
+
+	// Vendor portal users can only see /vendor/* — redirect them away from
+	// staff routes. Logout is handled by /logout (top-level, outside this layout).
+	if (locals.user.userTypeId) {
+		const [type] = await db
+			.select({ name: userTypes.name })
+			.from(userTypes)
+			.where(eq(userTypes.id, locals.user.userTypeId))
+			.limit(1);
+		if (type?.name === 'Vendor') {
+			const path = url.pathname;
+			if (!path.startsWith('/vendor')) {
+				throw redirect(302, '/vendor');
+			}
+			// Confirm the vendor record is still portal-enabled. If not, sign-out feel.
+			const [vendor] = await db
+				.select({ id: vendors.id })
+				.from(vendors)
+				.where(and(eq(vendors.userId, locals.user.id), eq(vendors.portalEnabled, true)))
+				.limit(1);
+			if (!vendor) {
+				throw redirect(302, '/login');
+			}
+		}
 	}
 
 	// Fetch additional user data not stored in session

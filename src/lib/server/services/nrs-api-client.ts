@@ -192,6 +192,42 @@ export async function getVendors(storeId?: number): Promise<{ vendorId: number; 
 	return data.list;
 }
 
+/**
+ * Fetch sales line items for a single vendor across a date range.
+ * NRS's possales/getall doesn't filter by vendor server-side, so we pull
+ * the date range and filter client-side.
+ */
+export async function getVendorSales(opts: {
+	nrsVendorId: number;
+	startDate: string; // YYYY-MM-DD
+	endDate: string;   // YYYY-MM-DD inclusive
+	storeId?: number;
+}): Promise<NrsSaleRecord[]> {
+	const sid = opts.storeId ?? getStoreId();
+	const start = new Date(opts.startDate);
+	const end = new Date(opts.endDate);
+	if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+		throw new Error(`Invalid date range: ${opts.startDate} → ${opts.endDate}`);
+	}
+
+	const all: NrsSaleRecord[] = [];
+	const cursor = new Date(start);
+	while (cursor <= end) {
+		const dateStr = cursor.toISOString().slice(0, 10);
+		const records = await getSalesAllPages({ storeId: sid, invoiceDate: dateStr });
+		for (const r of records) {
+			if (r.vendorId === opts.nrsVendorId) all.push(r);
+		}
+		cursor.setUTCDate(cursor.getUTCDate() + 1);
+	}
+
+	log.info(
+		{ nrsVendorId: opts.nrsVendorId, start: opts.startDate, end: opts.endDate, count: all.length },
+		'Fetched per-vendor sales from NRS'
+	);
+	return all;
+}
+
 /** Get a single page of sales records. */
 export async function getSales(query: NrsSalesQuery): Promise<NrsPagedResponse> {
 	return apiPost<NrsPagedResponse>('possales/getall', query as unknown as Record<string, unknown>);

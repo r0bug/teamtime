@@ -67,12 +67,14 @@ export const actions: Actions = {
 			return fail(400, { error: 'Email is required' });
 		}
 
-		if (pinOnly && !pin) {
-			return fail(400, { error: 'Email and PIN are required' });
-		}
-
-		if (!pinOnly && !password) {
-			return fail(400, { error: 'Email and password are required' });
+		// Per-user mode: if `password` is submitted and the user has one set, use
+		// password auth; otherwise fall back to PIN. This lets vendor portal users
+		// (password-only) and staff (PIN-only) share the same login page.
+		const passwordSubmitted = typeof password === 'string' && password.length > 0;
+		if (!pin && !passwordSubmitted) {
+			return fail(400, {
+				error: pinOnly ? 'Email and PIN are required' : 'Email and password are required'
+			});
 		}
 
 		// Check IP-based rate limiting first
@@ -132,10 +134,24 @@ export const actions: Actions = {
 			return fail(400, { error: 'Account is disabled. Contact your administrator.' });
 		}
 
-		// Verify credentials based on login mode
-		if (pinOnly) {
+		// Verify credentials. Use password if the request submitted one AND the
+		// user has a passwordHash; otherwise fall back to PIN.
+		const usePassword = passwordSubmitted && !!user.passwordHash;
+
+		if (!usePassword) {
+			if (!pin) {
+				await recordLoginAttempt({
+					email,
+					ipAddress,
+					userAgent,
+					result: 'invalid_credentials',
+					userId: user.id,
+					failureReason: 'PIN required for this account'
+				});
+				return fail(400, { error: 'PIN is required for this account' });
+			}
 			// Verify PIN
-			const validPin = await verifyPin(pin!, user.pinHash);
+			const validPin = await verifyPin(pin, user.pinHash);
 			if (!validPin) {
 				const { shouldLock, lockoutUntil } = await recordLoginAttempt({
 					email,

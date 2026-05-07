@@ -598,4 +598,198 @@ CREATE TABLE break_entries (
 
 ---
 
-*Last updated: April 2026*
+## Vendor Management Schema
+
+NRS POS is the source of truth for vendor identity, sales, and inventory. TeamTime stores TT-specific fields and joins back to NRS by `nrs_vendor_id`. No vendor-id FKs are added to `sales_transactions` / `sales_snapshots` — the leaderboard reads them via the existing `vendors` JSONB on `sales_snapshots`.
+
+### Vendor Status Enum
+
+```sql
+CREATE TYPE "vendor_status" AS ENUM ('active', 'inactive', 'terminated');
+```
+
+### Vendors Table
+
+```sql
+CREATE TABLE vendors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- NRS link (source of truth)
+  nrs_vendor_id INTEGER UNIQUE,
+
+  -- TT user link (nullable: not every vendor has portal access)
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+
+  -- Identity & contact
+  display_name TEXT NOT NULL,
+  contact_name TEXT,
+  contact_email TEXT,
+  contact_phone TEXT,
+  address_line_1 TEXT,
+  address_line_2 TEXT,
+  city TEXT,
+  state TEXT,
+  zip TEXT,
+
+  -- Contract terms (current — agreements snapshot these at sign time)
+  booth_number TEXT,
+  monthly_rent_cents INTEGER,
+  max_discount_percent NUMERIC(5,2),
+
+  -- Lifecycle
+  status vendor_status NOT NULL DEFAULT 'inactive',
+  start_date DATE,
+  end_date DATE,
+  notes TEXT,
+
+  -- Onboarding & portal (Stage 2a)
+  inventory_code_prefix TEXT UNIQUE,         -- 2-6 [A-Z0-9], e.g. 'SR'
+  portal_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE,
+
+  created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_vendors_status ON vendors(status);
+CREATE INDEX idx_vendors_nrs_vendor_id ON vendors(nrs_vendor_id);
+CREATE INDEX idx_vendors_onboarding ON vendors(onboarding_complete);
+```
+
+### Agreement Templates Table
+
+```sql
+CREATE TYPE "agreement_template_kind" AS ENUM ('primary', 'addon');
+
+CREATE TABLE agreement_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code TEXT NOT NULL,                        -- stable slug across versions
+  title TEXT NOT NULL,
+  kind agreement_template_kind NOT NULL,
+  body_markdown TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  supersedes_id UUID REFERENCES agreement_templates(id) ON DELETE SET NULL,
+
+  -- Optional per-template extra fields collected at signing.
+  -- Shape: [{key, label, type: 'currency'|'text'|'number', required}]
+  extra_fields_schema JSONB,
+
+  created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  archived_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_agreement_templates_code ON agreement_templates(code);
+CREATE INDEX idx_agreement_templates_kind_active ON agreement_templates(kind, is_active);
+```
+
+**Versioning rule**: editing a template that has signed instances creates a new row (`version + 1`, `supersedes_id` = old.id, old `is_active=false`). Old `vendor_agreements` keep their original `body_snapshot` so historical records survive.
+
+### Vendor Agreements Table
+
+```sql
+CREATE TYPE "vendor_agreement_status" AS ENUM ('signed', 'voided');
+
+CREATE TABLE vendor_agreements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+  template_id UUID NOT NULL REFERENCES agreement_templates(id) ON DELETE RESTRICT,
+  status vendor_agreement_status NOT NULL DEFAULT 'signed',
+
+  signed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  signed_by_name TEXT NOT NULL,                  -- vendor's printed name
+  signature_data_url TEXT,                       -- base64 PNG; NULL when paper original
+  paper_original_on_file BOOLEAN NOT NULL DEFAULT FALSE,
+
+  -- Frozen snapshots so future template/vendor edits don't rewrite history
+  body_snapshot TEXT NOT NULL,
+  template_version INTEGER NOT NULL,
+  terms_snapshot JSONB NOT NULL,                 -- {monthlyRentCents, maxDiscountPercent, boothNumber, extraFieldValues?}
+
+  witnessed_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  voided_at TIMESTAMPTZ,
+  voided_reason TEXT,                            -- 'superseded' | 'withdrawn' | 'terminated' | …
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_vendor_agreements_vendor ON vendor_agreements(vendor_id);
+CREATE INDEX idx_vendor_agreements_vendor_template_status
+  ON vendor_agreements(vendor_id, template_id, status);
+```
+
+**Supersession rule (per-(vendor, template))**: when a new agreement is signed, any prior `signed` row for the same `(vendor_id, template_id)` is voided with `voided_reason='superseded'`. Other agreements on the same vendor (different `template_id`) are untouched — that's what lets a vendor stack one primary + many add-ons concurrently.
+
+### Vendor Groups Table
+
+```sql
+CREATE TABLE vendor_groups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  color TEXT NOT NULL DEFAULT '#6B7280',
+  created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  archived_at TIMESTAMPTZ
+);
+```
+
+### Vendor Group Members Table
+
+Many-to-many junction. A vendor can belong to multiple groups.
+
+```sql
+CREATE TABLE vendor_group_members (
+  vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+  group_id UUID NOT NULL REFERENCES vendor_groups(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT vendor_group_members_pk UNIQUE (vendor_id, group_id)
+);
+```
+
+### Pending Inventory Changes Table
+
+Vendor-proposed creates / updates / deletes against their NRS inventory. Until a confirmed NRS write API is wired, every proposal lands here as `status='pending'` and is applied manually by staff via `/admin/vendors/inventory-changes`.
+
+```sql
+CREATE TYPE "inventory_change_type" AS ENUM ('create', 'update', 'delete');
+CREATE TYPE "inventory_change_status" AS ENUM ('pending', 'applied', 'rejected', 'cancelled');
+
+CREATE TABLE pending_inventory_changes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+  submitted_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  change_type inventory_change_type NOT NULL,
+  nrs_part_id INTEGER,                           -- NULL on 'create'
+  part_number TEXT NOT NULL,                     -- enforced to start with vendor.inventory_code_prefix
+
+  payload JSONB NOT NULL,                        -- proposed values
+  previous_payload JSONB,                        -- snapshot for updates
+
+  status inventory_change_status NOT NULL DEFAULT 'pending',
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reviewed_at TIMESTAMPTZ,
+  applied_at TIMESTAMPTZ,
+  reviewed_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  applied_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  rejection_reason TEXT,
+  nrs_apply_notes TEXT
+);
+
+CREATE INDEX idx_pending_inventory_changes_vendor ON pending_inventory_changes(vendor_id);
+CREATE INDEX idx_pending_inventory_changes_status ON pending_inventory_changes(status);
+CREATE INDEX idx_pending_inventory_changes_vendor_status
+  ON pending_inventory_changes(vendor_id, status);
+```
+
+### Vendor User Type (seeded)
+
+A `user_types` row with `name='Vendor'`, `based_on_role='staff'`, `priority=20`, `is_system=true` is seeded once on first deploy. The portal-enable flow assigns this `user_type_id` to the vendor's user account; the `(app)/+layout.server.ts` and `vendor/+layout.server.ts` gates check for this type and redirect non-vendor users away from `/vendor` and vendor users away from staff routes.
+
+---
+
+*Last updated: May 2026*

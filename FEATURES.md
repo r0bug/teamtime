@@ -2848,4 +2848,156 @@ Touch-friendly swipeable card component for mobile interactions, used in task li
 
 ---
 
-*Last updated: February 2026*
+## Vendor Management
+
+### Overview
+
+TeamTime tracks the booth vendors who consign items at the shop. NRS POS is the source of truth for vendor identity, sales, commissions, and inventory; TeamTime stores TT-specific fields (contract terms, contact info, signed agreements, internal notes, link to a TT user) and joins back to NRS by `nrsVendorId`.
+
+### Stage 1 — Vendor records, agreements, performance
+
+#### Vendor admin (`/admin/vendors`)
+
+- **List** with status filter, search, "Sync from NRS" action, and an onboarding banner that links to the queue when any vendors aren't fully configured.
+- **Detail** (`/admin/vendors/[id]`) with tabs:
+  - **Overview** — contact + contract terms (booth, rent, max discount), edit-in-place
+  - **Agreements** — current primary + current add-ons (signature thumbnail or "Paper on file" badge, signed-by, witnessed-by, expandable body + terms snapshot). Voided/historical collapsed below.
+  - **Sales & Performance** — live NRS API call filtered by `nrsVendorId` with 7d / 30d / 90d / YTD range selector. Headline metrics (gross, vendor portion, retained, transactions, avg) and three charts (sales over time, top items, prior-period delta). Read-only — no DB writes.
+  - **Notes**
+- **New vendor** (`/admin/vendors/new`) — single-card form
+- **NRS sync** — admin action pulls the NRS vendor list and creates inactive stubs for unknown `nrsVendorId`s. Idempotent — never duplicates and never overwrites filled-in stubs.
+
+#### Templated agreements (`/admin/vendor-agreements/templates`)
+
+- **Two kinds**: `primary` (consignment vendor, rental vendor) — one per vendor, and `addon` (glass shelf policy, locking case) — stackable.
+- **Versioning on edit** — if any signed instances reference the template, saving creates a new version row (`version + 1`, `supersedesId` = old, old `isActive=false`). Old signed agreements still render their original body via `bodySnapshot`.
+- **Per-template extra fields** (jsonb) — optional list of `{key, label, type: 'currency'|'text'|'number', required}` collected at signing time. Captured into the agreement's `termsSnapshot`.
+
+#### Tablet signature capture
+
+- Modal flow: pick template → render body with the vendor's current terms → sign on `signature_pad` canvas → capture printed name → submit.
+- **Paper-original toggle** stores `signatureDataUrl=null` and `paperOriginalOnFile=true` for the ~90 file-cabinet migrations.
+- **Per-(vendor, templateId) supersession** — a new signing voids any prior `signed` row for the same `(vendorId, templateId)` with `voidedReason='superseded'`. Other agreements on the same vendor (different templates) are untouched.
+- **Component**: `src/lib/components/SignatureCapture.svelte`
+
+#### Performance leaderboard (`/admin/vendors/leaderboard`)
+
+- Ranks vendors by **gross / vendor portion / retained** for a chosen period (7d / 30d / MTD / YTD / custom).
+- Reads from `salesSnapshots.vendors[]` (already populated hourly by the NRS import) — no new DB writes, no NRS hammering.
+- Joins to `vendors` by `nrsVendorId` for booth + status info; vendors that exist in NRS but haven't been imported into TT still rank with a "not in TeamTime — sync to import" hint.
+- **Prior-period delta** of equal length per row (Δ %) for context.
+
+#### Charts
+
+Inline SVG components (no chart library):
+- `src/lib/components/SalesOverTimeChart.svelte` — daily/weekly bars
+- `src/lib/components/TopItemsBarChart.svelte` — horizontal bars by revenue
+
+### Stage 2a — Vendor onboarding + portal access
+
+#### Onboarding fields
+
+- `vendors.inventoryCodePrefix` — unique 2–6 chars `[A-Z0-9]`. The vendor's NRS SKU prefix (e.g. `SR` → all items begin `SR…`). Validated client- and server-side; uppercased on save.
+- `vendors.portalEnabled` boolean — whether the vendor can log in.
+- `vendors.onboardingComplete` boolean — admin-set "I've handled this vendor" flag that controls inclusion in the onboarding queue.
+
+#### Reporting groups (`/admin/vendor-groups`)
+
+Many-to-many tags via `vendor_groups` + `vendor_group_members`. Each group has a name, color, and display order. Used for cross-vendor reporting (planned: leaderboard filter).
+
+#### Onboarding queue (`/admin/vendors/onboarding`)
+
+Surfaces vendors with `onboardingComplete=false`. Each row is a compact card with:
+- Inline "Set prefix" form
+- Inline group multi-select chips
+- "Configure portal access →" link to the detail page Overview, anchored to the portal section
+- "Mark onboarding complete" button to remove the row from the queue
+
+A small banner on `/admin/vendors` shows the current count and links here.
+
+#### Portal access setup
+
+On the per-vendor detail page Overview tab:
+
+- **Inventory code prefix** input + validation
+- **Reporting groups** chips multi-select
+- **Portal access** section:
+  - When **disabled**: form to enable with email + contact name + initial password. The action **finds-or-creates** a `users` row keyed on email (links existing if found), sets `passwordHash` via the existing Argon2 `hashPin` helper, sets `userTypeId` to the seeded "Vendor" type, and flips `vendors.portalEnabled=true`.
+  - When **enabled**: shows the linked user, "Reset portal password" form, and "Disable portal access" action (flips the flag + deactivates the user).
+
+Vendors don't sign in with PIN — when a user row is created for the portal, `pinHash` is set to a random Argon2 hash so it can't be used for sign-in.
+
+### Login: per-user password mode
+
+Same `/login` URL for staff and vendors. Server logic accepts whichever credential the user actually has:
+- If the form submitted a `password` AND the user has a `passwordHash`, password auth is used.
+- Otherwise PIN auth (existing path) is used.
+
+The login form has a **"Vendor? Sign in with password"** toggle that swaps the input from PIN to password without leaving the page. Staff PIN flows are completely unchanged.
+
+### Vendor portal (`/vendor/*`)
+
+Layout (`src/routes/(app)/vendor/+layout.server.ts`) gates by:
+1. `locals.user.userTypeId` resolves to the "Vendor" user type
+2. There's a `vendors` row with `userId = locals.user.id` AND `portalEnabled = true`
+
+Failure → redirect to `/dashboard` or `/login` as appropriate.
+
+The staff layout (`(app)/+layout.server.ts`) reciprocally redirects Vendor users away from any non-`/vendor*` path so vendors can't browse staff routes.
+
+#### `/vendor` (home)
+
+Cards: pending change count, link to sales, link to profile, plus a "Your booth" summary (booth #, prefix, monthly rent, max discount).
+
+#### `/vendor/inventory`
+
+- **Section A — Items I've sold**: distinct `(partId, partNumber, partName)` from `salesTransactions` filtered by `vendorId = vendor.nrsVendorId`. Last sold date, units, last price. Each row has "Propose update" and "Remove" buttons.
+- **Section B — My pending changes**: rows from `pending_inventory_changes` for this vendor with status badges (`pending` / `applied` / `rejected` / `cancelled`). Pending rows have a Cancel button. Rejected rows show the reason; applied rows show NRS apply notes.
+- **Add new item** modal — collects `{ partNumber, partName, description, priceDollars, quantity }`. Server validates `partNumber.startsWith(vendor.inventoryCodePrefix)`.
+- All edits queue into `pending_inventory_changes` with `status='pending'` (NRS isn't written directly until we have a confirmed write API).
+
+#### `/vendor/sales`
+
+30-day live NRS pull with the same `SalesOverTimeChart` + `TopItemsBarChart` used on the admin detail tab. Read-only.
+
+#### `/vendor/profile`
+
+Read-only contact info + change-password form. Verifies current password with Argon2 `verify` before applying the new hash.
+
+### Staff inventory change queue (`/admin/vendors/inventory-changes`)
+
+Tabs: **Pending** (default), **Applied**, **Rejected**, **Cancelled**, with badge counts.
+
+Each row shows: vendor name (linked), change type, partNumber, payload summary (name / price / qty / description), prior payload for updates, submitted-by, submitted-at.
+
+Pending rows expand to:
+- **Mark applied** — optional `nrsApplyNotes` input where staff records what they did in NRS
+- **Reject** — required `rejectionReason`
+
+Vendor sees the applied/rejected status (and notes/reason) on their `/vendor/inventory` page on next load.
+
+### Implementation files
+
+- Schema: `src/lib/server/db/schema.ts` — vendors + 5 related tables, 5 enums (`vendor_status`, `agreement_template_kind`, `vendor_agreement_status`, `inventory_change_type`, `inventory_change_status`)
+- Migrations: `drizzle/0025_*.sql` (Stage 1), `drizzle/0026_*.sql` (Stage 2a)
+- Services:
+  - `src/lib/server/services/vendor-service.ts` — CRUD, NRS sync, agreement signing with supersession, onboarding helpers, portal enable/disable/reset
+  - `src/lib/server/services/agreement-template-service.ts` — versioning on edit
+  - `src/lib/server/services/vendor-group-service.ts` — group CRUD
+  - `src/lib/server/services/vendor-leaderboard-service.ts` — period resolution, aggregation, prior-period delta
+  - `src/lib/server/services/inventory-change-service.ts` — submit/cancel/markApplied/reject + listForReview/listForVendor
+  - `src/lib/server/services/nrs-api-client.ts` — extended with `getVendorSales(opts)` for per-vendor fetch
+- Admin routes: `src/routes/(app)/admin/vendors/`, `src/routes/(app)/admin/vendor-agreements/templates/`, `src/routes/(app)/admin/vendor-groups/`
+- Vendor portal: `src/routes/(app)/vendor/`
+- API: `src/routes/api/vendors/`, `src/routes/api/agreement-templates/`
+
+### Out of scope (deferred to Stage 2b)
+
+- Direct NRS write API integration (proposals are still applied manually by staff)
+- Vendor messaging integrated with TeamTime messaging (groups, threads, direct messages)
+- In-portal performance dashboard beyond the simple sales view
+- Public vendor self-signup flow
+
+---
+
+*Last updated: May 2026*

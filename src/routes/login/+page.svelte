@@ -9,9 +9,14 @@
 	let pin = '';
 	let password = '';
 	let loading = false;
+	// Vendor portal users sign in with password instead of PIN. The toggle
+	// flips the form locally; the backend accepts either as long as the user
+	// has a matching credential set.
+	let usePassword = !data.pinOnlyLogin;
 
 	$: pinOnlyLogin = data.pinOnlyLogin;
 	$: siteTitle = data.siteTitle || 'TeamTime';
+	$: showPin = pinOnlyLogin && !usePassword;
 </script>
 
 <svelte:head>
@@ -60,7 +65,7 @@
 						/>
 					</div>
 
-					{#if pinOnlyLogin}
+					{#if showPin}
 						<div>
 							<label for="pin" class="label">PIN</label>
 							<input
@@ -111,14 +116,22 @@
 					</button>
 				</form>
 
-				{#if pinOnlyLogin}
-					<div class="text-center">
+				{#if showPin}
+					<div class="flex flex-col items-center gap-2">
+						<button type="button" class="text-sm text-primary-600 hover:text-primary-700" on:click={() => (usePassword = true)}>
+							Vendor? Sign in with password
+						</button>
 						<a href="/forgot-pin" class="text-sm text-primary-600 hover:text-primary-700">
 							Forgot your PIN?
 						</a>
 					</div>
 				{:else}
-					<div class="text-center">
+					<div class="flex flex-col items-center gap-2">
+						{#if pinOnlyLogin}
+							<button type="button" class="text-sm text-primary-600 hover:text-primary-700" on:click={() => (usePassword = false)}>
+								Staff? Sign in with PIN
+							</button>
+						{/if}
 						<a href="/forgot-password" class="text-sm text-primary-600 hover:text-primary-700">
 							Forgot your password?
 						</a>

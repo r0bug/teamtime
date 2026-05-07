@@ -176,6 +176,20 @@
       "when": 1776500186958,
       "tag": "0024_open_loners",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1778083314247,
+      "tag": "0025_mysterious_mac_gargan",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1778171658932,
+      "tag": "0026_nappy_secret_warriors",
+      "breakpoints": true
     }
   ]
 }

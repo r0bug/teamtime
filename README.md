@@ -57,6 +57,16 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - Create pricing decisions directly from AI identifications
 - Confidence scoring for each identification
 
+### Vendor Management
+- **Booth vendors as first-class records** — link to NRS POS via `nrsVendorId`, with contact info, contract terms (rent, max discount), and lifecycle (active / inactive / terminated)
+- **Templated, stackable agreements** — primary (consignment, rental) + zero or more add-ons (glass shelf policy, locking case, etc.). Editing a template that has signed instances creates a new version; old signatures keep their `bodySnapshot` so history is preserved
+- **Tablet signature capture** via `signature_pad`, with a "paper original on file" toggle for migrating ~90 file-cabinet vendors
+- **Sales & performance tab** fetches live from NRS API by `nrsVendorId` with range selector + period delta; charts render via lightweight inline SVG (no chart library)
+- **Vendor performance leaderboard** at `/admin/vendors/leaderboard` — ranked by gross / vendor portion / retained, period selector, prior-period delta
+- **Onboarding queue** at `/admin/vendors/onboarding` — surfaces vendors missing prefix / group / portal decision; inline edits and "mark complete"
+- **Reporting groups** (many-to-many) for cross-vendor reporting
+- **Vendor portal** at `/vendor/*` — vendors log in with email + password (admin-set) on the same `/login` page, see their booth summary, sales (live NRS), and propose inventory create/update/delete changes (validated against their per-vendor inventory code prefix). Proposals queue into `pending_inventory_changes` for staff to apply to NRS
+
 ### Expense Tracking
 - Log ATM withdrawals with location and receipt photos
 - Allocate funds to products with photo documentation
@@ -257,7 +267,7 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-99 tables organized across domains:
+105 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries, break_entries
 - **Scheduling**: schedule_templates, schedule_template_shifts (referenced by `shifts.template_id` / `template_shift_id`)
@@ -268,6 +278,7 @@ All endpoints require authentication except static files. Role-based authorizati
 - **Messaging**: conversations, messages, message_photos, groups, group_members, thread_participants
 - **Gamification**: point_transactions, user_stats, achievements, user_achievements, leaderboard_snapshots, team_goals, shoutouts, award_types, demerits, clock_out_warnings, late_arrival_warnings
 - **Metrics & Analytics**: sales_snapshots, sales_transactions, vendor_employee_correlations, metric_definitions, metrics, metric_data_sources, metric_import_history, worker_pair_performance, worker_impact_metrics, staffing_level_metrics, day_of_week_metrics
+- **Vendor Management**: vendors, agreement_templates, vendor_agreements, vendor_groups, vendor_group_members, pending_inventory_changes
 - **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes, ai_tool_config, ai_tool_keywords, ai_context_config, ai_context_keywords
 - **Shift Requests**: shift_requests, shift_request_responses
 - **Security**: login_attempts, account_lockouts

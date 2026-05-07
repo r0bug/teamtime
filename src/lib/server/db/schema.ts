@@ -3071,3 +3071,277 @@ export const gamificationConfig = pgTable('gamification_config', {
 export type GamificationConfig = typeof gamificationConfig.$inferSelect;
 export type NewGamificationConfig = typeof gamificationConfig.$inferInsert;
 
+// ============================================
+// VENDOR MANAGEMENT
+// ============================================
+// Booth vendors who consign/rent space. NRS POS is the source of truth for
+// vendor identity, sales, commissions, and inventory — TeamTime stores only
+// TT-specific fields (contract terms, contact info, signed agreements, notes)
+// and links to NRS via nrsVendorId.
+
+export const vendorStatusEnum = pgEnum('vendor_status', ['active', 'inactive', 'terminated']);
+export const agreementTemplateKindEnum = pgEnum('agreement_template_kind', ['primary', 'addon']);
+export const vendorAgreementStatusEnum = pgEnum('vendor_agreement_status', ['signed', 'voided']);
+
+export const vendors = pgTable('vendors', {
+	id: uuid('id').primaryKey().defaultRandom(),
+
+	// Link to NRS POS (source of truth for sales/inventory)
+	nrsVendorId: integer('nrs_vendor_id').unique(),
+
+	// Link to a TeamTime user (for the future vendor login portal). Nullable:
+	// many vendors won't have user accounts (esp. paper-archive migrations).
+	userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+
+	// Identity & contact
+	displayName: text('display_name').notNull(),
+	contactName: text('contact_name'),
+	contactEmail: text('contact_email'),
+	contactPhone: text('contact_phone'),
+	addressLine1: text('address_line_1'),
+	addressLine2: text('address_line_2'),
+	city: text('city'),
+	state: text('state'),
+	zip: text('zip'),
+
+	// Contract terms (current — agreements snapshot these at sign time)
+	boothNumber: text('booth_number'),
+	monthlyRentCents: integer('monthly_rent_cents'),
+	maxDiscountPercent: decimal('max_discount_percent', { precision: 5, scale: 2 }),
+
+	// Lifecycle
+	status: vendorStatusEnum('status').notNull().default('inactive'),
+	startDate: date('start_date'),
+	endDate: date('end_date'),
+	notes: text('notes'),
+
+	// Onboarding & portal (Stage 2a)
+	// Per-vendor SKU prefix in NRS (2-6 chars [A-Z0-9]). All this vendor's
+	// item codes start with this prefix (e.g. 'SR' → 'SR00212').
+	inventoryCodePrefix: text('inventory_code_prefix').unique(),
+	portalEnabled: boolean('portal_enabled').notNull().default(false),
+	onboardingComplete: boolean('onboarding_complete').notNull().default(false),
+
+	// Audit
+	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	idxStatus: index('idx_vendors_status').on(table.status),
+	idxNrsVendorId: index('idx_vendors_nrs_vendor_id').on(table.nrsVendorId),
+	idxOnboarding: index('idx_vendors_onboarding').on(table.onboardingComplete)
+}));
+
+// Reusable agreement documents. Editing creates a new version row — old rows
+// stay so historical signed agreements still resolve their template.
+export const agreementTemplates = pgTable('agreement_templates', {
+	id: uuid('id').primaryKey().defaultRandom(),
+
+	// Stable slug across versions (e.g. 'consignment-vendor', 'glass-shelf-policy').
+	// Multiple versions of the same template share a code; isActive=true picks the current one.
+	code: text('code').notNull(),
+	title: text('title').notNull(),
+	kind: agreementTemplateKindEnum('kind').notNull(),
+	bodyMarkdown: text('body_markdown').notNull(),
+
+	version: integer('version').notNull().default(1),
+	isActive: boolean('is_active').notNull().default(true),
+	supersedesId: uuid('supersedes_id').references((): AnyPgColumn => agreementTemplates.id, { onDelete: 'set null' }),
+
+	// Optional per-template extra fields collected at signing.
+	// Shape: [{ key: string, label: string, type: 'currency'|'text'|'number', required: boolean }]
+	extraFieldsSchema: jsonb('extra_fields_schema').$type<{
+		key: string;
+		label: string;
+		type: 'currency' | 'text' | 'number';
+		required: boolean;
+	}[]>(),
+
+	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+	archivedAt: timestamp('archived_at', { withTimezone: true })
+}, (table) => ({
+	idxCode: index('idx_agreement_templates_code').on(table.code),
+	idxKindActive: index('idx_agreement_templates_kind_active').on(table.kind, table.isActive)
+}));
+
+// One row per signed instance. A vendor can have multiple concurrent signed
+// rows (one primary + N add-ons); supersession is per-(vendorId, templateId).
+export const vendorAgreements = pgTable('vendor_agreements', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	vendorId: uuid('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+	templateId: uuid('template_id').notNull().references(() => agreementTemplates.id, { onDelete: 'restrict' }),
+
+	status: vendorAgreementStatusEnum('status').notNull().default('signed'),
+
+	signedAt: timestamp('signed_at', { withTimezone: true }).notNull().defaultNow(),
+	signedByName: text('signed_by_name').notNull(),
+
+	// Base64 PNG from signature_pad. Null when paperOriginalOnFile is true
+	// (used to migrate the file-cabinet archive).
+	signatureDataUrl: text('signature_data_url'),
+	paperOriginalOnFile: boolean('paper_original_on_file').notNull().default(false),
+
+	// Frozen snapshots so future template/vendor edits don't rewrite history
+	bodySnapshot: text('body_snapshot').notNull(),
+	templateVersion: integer('template_version').notNull(),
+	termsSnapshot: jsonb('terms_snapshot').$type<{
+		monthlyRentCents: number | null;
+		maxDiscountPercent: string | null;
+		boothNumber: string | null;
+		extraFieldValues?: Record<string, string | number | null>;
+	}>().notNull(),
+
+	witnessedByUserId: uuid('witnessed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+
+	voidedAt: timestamp('voided_at', { withTimezone: true }),
+	voidedReason: text('voided_reason'),
+
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	idxVendor: index('idx_vendor_agreements_vendor').on(table.vendorId),
+	idxVendorTemplateStatus: index('idx_vendor_agreements_vendor_template_status').on(
+		table.vendorId, table.templateId, table.status
+	)
+}));
+
+export const vendorsRelations = relations(vendors, ({ one, many }) => ({
+	user: one(users, { fields: [vendors.userId], references: [users.id] }),
+	createdBy: one(users, { fields: [vendors.createdByUserId], references: [users.id], relationName: 'vendorCreatedBy' }),
+	agreements: many(vendorAgreements)
+}));
+
+export const agreementTemplatesRelations = relations(agreementTemplates, ({ one, many }) => ({
+	supersedes: one(agreementTemplates, {
+		fields: [agreementTemplates.supersedesId],
+		references: [agreementTemplates.id],
+		relationName: 'agreementTemplateSupersedes'
+	}),
+	createdBy: one(users, { fields: [agreementTemplates.createdByUserId], references: [users.id], relationName: 'agreementTemplateCreatedBy' }),
+	signedAgreements: many(vendorAgreements)
+}));
+
+export const vendorAgreementsRelations = relations(vendorAgreements, ({ one }) => ({
+	vendor: one(vendors, { fields: [vendorAgreements.vendorId], references: [vendors.id] }),
+	template: one(agreementTemplates, { fields: [vendorAgreements.templateId], references: [agreementTemplates.id] }),
+	witnessedBy: one(users, { fields: [vendorAgreements.witnessedByUserId], references: [users.id], relationName: 'vendorAgreementWitnessedBy' })
+}));
+
+export type Vendor = typeof vendors.$inferSelect;
+export type NewVendor = typeof vendors.$inferInsert;
+export type AgreementTemplate = typeof agreementTemplates.$inferSelect;
+export type NewAgreementTemplate = typeof agreementTemplates.$inferInsert;
+export type VendorAgreement = typeof vendorAgreements.$inferSelect;
+export type NewVendorAgreement = typeof vendorAgreements.$inferInsert;
+
+// ============================================
+// VENDOR ONBOARDING (Stage 2a) — groups, portal, inventory change queue
+// ============================================
+
+export const inventoryChangeTypeEnum = pgEnum('inventory_change_type', ['create', 'update', 'delete']);
+export const inventoryChangeStatusEnum = pgEnum('inventory_change_status', [
+	'pending',
+	'applied',
+	'rejected',
+	'cancelled'
+]);
+
+// Reporting groups for vendors (e.g. "Antiques", "Crafts", "Books").
+// Many-to-many — a vendor can belong to multiple groups.
+export const vendorGroups = pgTable('vendor_groups', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull().unique(),
+	displayOrder: integer('display_order').notNull().default(0),
+	color: text('color').notNull().default('#6B7280'),
+	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	archivedAt: timestamp('archived_at', { withTimezone: true })
+});
+
+export const vendorGroupMembers = pgTable('vendor_group_members', {
+	vendorId: uuid('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+	groupId: uuid('group_id').notNull().references(() => vendorGroups.id, { onDelete: 'cascade' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	pk: unique('vendor_group_members_pk').on(table.vendorId, table.groupId)
+}));
+
+/**
+ * Pending inventory changes proposed by vendors via the portal.
+ *
+ * NRS doesn't yet have a confirmed write API, so vendor edits land here as
+ * proposals. Staff reviews `/admin/vendors/inventory-changes`, applies the
+ * change manually in NRS, then marks the row `applied` (with optional notes).
+ */
+export const pendingInventoryChanges = pgTable('pending_inventory_changes', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	vendorId: uuid('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+	submittedByUserId: uuid('submitted_by_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+
+	changeType: inventoryChangeTypeEnum('change_type').notNull(),
+	// NRS part identifier. Null on `create` (the part doesn't exist yet).
+	nrsPartId: integer('nrs_part_id'),
+	// Vendor's item code. Server enforces it starts with vendor.inventoryCodePrefix.
+	partNumber: text('part_number').notNull(),
+
+	// Proposed values: { partName, description, priceCents, quantity, ... }
+	payload: jsonb('payload').$type<{
+		partName?: string;
+		description?: string;
+		priceCents?: number;
+		quantity?: number;
+		[key: string]: unknown;
+	}>().notNull(),
+	// Snapshot of the prior NRS values at submission, when available (updates only).
+	previousPayload: jsonb('previous_payload').$type<Record<string, unknown>>(),
+
+	status: inventoryChangeStatusEnum('status').notNull().default('pending'),
+	submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
+	reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+	appliedAt: timestamp('applied_at', { withTimezone: true }),
+	reviewedByUserId: uuid('reviewed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	appliedByUserId: uuid('applied_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	rejectionReason: text('rejection_reason'),
+	nrsApplyNotes: text('nrs_apply_notes')
+}, (table) => ({
+	idxVendor: index('idx_pending_inventory_changes_vendor').on(table.vendorId),
+	idxStatus: index('idx_pending_inventory_changes_status').on(table.status),
+	idxVendorStatus: index('idx_pending_inventory_changes_vendor_status').on(table.vendorId, table.status)
+}));
+
+export const vendorGroupsRelations = relations(vendorGroups, ({ many }) => ({
+	members: many(vendorGroupMembers)
+}));
+
+export const vendorGroupMembersRelations = relations(vendorGroupMembers, ({ one }) => ({
+	vendor: one(vendors, { fields: [vendorGroupMembers.vendorId], references: [vendors.id] }),
+	group: one(vendorGroups, { fields: [vendorGroupMembers.groupId], references: [vendorGroups.id] })
+}));
+
+export const pendingInventoryChangesRelations = relations(pendingInventoryChanges, ({ one }) => ({
+	vendor: one(vendors, { fields: [pendingInventoryChanges.vendorId], references: [vendors.id] }),
+	submittedBy: one(users, {
+		fields: [pendingInventoryChanges.submittedByUserId],
+		references: [users.id],
+		relationName: 'inventoryChangeSubmittedBy'
+	}),
+	reviewedBy: one(users, {
+		fields: [pendingInventoryChanges.reviewedByUserId],
+		references: [users.id],
+		relationName: 'inventoryChangeReviewedBy'
+	}),
+	appliedBy: one(users, {
+		fields: [pendingInventoryChanges.appliedByUserId],
+		references: [users.id],
+		relationName: 'inventoryChangeAppliedBy'
+	})
+}));
+
+export type VendorGroup = typeof vendorGroups.$inferSelect;
+export type NewVendorGroup = typeof vendorGroups.$inferInsert;
+export type VendorGroupMember = typeof vendorGroupMembers.$inferSelect;
+export type NewVendorGroupMember = typeof vendorGroupMembers.$inferInsert;
+export type PendingInventoryChange = typeof pendingInventoryChanges.$inferSelect;
+export type NewPendingInventoryChange = typeof pendingInventoryChanges.$inferInsert;
+
