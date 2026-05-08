@@ -4,13 +4,27 @@ import { eq } from 'drizzle-orm';
 import { db, users } from '$lib/server/db';
 import { hashPin } from '$lib/server/auth/pin';
 import { verify } from '@node-rs/argon2';
+import { getVendorDetail, type NrsVendorDetail } from '$lib/server/services/nrs-api-client';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('vendor:profile');
 
 export const load: PageServerLoad = async ({ parent }) => {
 	const { vendor } = await parent();
-	return { vendor };
+
+	// Fetch the live NRS record so the vendor can verify what's on file there.
+	let nrsDetail: NrsVendorDetail | null = null;
+	let nrsError: string | null = null;
+	if (vendor.nrsVendorId) {
+		try {
+			nrsDetail = await getVendorDetail(vendor.nrsVendorId);
+		} catch (err) {
+			nrsError = err instanceof Error ? err.message : 'Could not reach NRS';
+			log.warn({ vendorId: vendor.id, err }, 'vendor/get failed in portal');
+		}
+	}
+
+	return { vendor, nrsDetail, nrsError };
 };
 
 export const actions: Actions = {

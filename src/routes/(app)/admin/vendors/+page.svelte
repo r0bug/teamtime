@@ -44,7 +44,7 @@
 
 	{#if form && 'syncResult' in form && form.syncResult}
 		<div class="mb-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">
-			NRS sync: created {form.syncResult.created} new vendor stub{form.syncResult.created === 1 ? '' : 's'}, skipped {form.syncResult.skipped} already linked.
+			NRS sync: created {form.syncResult.created}, enriched {form.syncResult.enriched ?? 0}, skipped {form.syncResult.skipped}{form.syncResult.prefixCollisions ? `, ${form.syncResult.prefixCollisions} prefix collision${form.syncResult.prefixCollisions === 1 ? '' : 's'}` : ''}.
 		</div>
 	{/if}
 	{#if form?.error}

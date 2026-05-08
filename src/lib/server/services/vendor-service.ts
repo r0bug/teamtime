@@ -23,7 +23,7 @@ import {
 	type AgreementTemplate,
 	type VendorGroup
 } from '$lib/server/db/schema';
-import { getVendors as fetchNrsVendors } from './nrs-api-client';
+import { getVendors as fetchNrsVendors, getVendorDetail, type NrsVendorDetail } from './nrs-api-client';
 import { hashPin } from '$lib/server/auth/pin';
 import { createLogger } from '$lib/server/logger';
 
@@ -215,35 +215,162 @@ export async function signAgreement(input: {
 	});
 }
 
-/**
- * Pull the NRS vendor list and create a stub `vendors` row for any nrsVendorId
- * not yet in TeamTime. Idempotent: re-running never duplicates and never
- * overwrites filled-in stubs.
- */
-export async function syncFromNrs(): Promise<{ created: number; skipped: number }> {
-	const nrsVendors = await fetchNrsVendors();
-	const existing = await db
-		.select({ nrsVendorId: vendors.nrsVendorId })
-		.from(vendors)
-		.where(sql`${vendors.nrsVendorId} IS NOT NULL`);
-	const have = new Set(existing.map((r) => r.nrsVendorId));
+// Empty-only fields: backfill from NRS without overwriting admin-edited data.
+const EMPTY_BACKFILL_KEYS = [
+	'contactName',
+	'contactEmail',
+	'contactPhone',
+	'addressLine1',
+	'addressLine2',
+	'city',
+	'state',
+	'zip',
+	'inventoryCodePrefix'
+] as const;
 
-	const toInsert = nrsVendors.filter((v) => !have.has(v.vendorId));
-	if (toInsert.length === 0) {
-		log.info({ existing: have.size }, 'NRS sync: nothing to create');
-		return { created: 0, skipped: nrsVendors.length };
+const PREFIX_RE_INNER = /^[A-Z0-9]{2,6}$/;
+
+/**
+ * Build the patch we'd apply to a vendor from a fresh NRS detail record.
+ * Only includes fields that aren't already filled in on the TT side, plus
+ * an always-replaced `notes` merge (we append rather than overwrite).
+ */
+function nrsDetailToPatch(
+	detail: NrsVendorDetail,
+	current: Vendor
+): Partial<typeof vendors.$inferInsert> {
+	const patch: Record<string, unknown> = {};
+
+	const fields: { key: typeof EMPTY_BACKFILL_KEYS[number]; value: string | null }[] = [
+		{ key: 'contactName', value: detail.contact || null },
+		{ key: 'contactEmail', value: detail.email ? detail.email.trim().toLowerCase() : null },
+		{ key: 'contactPhone', value: detail.phone || null },
+		{ key: 'addressLine1', value: detail.address || null },
+		{ key: 'addressLine2', value: detail.address2 || null },
+		{ key: 'city', value: detail.city || null },
+		{ key: 'state', value: detail.state || null },
+		{ key: 'zip', value: detail.zipCode || null }
+	];
+
+	for (const { key, value } of fields) {
+		if (current[key] === null && value) patch[key] = value;
 	}
 
-	await db.insert(vendors).values(
-		toInsert.map((v) => ({
-			nrsVendorId: v.vendorId,
-			displayName: v.name || `NRS Vendor ${v.vendorId}`,
-			status: 'inactive' as const
-		}))
+	// Inventory prefix: NRS `vendorCode` is the SKU prefix. Validate before applying.
+	if (!current.inventoryCodePrefix && detail.vendorCode) {
+		const candidate = detail.vendorCode.trim().toUpperCase();
+		if (PREFIX_RE_INNER.test(candidate)) {
+			patch.inventoryCodePrefix = candidate;
+		}
+	}
+
+	return patch;
+}
+
+export interface SyncFromNrsResult {
+	created: number;
+	enriched: number;
+	skipped: number;
+	prefixCollisions: number;
+}
+
+/**
+ * Pull the NRS vendor list and reconcile with TT.
+ *
+ * For each NRS vendor:
+ *  - If we don't have it yet → create a row, populated from `vendor/get` detail
+ *    (vendorCode → inventoryCodePrefix, contact, address, email, phone).
+ *  - If we already have it → enrich by backfilling any fields we have null for,
+ *    and apply the prefix if we don't have one (and the NRS code is valid).
+ *  - Never overwrite admin-edited values.
+ *
+ * Idempotent. Prefix uniqueness conflicts (two NRS vendors sharing `vendorCode`)
+ * are logged and skipped — admin can resolve manually.
+ */
+export async function syncFromNrs(): Promise<SyncFromNrsResult> {
+	const nrsVendors = await fetchNrsVendors();
+	const existing = await db
+		.select()
+		.from(vendors)
+		.where(sql`${vendors.nrsVendorId} IS NOT NULL`);
+	const byNrsId = new Map(existing.map((v) => [v.nrsVendorId!, v]));
+
+	const usedPrefixes = new Set(
+		existing.map((v) => v.inventoryCodePrefix).filter((p): p is string => !!p)
 	);
 
-	log.info({ created: toInsert.length, skipped: nrsVendors.length - toInsert.length }, 'NRS sync complete');
-	return { created: toInsert.length, skipped: nrsVendors.length - toInsert.length };
+	let created = 0;
+	let enriched = 0;
+	let prefixCollisions = 0;
+
+	for (const summary of nrsVendors) {
+		// Skip system rows like "*** Not-on-File Vendor ***"
+		if (summary.name?.startsWith('***')) continue;
+
+		const detail = await getVendorDetail(summary.vendorId);
+		if (!detail) continue; // err 201 — skip
+
+		const current = byNrsId.get(summary.vendorId);
+
+		if (!current) {
+			// Build a fresh insert, applying detail fields.
+			const candidatePrefix = detail.vendorCode?.trim().toUpperCase();
+			let inventoryCodePrefix: string | null = null;
+			if (candidatePrefix && PREFIX_RE_INNER.test(candidatePrefix)) {
+				if (usedPrefixes.has(candidatePrefix)) {
+					prefixCollisions++;
+					log.warn(
+						{ nrsVendorId: detail.vendorId, prefix: candidatePrefix },
+						'NRS sync: prefix collision — leaving prefix null'
+					);
+				} else {
+					inventoryCodePrefix = candidatePrefix;
+					usedPrefixes.add(candidatePrefix);
+				}
+			}
+
+			await db.insert(vendors).values({
+				nrsVendorId: detail.vendorId,
+				displayName: summary.name || `NRS Vendor ${detail.vendorId}`,
+				contactName: detail.contact || null,
+				contactEmail: detail.email ? detail.email.trim().toLowerCase() : null,
+				contactPhone: detail.phone || null,
+				addressLine1: detail.address || null,
+				addressLine2: detail.address2 || null,
+				city: detail.city || null,
+				state: detail.state || null,
+				zip: detail.zipCode || null,
+				inventoryCodePrefix,
+				status: 'inactive'
+			});
+			created++;
+			continue;
+		}
+
+		// Existing row — backfill empty fields only.
+		const patch = nrsDetailToPatch(detail, current);
+		if (patch.inventoryCodePrefix && usedPrefixes.has(patch.inventoryCodePrefix as string)) {
+			prefixCollisions++;
+			log.warn(
+				{ vendorId: current.id, prefix: patch.inventoryCodePrefix },
+				'NRS sync: prefix collision on existing vendor — leaving prefix null'
+			);
+			delete patch.inventoryCodePrefix;
+		}
+
+		if (Object.keys(patch).length > 0) {
+			if (patch.inventoryCodePrefix) usedPrefixes.add(patch.inventoryCodePrefix as string);
+			await db
+				.update(vendors)
+				.set({ ...patch, updatedAt: new Date() })
+				.where(eq(vendors.id, current.id));
+			enriched++;
+		}
+	}
+
+	const skipped = nrsVendors.length - created - enriched;
+	log.info({ created, enriched, skipped, prefixCollisions }, 'NRS sync complete');
+	return { created, enriched, skipped, prefixCollisions };
 }
 
 // ── Onboarding (Stage 2a) ────────────────────────────────────────────────────

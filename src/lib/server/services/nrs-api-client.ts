@@ -192,6 +192,55 @@ export async function getVendors(storeId?: number): Promise<{ vendorId: number; 
 	return data.list;
 }
 
+/** Full per-vendor record from `POST vendor/get`. */
+export interface NrsVendorDetail {
+	vendorId: number;
+	companyId: number;
+	vendorCode: string;            // 2-3 char SKU prefix in NRS (e.g. 'CAR' for AARON CARTER)
+	address: string;
+	address2: string;
+	address3: string;
+	city: string;
+	state: string;
+	zipCode: string;
+	country: string;
+	countryCode: string;
+	countryCode3: string;
+	contact: string;               // contact name
+	email: string;
+	phone: string;
+	fax: string;
+	fedid: string;
+	require1099: boolean;
+	nameFor1099: string;
+	ourAccountNumber: string;
+	minimumOrderValue: number;
+	notes: string;                 // free text — often holds commission rate
+	vendorNumber: string;
+	portalAccess: boolean;         // NRS's own concept of vendor portal access
+	[key: string]: unknown;
+}
+
+/**
+ * Fetch the full vendor record from NRS via `POST vendor/get`.
+ *
+ * Returns null when NRS doesn't have a record for that vendorId (err 201
+ * "No Data Received"), so callers can keep a bulk sync going through a few
+ * orphaned ids without aborting.
+ */
+export async function getVendorDetail(vendorId: number): Promise<NrsVendorDetail | null> {
+	try {
+		const raw = await apiPost<{ get?: NrsVendorDetail }>('vendor/get', { vendorId });
+		if (!raw.get) return null;
+		return raw.get;
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		// err 201 = "No Data Received" — vendor not found, not a real failure
+		if (msg.includes('err 201')) return null;
+		throw err;
+	}
+}
+
 /**
  * Fetch sales line items for a single vendor across a date range.
  * NRS's possales/getall doesn't filter by vendor server-side, so we pull

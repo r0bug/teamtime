@@ -49,6 +49,64 @@
 	</div>
 
 	<div class="card mt-4">
+		<div class="card-header">
+			<h2 class="font-semibold text-gray-900">On file at NRS</h2>
+			<p class="text-xs text-gray-500 mt-1">What the POS has for your booth right now. If anything's wrong, ask the shop to update it in NRS — TeamTime mirrors what's there.</p>
+		</div>
+		<div class="card-body text-sm">
+			{#if !data.vendor.nrsVendorId}
+				<p class="text-gray-500">Your account isn't linked to NRS yet.</p>
+			{:else if data.nrsError}
+				<p class="text-red-600">Couldn't reach NRS: {data.nrsError}</p>
+			{:else if !data.nrsDetail}
+				<p class="text-gray-500">No record found in NRS for vendor #{data.vendor.nrsVendorId}.</p>
+			{:else}
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+					<div>
+						<div class="text-xs text-gray-500">NRS Vendor ID</div>
+						<div class="font-mono">{data.nrsDetail.vendorId}</div>
+					</div>
+					<div>
+						<div class="text-xs text-gray-500">SKU prefix (vendorCode)</div>
+						<div class="font-mono">{data.nrsDetail.vendorCode || '—'}</div>
+					</div>
+					<div>
+						<div class="text-xs text-gray-500">Contact</div>
+						<div>{data.nrsDetail.contact || '—'}</div>
+					</div>
+					<div>
+						<div class="text-xs text-gray-500">Email</div>
+						<div>{data.nrsDetail.email || '—'}</div>
+					</div>
+					<div>
+						<div class="text-xs text-gray-500">Phone</div>
+						<div>{data.nrsDetail.phone || '—'}</div>
+					</div>
+					<div>
+						<div class="text-xs text-gray-500">Vendor #</div>
+						<div>{data.nrsDetail.vendorNumber || '—'}</div>
+					</div>
+					<div class="md:col-span-2">
+						<div class="text-xs text-gray-500">Address</div>
+						<div>
+							{[data.nrsDetail.address, data.nrsDetail.address2, data.nrsDetail.address3].filter(Boolean).join(' ') || '—'}
+							{#if data.nrsDetail.city || data.nrsDetail.state || data.nrsDetail.zipCode}
+								<div>{[data.nrsDetail.city, data.nrsDetail.state].filter(Boolean).join(', ')} {data.nrsDetail.zipCode}</div>
+							{/if}
+						</div>
+					</div>
+					{#if data.nrsDetail.notes}
+						<div class="md:col-span-2">
+							<div class="text-xs text-gray-500">Notes</div>
+							<div class="whitespace-pre-wrap">{data.nrsDetail.notes}</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	</div>
+
+	<div class="card mt-4">
 		<div class="card-header"><h2 class="font-semibold text-gray-900">Change password</h2></div>
 		<div class="card-body">
 			{#if form?.error}
