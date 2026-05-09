@@ -37,12 +37,20 @@ export const staffingInsightsProvider: AIContextProvider<StaffingInsightsContext
 	agents: ['office_manager', 'revenue_optimizer'],
 
 	async isEnabled() {
-		// Check if any analytics data exists
-		const rows = await db
-			.select({ id: workerPairPerformance.id })
-			.from(workerPairPerformance)
-			.limit(1);
-		return rows.length > 0;
+		// Check if any analytics data exists. The worker_pair_performance table
+		// is migration-gated; on environments where the migration hasn't run,
+		// silently disable the provider rather than spamming the error log.
+		try {
+			const rows = await db
+				.select({ id: workerPairPerformance.id })
+				.from(workerPairPerformance)
+				.limit(1);
+			return rows.length > 0;
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : '';
+			if (msg.includes('does not exist')) return false;
+			throw err;
+		}
 	},
 
 	async getContext(): Promise<StaffingInsightsContextData> {

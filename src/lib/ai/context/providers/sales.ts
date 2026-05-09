@@ -70,11 +70,15 @@ export const salesProvider: AIContextProvider<SalesContextData> = {
 			)
 			.orderBy(desc(salesSnapshots.saleDate), desc(salesSnapshots.capturedAt));
 
-		// Dedupe to latest snapshot per day
+		// Dedupe to latest snapshot per day. Drizzle's `date` column may surface
+		// either a string or a Date depending on driver version, so normalize.
 		const dailySnapshots = new Map<string, typeof snapshots[0]>();
 		for (const s of snapshots) {
-			if (!dailySnapshots.has(s.saleDate)) {
-				dailySnapshots.set(s.saleDate, s);
+			const key = typeof s.saleDate === 'string'
+				? s.saleDate
+				: toPacificDateString(s.saleDate as unknown as Date);
+			if (!dailySnapshots.has(key)) {
+				dailySnapshots.set(key, s);
 			}
 		}
 
