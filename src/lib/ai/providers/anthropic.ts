@@ -104,6 +104,14 @@ export const anthropicProvider: LLMProvider = {
 			messages
 		};
 
+		if (providerKey === 'deepseek') {
+			// DeepSeek V4 Flash defaults to thinking mode and demands the thinking
+			// blocks be echoed back on every continuation. We don't capture them
+			// today, so disable thinking outright — chat tool-calling doesn't need
+			// extended reasoning.
+			body.thinking = { type: 'disabled' };
+		}
+
 		if (request.tools && request.tools.length > 0) {
 			body.tools = convertToolsToAnthropic(request.tools);
 		}
@@ -175,6 +183,10 @@ export const anthropicProvider: LLMProvider = {
 			messages,
 			stream: true
 		};
+
+		if (providerKey === 'deepseek') {
+			body.thinking = { type: 'disabled' };
+		}
 
 		if (request.tools && request.tools.length > 0) {
 			body.tools = convertToolsToAnthropic(request.tools);
@@ -395,6 +407,10 @@ export async function* streamWithToolResults(
 		messages,
 		stream: true
 	};
+
+	if (providerKey === 'deepseek') {
+		body.thinking = { type: 'disabled' };
+	}
 
 	if (request.tools && request.tools.length > 0) {
 		body.tools = convertToolsToAnthropic(request.tools);
