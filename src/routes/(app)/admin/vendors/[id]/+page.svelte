@@ -200,9 +200,12 @@
 				<span class="text-xs px-2 py-0.5 rounded-full {data.vendor.status === 'active' ? 'bg-green-100 text-green-700' : data.vendor.status === 'inactive' ? 'bg-gray-100 text-gray-700' : 'bg-red-100 text-red-700'}">{data.vendor.status}</span>
 			</p>
 		</div>
-		<button class="btn btn-primary" on:click={() => openSignModal()} disabled={data.availableTemplates.length === 0}>
-			+ Capture Signature
-		</button>
+		<div class="flex gap-2">
+			<a href={`/admin/vendors/${data.vendor.id}/tags`} class="btn btn-secondary">🏷 Tag Designer</a>
+			<button class="btn btn-primary" on:click={() => openSignModal()} disabled={data.availableTemplates.length === 0}>
+				+ Capture Signature
+			</button>
+		</div>
 	</div>
 
 	{#if form?.error}
@@ -289,6 +292,11 @@
 					<div>
 						<label class="label" for="maxDiscountPercent">Max discount (%)</label>
 						<input id="maxDiscountPercent" name="maxDiscountPercent" type="number" step="0.01" class="input" value={data.vendor.maxDiscountPercent ?? ''} />
+					</div>
+					<div>
+						<label class="label" for="vendorPaymentPercent">Vendor payment % (NRS)</label>
+						<input id="vendorPaymentPercent" name="vendorPaymentPercent" type="number" step="0.01" class="input" value={data.vendor.vendorPaymentPercent ?? ''} placeholder="e.g. 87.00" />
+						<p class="text-xs text-gray-500 mt-1">% the vendor receives. Shop's commission = 100 − this.</p>
 					</div>
 					<div>
 						<label class="label" for="status">Status</label>

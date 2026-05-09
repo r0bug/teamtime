@@ -6,17 +6,19 @@
  * signed agreements, notes) keyed off `nrsVendorId`.
  */
 
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { db } from '$lib/server/db';
 import {
 	vendors,
 	vendorAgreements,
 	agreementTemplates,
+	salesTransactions,
 	users,
 	userTypes,
 	vendorGroupMembers,
 	vendorGroups,
+	vendorPartnumberSequences,
 	type Vendor,
 	type NewVendor,
 	type VendorAgreement,
@@ -37,9 +39,12 @@ export interface VendorListItem extends Vendor {
 export async function listVendors(filters?: {
 	status?: 'active' | 'inactive' | 'terminated';
 	search?: string;
+	includeNrsInactive?: boolean;
 }): Promise<VendorListItem[]> {
 	const conditions = [];
 	if (filters?.status) conditions.push(eq(vendors.status, filters.status));
+	// Hide NRS-inactive vendors by default. Caller can opt in with includeNrsInactive=true.
+	if (!filters?.includeNrsInactive) conditions.push(eq(vendors.nrsInactive, false));
 
 	const rows = await db
 		.select()
@@ -75,7 +80,7 @@ export async function listVendors(filters?: {
 		.where(
 			and(
 				eq(vendorAgreements.status, 'signed'),
-				sql`${vendorAgreements.vendorId} = ANY(${ids})`
+				inArray(vendorAgreements.vendorId, ids)
 			)
 		);
 
@@ -231,6 +236,58 @@ const EMPTY_BACKFILL_KEYS = [
 const PREFIX_RE_INNER = /^[A-Z0-9]{2,6}$/;
 
 /**
+ * Best-effort parse of the NRS `notes` field for booth rent + commission %.
+ *
+ * NRS doesn't expose Booth Rent and Vendor Payment % structured via the API,
+ * but staff often record them in `notes` like:
+ *   "13% commissions ... 100. rent ... *04/01/25 Rent Increased to 175"
+ *
+ * Strategy: scan the entire notes string, capture every dollar/% match
+ * mentioned alongside "rent" or "commission", and use the LAST occurrence
+ * of each (since notes are typically appended chronologically).
+ */
+export function parseRentAndPaymentFromNotes(notes: string | null): {
+	suggestedMonthlyRentCents: number | null;
+	suggestedCommissionPercent: number | null;
+	suggestedVendorPaymentPercent: number | null;
+} {
+	if (!notes) return { suggestedMonthlyRentCents: null, suggestedCommissionPercent: null, suggestedVendorPaymentPercent: null };
+
+	// Rent: capture variations like "Rent Increased to 175", "$100 rent", "100. rent",
+	// "rent $175", "Booth Rent: 175", "Rent due for May is $244".
+	const rentMatches: number[] = [];
+	const rentPatterns: RegExp[] = [
+		/rent(?:\s+(?:increased|raised|changed))?\s+(?:to|is|=)\s+\$?\s*(\d+(?:\.\d+)?)/gi,
+		/rent\s+(?:due|amount)?\s*(?:for\s+\w+\s+)?(?:is|=)\s*\$?\s*(\d+(?:\.\d+)?)/gi,
+		/(?:^|[\s,$])\$?\s*(\d+(?:\.\d+)?)\s*(?:[\.\s]\s*)?\.?\s*(?:monthly\s+)?rent\b/gi,
+		/booth\s+rent\s*[:=]?\s*\$?\s*(\d+(?:\.\d+)?)/gi,
+		/(?:monthly\s+)?rent\s*[:=]\s*\$?\s*(\d+(?:\.\d+)?)/gi,
+		/rent\s+\$\s*(\d+(?:\.\d+)?)/gi
+	];
+	for (const re of rentPatterns) {
+		for (const m of notes.matchAll(re)) {
+			const v = parseFloat(m[1]);
+			if (isFinite(v) && v >= 5 && v <= 5000) rentMatches.push(v);
+		}
+	}
+	const lastRent = rentMatches.length ? rentMatches[rentMatches.length - 1] : null;
+
+	// Commission %: e.g. "13% commission", "13 % commissions"
+	const commMatches: number[] = [];
+	for (const m of notes.matchAll(/(\d+(?:\.\d+)?)\s*%\s*(?:commission|commish)/gi)) {
+		const v = parseFloat(m[1]);
+		if (isFinite(v) && v >= 0 && v <= 100) commMatches.push(v);
+	}
+	const lastComm = commMatches.length ? commMatches[commMatches.length - 1] : null;
+
+	return {
+		suggestedMonthlyRentCents: lastRent !== null ? Math.round(lastRent * 100) : null,
+		suggestedCommissionPercent: lastComm,
+		suggestedVendorPaymentPercent: lastComm !== null ? Number((100 - lastComm).toFixed(2)) : null
+	};
+}
+
+/**
  * Build the patch we'd apply to a vendor from a fresh NRS detail record.
  * Only includes fields that aren't already filled in on the TT side, plus
  * an always-replaced `notes` merge (we append rather than overwrite).
@@ -264,6 +321,22 @@ function nrsDetailToPatch(
 		}
 	}
 
+	// Best-effort parse of rent + payment % from NRS notes — only fill blanks.
+	const parsed = parseRentAndPaymentFromNotes(detail.notes);
+	if (current.monthlyRentCents === null && parsed.suggestedMonthlyRentCents !== null) {
+		patch.monthlyRentCents = parsed.suggestedMonthlyRentCents;
+	}
+	if (current.vendorPaymentPercent === null && parsed.suggestedVendorPaymentPercent !== null) {
+		patch.vendorPaymentPercent = String(parsed.suggestedVendorPaymentPercent);
+	}
+
+	// Mirror NRS notes into TT (overwrite — NRS is source of truth for this field)
+	// so admin can read what NRS knows directly from the vendor detail page.
+	const nrsNotes = detail.notes?.trim() || null;
+	if (nrsNotes !== current.notes) {
+		patch.notes = nrsNotes;
+	}
+
 	return patch;
 }
 
@@ -271,7 +344,21 @@ export interface SyncFromNrsResult {
 	created: number;
 	enriched: number;
 	skipped: number;
+	filteredOut: number;
 	prefixCollisions: number;
+}
+
+/**
+ * Set of NRS vendor IDs that are pass-through vendors — i.e. vendors who
+ * have appeared in our sales history. Used to filter the NRS vendor list
+ * down to consignment vendors we actually want to track.
+ */
+async function getPassThroughVendorIds(): Promise<Set<number>> {
+	const rows = await db
+		.selectDistinct({ vendorId: salesTransactions.vendorId })
+		.from(salesTransactions)
+		.where(sql`${salesTransactions.vendorId} IS NOT NULL AND ${salesTransactions.vendorId} > 0`);
+	return new Set(rows.map((r) => r.vendorId));
 }
 
 /**
@@ -288,7 +375,10 @@ export interface SyncFromNrsResult {
  * are logged and skipped — admin can resolve manually.
  */
 export async function syncFromNrs(): Promise<SyncFromNrsResult> {
-	const nrsVendors = await fetchNrsVendors();
+	const [nrsVendors, passThroughIds] = await Promise.all([
+		fetchNrsVendors(),
+		getPassThroughVendorIds()
+	]);
 	const existing = await db
 		.select()
 		.from(vendors)
@@ -301,6 +391,7 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 
 	let created = 0;
 	let enriched = 0;
+	let filteredOut = 0;
 	let prefixCollisions = 0;
 
 	for (const summary of nrsVendors) {
@@ -309,6 +400,16 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 
 		const detail = await getVendorDetail(summary.vendorId);
 		if (!detail) continue; // err 201 — skip
+
+		// Filter: only sync pass-through vendors — i.e. vendors that have
+		// appeared in our sales history (they're consignment vendors whose
+		// items run through the POS). Non-pass-through NRS rows (accounting
+		// adjustments, system entries) are excluded.
+		const isPassThrough = passThroughIds.has(detail.vendorId);
+		if (!isPassThrough) {
+			filteredOut++;
+			continue;
+		}
 
 		const current = byNrsId.get(summary.vendorId);
 
@@ -329,6 +430,7 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 				}
 			}
 
+			const parsedNew = parseRentAndPaymentFromNotes(detail.notes);
 			await db.insert(vendors).values({
 				nrsVendorId: detail.vendorId,
 				displayName: summary.name || `NRS Vendor ${detail.vendorId}`,
@@ -341,6 +443,12 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 				state: detail.state || null,
 				zip: detail.zipCode || null,
 				inventoryCodePrefix,
+				monthlyRentCents: parsedNew.suggestedMonthlyRentCents,
+				vendorPaymentPercent:
+					parsedNew.suggestedVendorPaymentPercent !== null
+						? String(parsedNew.suggestedVendorPaymentPercent)
+						: null,
+				notes: detail.notes?.trim() || null,
 				status: 'inactive'
 			});
 			created++;
@@ -368,9 +476,252 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 		}
 	}
 
-	const skipped = nrsVendors.length - created - enriched;
-	log.info({ created, enriched, skipped, prefixCollisions }, 'NRS sync complete');
-	return { created, enriched, skipped, prefixCollisions };
+	const skipped = nrsVendors.length - created - enriched - filteredOut;
+	log.info({ created, enriched, skipped, filteredOut, prefixCollisions }, 'NRS sync complete');
+	return { created, enriched, skipped, filteredOut, prefixCollisions };
+}
+
+// ── CSV import (NRS vendor grid export) ─────────────────────────────────────
+
+export interface VendorCsvImportResult {
+	parsed: number;
+	unique: number;
+	updated: number;
+	noChange: number;
+	missed: number;
+	missedCodes: string[];
+	inactiveDeleted: number;
+	inactiveKept: number;
+}
+
+/**
+ * Tiny quote-aware CSV parser. Handles `"a, b"` cells. Doesn't support
+ * escaped quotes (`""`) since the NRS export doesn't use them.
+ */
+function parseCsv(text: string): string[][] {
+	const rows: string[][] = [];
+	let row: string[] = [];
+	let cell = '';
+	let inQuotes = false;
+	for (let i = 0; i < text.length; i++) {
+		const c = text[i];
+		if (inQuotes) {
+			if (c === '"') inQuotes = false;
+			else cell += c;
+		} else if (c === '"') {
+			inQuotes = true;
+		} else if (c === ',') {
+			row.push(cell);
+			cell = '';
+		} else if (c === '\n' || c === '\r') {
+			if (c === '\r' && text[i + 1] === '\n') i++;
+			row.push(cell);
+			cell = '';
+			if (row.some((x) => x.length > 0)) rows.push(row);
+			row = [];
+		} else {
+			cell += c;
+		}
+	}
+	if (cell.length > 0 || row.length > 0) {
+		row.push(cell);
+		if (row.some((x) => x.length > 0)) rows.push(row);
+	}
+	return rows;
+}
+
+/**
+ * Import a NRS vendors CSV export (the format you get from the NRS web UI's
+ * vendor grid). Matches by `inventoryCodePrefix` and fills empty TT fields:
+ *   - monthly_rent_cents (from "Booth Rent")
+ *   - vendor_payment_percent (from "Pass-Through Vendor Payment %")
+ *   - contact_name / contact_email / contact_phone (only when blank)
+ *
+ * Never overwrites a value the admin has set.
+ */
+export async function importVendorsFromCsv(csvText: string): Promise<VendorCsvImportResult> {
+	const all = parseCsv(csvText);
+	if (all.length === 0) throw new VendorServiceError('CSV is empty');
+	const header = all[0].map((h) => h.trim());
+	const dataRows = all.slice(1);
+	const idx = (name: string) => header.indexOf(name);
+	const codeCol = idx('Vendor ID');
+	const payCol = idx('Pass-Through Vendor Payment %');
+	const rentCol = idx('Booth Rent');
+	const contactCol = idx('Contact');
+	const phoneCol = idx('Phone');
+	const emailCol = idx('Email');
+	const inactiveCol = idx('Inactive');
+
+	if (codeCol < 0) {
+		throw new VendorServiceError('CSV is missing the "Vendor ID" column. Expected NRS vendor grid export format.');
+	}
+
+	// Dedupe by vendor code (NRS sometimes exports duplicates)
+	const byCode = new Map<string, string[]>();
+	for (const r of dataRows) {
+		const code = (r[codeCol] ?? '').trim().toUpperCase();
+		if (!code) continue;
+		byCode.set(code, r);
+	}
+
+	let updated = 0;
+	let noChange = 0;
+	let missed = 0;
+	const missedCodes: string[] = [];
+
+	for (const [code, row] of byCode.entries()) {
+		const paymentPctRaw = (row[payCol] ?? '').replace('%', '').trim();
+		const boothRentRaw = (row[rentCol] ?? '').trim();
+		const contactRaw = ((contactCol >= 0 ? row[contactCol] : '') ?? '').trim();
+		const phoneRaw = ((phoneCol >= 0 ? row[phoneCol] : '') ?? '').trim();
+		const emailRaw = ((emailCol >= 0 ? row[emailCol] : '') ?? '').trim();
+		const inactiveRaw = ((inactiveCol >= 0 ? row[inactiveCol] : '') ?? '').trim().toLowerCase();
+		const inactive = ['yes', 'y', 'true', '1', 'inactive'].includes(inactiveRaw);
+
+		const paymentPct = paymentPctRaw && paymentPctRaw !== '---' ? paymentPctRaw : null;
+		const rentDollars = boothRentRaw && boothRentRaw !== '---' ? parseFloat(boothRentRaw) : null;
+		const rentCents = rentDollars !== null && isFinite(rentDollars) ? Math.round(rentDollars * 100) : null;
+		const contact = contactRaw && contactRaw !== '---' ? contactRaw : null;
+		const phone = phoneRaw && phoneRaw !== '---' ? phoneRaw : null;
+		const email =
+			emailRaw && !emailRaw.startsWith('---') && emailRaw !== '---'
+				? emailRaw.toLowerCase()
+				: null;
+
+		const [match] = await db
+			.select()
+			.from(vendors)
+			.where(sql`upper(${vendors.inventoryCodePrefix}) = ${code}`)
+			.limit(1);
+		if (!match) {
+			missed++;
+			missedCodes.push(code);
+			continue;
+		}
+
+		const patch: Record<string, unknown> = {};
+		if (rentCents !== null && match.monthlyRentCents === null) patch.monthlyRentCents = rentCents;
+		if (paymentPct !== null && match.vendorPaymentPercent === null) patch.vendorPaymentPercent = paymentPct;
+		if (contact && !match.contactName) patch.contactName = contact;
+		if (email && !match.contactEmail) patch.contactEmail = email;
+		if (phone && !match.contactPhone) patch.contactPhone = phone;
+		// Inactive flag is authoritative — always overwrite from CSV when column present.
+		if (inactiveCol >= 0 && match.nrsInactive !== inactive) patch.nrsInactive = inactive;
+
+		if (Object.keys(patch).length === 0) {
+			noChange++;
+			continue;
+		}
+
+		await db.update(vendors).set({ ...patch, updatedAt: new Date() }).where(eq(vendors.id, match.id));
+		updated++;
+	}
+
+	// Delete vendors flagged nrs_inactive that have no TT-side data attached.
+	// Safety: never delete one with portal access, a linked user, or any signed
+	// agreement. Anything kept is left visible only when the toggle is on.
+	let inactiveDeleted = 0;
+	let inactiveKept = 0;
+	if (inactiveCol >= 0) {
+		const inactiveCandidates = await db
+			.select({
+				id: vendors.id,
+				userId: vendors.userId,
+				portalEnabled: vendors.portalEnabled
+			})
+			.from(vendors)
+			.where(eq(vendors.nrsInactive, true));
+
+		const candidateIds = inactiveCandidates
+			.filter((v) => !v.userId && !v.portalEnabled)
+			.map((v) => v.id);
+
+		if (candidateIds.length > 0) {
+			const withAgreements = await db
+				.selectDistinct({ vendorId: vendorAgreements.vendorId })
+				.from(vendorAgreements)
+				.where(inArray(vendorAgreements.vendorId, candidateIds));
+			const blocked = new Set(withAgreements.map((r) => r.vendorId));
+
+			const safeToDelete = candidateIds.filter((id) => !blocked.has(id));
+			if (safeToDelete.length > 0) {
+				await db.delete(vendors).where(inArray(vendors.id, safeToDelete));
+			}
+			inactiveDeleted = safeToDelete.length;
+			inactiveKept = inactiveCandidates.length - safeToDelete.length;
+		} else {
+			inactiveKept = inactiveCandidates.length;
+		}
+	}
+
+	log.info(
+		{
+			parsed: dataRows.length,
+			unique: byCode.size,
+			updated,
+			noChange,
+			missed,
+			inactiveDeleted,
+			inactiveKept
+		},
+		'CSV import complete'
+	);
+	return {
+		parsed: dataRows.length,
+		unique: byCode.size,
+		updated,
+		noChange,
+		missed,
+		missedCodes,
+		inactiveDeleted,
+		inactiveKept
+	};
+}
+
+/**
+ * Remove "stub" vendor rows that are inactive AND empty AND don't match the
+ * sync filter (no vendorCode, no sales). Safe-by-default: never deletes a
+ * vendor that has portal access, a linked user, an inventory prefix set, any
+ * signed agreement, or any sales history.
+ *
+ * Returns counts so admin can see what got cleaned up.
+ */
+export async function removeUnusedVendorStubs(): Promise<{ removed: number; kept: number }> {
+	const [allInactive, passThroughIds] = await Promise.all([
+		db.select().from(vendors).where(eq(vendors.status, 'inactive')),
+		getPassThroughVendorIds()
+	]);
+
+	// Pre-filter on cheap fields first
+	const candidates = allInactive.filter((v) => {
+		if (v.userId !== null) return false;
+		if (v.portalEnabled) return false;
+		if (v.inventoryCodePrefix) return false;
+		if (v.nrsVendorId !== null && passThroughIds.has(v.nrsVendorId)) return false;
+		return true;
+	});
+
+	if (candidates.length === 0) {
+		return { removed: 0, kept: allInactive.length };
+	}
+
+	// Exclude any candidate that has a signed or voided agreement (any agreement at all)
+	const candidateIds = candidates.map((c) => c.id);
+	const withAgreementsRows = await db
+		.selectDistinct({ vendorId: vendorAgreements.vendorId })
+		.from(vendorAgreements)
+		.where(inArray(vendorAgreements.vendorId, candidateIds));
+	const withAgreements = new Set(withAgreementsRows.map((r) => r.vendorId));
+
+	const safeToDelete = candidateIds.filter((id) => !withAgreements.has(id));
+	if (safeToDelete.length === 0) {
+		return { removed: 0, kept: allInactive.length };
+	}
+
+	await db.delete(vendors).where(inArray(vendors.id, safeToDelete));
+	log.info({ removed: safeToDelete.length, kept: allInactive.length - safeToDelete.length }, 'Removed unused vendor stubs');
+	return { removed: safeToDelete.length, kept: allInactive.length - safeToDelete.length };
 }
 
 // ── Onboarding (Stage 2a) ────────────────────────────────────────────────────
@@ -576,6 +927,52 @@ export async function disablePortal(vendorId: string): Promise<void> {
 		}
 	});
 	log.info({ vendorId }, 'Disabled portal access for vendor');
+}
+
+/**
+ * Generate the next sequential part number for a vendor.
+ * Format: {vendor.inventoryCodePrefix}{YY}{M}{D}{NNNN}
+ *   YY  = 2-digit year
+ *   M   = month, no leading zero (1..12)
+ *   D   = day, no leading zero (1..31)
+ *   NNNN = zero-padded serial within the (vendor, day) bucket
+ *
+ * Example: today (May 8, 2026) → SR2658{NNNN}
+ *
+ * The compact date format is intentionally lossy — `26111` is ambiguous
+ * between Jan 11 and Nov 1 — but uniqueness is preserved by the always-
+ * incrementing serial counter keyed on (vendor, dateStr).
+ */
+export async function generatePartNumber(vendorId: string, opts?: { now?: Date }): Promise<string> {
+	const [vendor] = await db.select().from(vendors).where(eq(vendors.id, vendorId)).limit(1);
+	if (!vendor) throw new VendorServiceError('Vendor not found');
+	if (!vendor.inventoryCodePrefix) {
+		throw new VendorServiceError(
+			'Vendor has no inventory code prefix — set one before generating part numbers'
+		);
+	}
+
+	const now = opts?.now ?? new Date();
+	const yy = String(now.getUTCFullYear()).slice(-2);
+	const m = String(now.getUTCMonth() + 1);
+	const d = String(now.getUTCDate());
+	const dateStr = `${yy}${m}${d}`;
+
+	// Atomic increment: insert with last_number=1 if no row, otherwise bump.
+	const [row] = await db
+		.insert(vendorPartnumberSequences)
+		.values({ vendorId, dateStr, lastNumber: 1 })
+		.onConflictDoUpdate({
+			target: [vendorPartnumberSequences.vendorId, vendorPartnumberSequences.dateStr],
+			set: {
+				lastNumber: sql`${vendorPartnumberSequences.lastNumber} + 1`,
+				updatedAt: new Date()
+			}
+		})
+		.returning({ lastNumber: vendorPartnumberSequences.lastNumber });
+
+	const serial = String(row.lastNumber).padStart(4, '0');
+	return `${vendor.inventoryCodePrefix}${dateStr}${serial}`;
 }
 
 /**

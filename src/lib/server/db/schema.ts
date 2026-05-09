@@ -3108,6 +3108,11 @@ export const vendors = pgTable('vendors', {
 	boothNumber: text('booth_number'),
 	monthlyRentCents: integer('monthly_rent_cents'),
 	maxDiscountPercent: decimal('max_discount_percent', { precision: 5, scale: 2 }),
+	// Pass-through vendor's payment percentage (the % they receive of gross sales).
+	// NRS calls this "Vendor Payment %" — e.g. 87.00 means vendor gets 87%, shop keeps 13%.
+	// Currently entered manually since NRS API doesn't expose it; will be auto-populated
+	// when NRS exposes the structured pass-through-vendor configuration.
+	vendorPaymentPercent: decimal('vendor_payment_percent', { precision: 5, scale: 2 }),
 
 	// Lifecycle
 	status: vendorStatusEnum('status').notNull().default('inactive'),
@@ -3121,6 +3126,10 @@ export const vendors = pgTable('vendors', {
 	inventoryCodePrefix: text('inventory_code_prefix').unique(),
 	portalEnabled: boolean('portal_enabled').notNull().default(false),
 	onboardingComplete: boolean('onboarding_complete').notNull().default(false),
+	// Mirrors NRS's "Inactive" flag. Populated by CSV import when an
+	// "Inactive" column is present. Inactive vendors are hidden from the
+	// list by default and treated as removable by cleanup.
+	nrsInactive: boolean('nrs_inactive').notNull().default(false),
 
 	// Audit
 	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
@@ -3344,4 +3353,86 @@ export type VendorGroupMember = typeof vendorGroupMembers.$inferSelect;
 export type NewVendorGroupMember = typeof vendorGroupMembers.$inferInsert;
 export type PendingInventoryChange = typeof pendingInventoryChanges.$inferSelect;
 export type NewPendingInventoryChange = typeof pendingInventoryChanges.$inferInsert;
+
+// ============================================
+// VENDOR TAG TEMPLATES (Stage 3)
+// ============================================
+// Per-vendor barcode tag template — what's on the tag, in what order, in
+// what format. Server-rendered to SVG (preview / Avery sheet) and ZPL (Zebra).
+
+export const tagFormatEnum = pgEnum('tag_format', [
+	'avery_5160', // 30-up sheet, 1.0" × 2.625" cells
+	'avery_5163', // 10-up sheet, 2.0" × 4.0" cells
+	'avery_5167', // 80-up sheet, 0.5" × 1.75" cells
+	'zebra_2x1',  // 2.25" × 1.25" thermal
+	'zebra_4x2'   // 4.0" × 2.0" thermal
+]);
+
+export const tagFontScaleEnum = pgEnum('tag_font_scale', ['small', 'medium', 'large']);
+
+export const vendorTagSettings = pgTable('vendor_tag_settings', {
+	vendorId: uuid('vendor_id')
+		.primaryKey()
+		.references(() => vendors.id, { onDelete: 'cascade' }),
+	// Optional override; null falls back to vendor.displayName at render time.
+	headerLine: text('header_line'),
+	// Free-text footer (e.g. "Thank you", phone, etc.)
+	footerLine: text('footer_line'),
+	includeDescription: boolean('include_description').notNull().default(true),
+	includePartNumber: boolean('include_part_number').notNull().default(true),
+	includePrice: boolean('include_price').notNull().default(true),
+	includeBarcode: boolean('include_barcode').notNull().default(true),
+	// 'code_128' (1D, universal) or 'datamatrix' (2D, ~3× more compact, needs imaging scanner).
+	barcodeSymbology: text('barcode_symbology').notNull().default('code_128'),
+	// References label_formats.code. Was a hard-coded enum until 2026-05;
+	// now any code present in label_formats is valid.
+	preferredFormat: text('preferred_format').notNull().default('avery_5160'),
+	zebraDpi: integer('zebra_dpi').notNull().default(203),
+	fontScale: tagFontScaleEnum('font_scale').notNull().default('medium'),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type VendorTagSettings = typeof vendorTagSettings.$inferSelect;
+export type NewVendorTagSettings = typeof vendorTagSettings.$inferInsert;
+
+// Per-vendor-per-day atomic counter for auto-generated part numbers.
+// Format: {vendor.inventoryCodePrefix}{YYYYMMDD}{0001..} — keeps codes
+// globally unique without requiring vendors to invent IDs.
+export const vendorPartnumberSequences = pgTable('vendor_partnumber_sequences', {
+	vendorId: uuid('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+	dateStr: text('date_str').notNull(), // YYYYMMDD
+	lastNumber: integer('last_number').notNull().default(0),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	pk: unique('vendor_partnumber_sequences_pk').on(table.vendorId, table.dateStr)
+}));
+
+// User-defined label sizes (replaces the hardcoded tag_format enum so admins
+// can add custom Avery / thermal / continuous-roll dimensions without a
+// code deploy). Sheet formats use the page/cols/rows/pitch fields; thermal
+// formats only use label width/height.
+export const labelFormats = pgTable('label_formats', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	code: text('code').notNull().unique(), // e.g. 'avery_5160'
+	name: text('name').notNull(),          // human-readable, "Avery 5160 — 30-up sheet"
+	layout: text('layout').notNull(),      // 'sheet' | 'thermal'
+	labelWidthInches: decimal('label_width_inches', { precision: 5, scale: 3 }).notNull(),
+	labelHeightInches: decimal('label_height_inches', { precision: 5, scale: 3 }).notNull(),
+	// Sheet-only fields
+	pageWidthInches: decimal('page_width_inches', { precision: 5, scale: 3 }),
+	pageHeightInches: decimal('page_height_inches', { precision: 5, scale: 3 }),
+	cols: integer('cols'),
+	rows: integer('rows'),
+	marginTopInches: decimal('margin_top_inches', { precision: 5, scale: 3 }),
+	marginLeftInches: decimal('margin_left_inches', { precision: 5, scale: 3 }),
+	verticalPitchInches: decimal('vertical_pitch_inches', { precision: 5, scale: 3 }),
+	horizontalPitchInches: decimal('horizontal_pitch_inches', { precision: 5, scale: 3 }),
+	isActive: boolean('is_active').notNull().default(true),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type VendorPartnumberSequence = typeof vendorPartnumberSequences.$inferSelect;
+export type LabelFormat = typeof labelFormats.$inferSelect;
+export type NewLabelFormat = typeof labelFormats.$inferInsert;
 

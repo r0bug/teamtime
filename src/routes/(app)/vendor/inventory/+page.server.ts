@@ -117,6 +117,52 @@ export const actions: Actions = {
 		return { success: 'submit' };
 	},
 
+	/**
+	 * Streamlined "Make a tag" flow. Vendor enters description + price; we
+	 * auto-generate a part number `{prefix}{YYYYMMDD}{NNNN}` and queue the
+	 * change. The barcode on the printed tag will encode this part number.
+	 */
+	quickTag: async ({ locals, request }) => {
+		if (!locals.user) return fail(401, { error: 'Not signed in' });
+
+		const form = await request.formData();
+		const description = ((form.get('description') as string) ?? '').trim();
+		const priceCents = parsePriceCents(form.get('priceDollars'));
+
+		if (!description) return fail(400, { error: 'Description is required' });
+		if (priceCents === undefined) return fail(400, { error: 'Price is required' });
+
+		const { getVendorForUser, generatePartNumber, VendorServiceError } = await import(
+			'$lib/server/services/vendor-service'
+		);
+		const vendor = await getVendorForUser(locals.user.id);
+		if (!vendor) return fail(403, { error: 'Vendor portal access not enabled' });
+
+		let partNumber: string;
+		try {
+			partNumber = await generatePartNumber(vendor.id);
+		} catch (err) {
+			if (err instanceof VendorServiceError) return fail(400, { error: err.message });
+			throw err;
+		}
+
+		try {
+			await submitChange({
+				vendorId: vendor.id,
+				submittedByUserId: locals.user.id,
+				changeType: 'create',
+				partNumber,
+				payload: { partName: description, description, priceCents },
+				previousPayload: null
+			});
+		} catch (err) {
+			if (err instanceof InventoryChangeError) return fail(400, { error: err.message });
+			throw err;
+		}
+
+		return { success: 'quickTag', partNumber, description, priceCents };
+	},
+
 	cancel: async ({ locals, request }) => {
 		if (!locals.user) return fail(401, { error: 'Not signed in' });
 		const form = await request.formData();

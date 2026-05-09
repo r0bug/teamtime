@@ -1,0 +1,91 @@
+import type { RequestHandler } from './$types';
+import { error } from '@sveltejs/kit';
+import { and, eq, desc } from 'drizzle-orm';
+import {
+	db,
+	vendorTagSettings,
+	pendingInventoryChanges,
+	salesTransactions
+} from '$lib/server/db';
+import { getVendorForUser } from '$lib/server/services/vendor-service';
+import { renderZpl } from '$lib/server/services/tag-render-service';
+
+/**
+ * GET /api/vendor/tag-zpl?partNumber=SR26580001 — returns ZPL II text for a
+ * single tag. Resolves item details from the vendor's pending inventory
+ * change (preferred — it's the freshest payload) and falls back to NRS sales
+ * history when the part has no pending row.
+ *
+ * The browser fetches this and forwards the body to Zebra Browser Print at
+ * localhost:9100. ZPL is plain text; Content-Type stays text/plain.
+ */
+export const GET: RequestHandler = async ({ locals, url }) => {
+	if (!locals.user) throw error(401, 'Not signed in');
+
+	const partNumber = url.searchParams.get('partNumber')?.trim();
+	if (!partNumber) throw error(400, 'partNumber required');
+
+	const vendor = await getVendorForUser(locals.user.id);
+	if (!vendor) throw error(403, 'Vendor portal access not enabled');
+	if (!partNumber.startsWith(vendor.inventoryCodePrefix ?? '')) {
+		throw error(403, 'Part number does not belong to this vendor');
+	}
+
+	let name: string | null = null;
+	let description: string | null = null;
+	let priceCents: number | null = null;
+
+	const [pending] = await db
+		.select()
+		.from(pendingInventoryChanges)
+		.where(and(
+			eq(pendingInventoryChanges.vendorId, vendor.id),
+			eq(pendingInventoryChanges.partNumber, partNumber)
+		))
+		.orderBy(desc(pendingInventoryChanges.submittedAt))
+		.limit(1);
+
+	if (pending && pending.payload) {
+		const p = pending.payload as { partName?: string; description?: string; priceCents?: number };
+		name = p.partName ?? null;
+		description = p.description ?? null;
+		priceCents = p.priceCents ?? null;
+	}
+
+	if ((!name || priceCents === null) && vendor.nrsVendorId) {
+		const [sale] = await db
+			.select()
+			.from(salesTransactions)
+			.where(and(
+				eq(salesTransactions.vendorId, vendor.nrsVendorId),
+				eq(salesTransactions.partNumber, partNumber)
+			))
+			.orderBy(desc(salesTransactions.invoiceDate))
+			.limit(1);
+		if (sale) {
+			name = name ?? sale.partName;
+			if (priceCents === null && sale.price !== null && sale.price !== undefined) {
+				priceCents = Math.round(Number(sale.price) * 100);
+			}
+		}
+	}
+
+	const [settings] = await db
+		.select()
+		.from(vendorTagSettings)
+		.where(eq(vendorTagSettings.vendorId, vendor.id))
+		.limit(1);
+
+	const zpl = await renderZpl({
+		vendorDisplayName: vendor.displayName,
+		settings: settings ?? null,
+		item: { partNumber, name, description, priceCents }
+	});
+
+	return new Response(zpl, {
+		headers: {
+			'Content-Type': 'text/plain; charset=utf-8',
+			'Cache-Control': 'no-store'
+		}
+	});
+};

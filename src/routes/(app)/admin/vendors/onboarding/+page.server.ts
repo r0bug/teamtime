@@ -1,6 +1,6 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
-import { eq, sql } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import { db, vendors, vendorGroupMembers, vendorGroups } from '$lib/server/db';
 import { isManager } from '$lib/server/auth/roles';
 import {
@@ -19,7 +19,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.select()
 		.from(vendors)
 		.where(eq(vendors.onboardingComplete, false))
-		.orderBy(sql`${vendors.createdAt} desc`);
+		.orderBy(desc(vendors.createdAt));
 
 	const ids = rows.map((v) => v.id);
 	const memberRows = ids.length
@@ -32,7 +32,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 				})
 				.from(vendorGroupMembers)
 				.innerJoin(vendorGroups, eq(vendorGroups.id, vendorGroupMembers.groupId))
-				.where(sql`${vendorGroupMembers.vendorId} = ANY(${ids})`)
+				.where(inArray(vendorGroupMembers.vendorId, ids))
 		: [];
 
 	const groupsByVendor = new Map<string, { id: string; name: string; color: string }[]>();

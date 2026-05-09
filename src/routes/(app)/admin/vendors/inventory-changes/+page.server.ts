@@ -6,6 +6,7 @@ import {
 	pendingCountByStatus,
 	markApplied,
 	reject,
+	autoApplyPendingViaImporter,
 	InventoryChangeError
 } from '$lib/server/services/inventory-change-service';
 
@@ -53,5 +54,19 @@ export const actions: Actions = {
 			throw err;
 		}
 		return { success: 'reject' };
+	},
+
+	autoApply: async ({ locals, request }) => {
+		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		const vendorId = ((await request.formData()).get('vendorId') as string) || undefined;
+		try {
+			const results = await autoApplyPendingViaImporter({
+				appliedByUserId: locals.user!.id,
+				vendorId
+			});
+			return { success: 'autoApply', autoApplyResults: results };
+		} catch (err) {
+			return fail(500, { error: err instanceof Error ? err.message : 'Auto-import failed' });
+		}
 	}
 };

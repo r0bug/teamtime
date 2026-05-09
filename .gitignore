@@ -52,6 +52,10 @@ scraper-imports/venv/
 scraper-imports/*.tar.gz
 scraper-imports/__pycache__/
 
+# NRS vendor exports (real PII — names, phones, emails)
+scripts/nrs-vendors-export.csv
+scripts/*.csv
+
 # Test files with API calls
 test-*.cjs
 test-*.js

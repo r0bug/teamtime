@@ -73,6 +73,7 @@ export const actions: Actions = {
 			boothNumber: ((data.get('boothNumber') as string) ?? '').trim() || null,
 			monthlyRentCents,
 			maxDiscountPercent: ((data.get('maxDiscountPercent') as string) ?? '').trim() || null,
+			vendorPaymentPercent: ((data.get('vendorPaymentPercent') as string) ?? '').trim() || null,
 			status: ((data.get('status') as string) ?? 'inactive') as 'active' | 'inactive' | 'terminated',
 			startDate: ((data.get('startDate') as string) ?? '').trim() || null,
 			endDate: ((data.get('endDate') as string) ?? '').trim() || null,

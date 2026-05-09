@@ -12,7 +12,7 @@
  * have no TT row yet still rank — they appear with their NRS name.
  */
 
-import { and, gte, lte, sql } from 'drizzle-orm';
+import { and, gte, inArray, lte } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { salesSnapshots, vendors } from '$lib/server/db/schema';
 
@@ -96,7 +96,7 @@ export async function computeLeaderboard(input: {
 					status: vendors.status
 				})
 				.from(vendors)
-				.where(sql`${vendors.nrsVendorId} = ANY(${ids})`)
+				.where(inArray(vendors.nrsVendorId, ids))
 		: [];
 
 	const ttByNrsId = new Map<number, (typeof ttVendors)[number]>();

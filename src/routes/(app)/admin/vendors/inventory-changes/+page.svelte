@@ -32,11 +32,49 @@
 
 <div class="p-4 lg:p-8 max-w-5xl mx-auto">
 	<a href="/admin/vendors" class="text-sm text-primary-600 hover:underline">← Back to vendors</a>
-	<h1 class="text-2xl font-bold text-gray-900 mt-2">Inventory Change Queue</h1>
-	<p class="text-gray-600 text-sm mt-1">Vendor-proposed NRS changes. Apply to NRS manually, then mark applied here.</p>
+	<div class="mt-2 flex items-start justify-between gap-3 flex-wrap">
+		<div>
+			<h1 class="text-2xl font-bold text-gray-900">Inventory Change Queue</h1>
+			<p class="text-gray-600 text-sm mt-1">Vendor-proposed NRS changes. Apply to NRS manually, then mark applied here.</p>
+		</div>
+		{#if data.status === 'pending' && data.counts.pending > 0}
+			<div class="flex gap-2 flex-wrap">
+				<a
+					href="/api/admin/inventory-changes/nrs-import-csv?changeType=create"
+					class="btn btn-secondary"
+					title="Download a CSV matching NRS ImportInv template — upload it at https://www.nrsaccounting.com/import/type/ImportInv">
+					⬇ Download CSV
+				</a>
+				<form method="POST" action="?/autoApply" use:enhance>
+					<button
+						type="submit"
+						class="btn btn-primary"
+						title="Logs in to NRS and submits the importer form for you. Faster but brittle to NRS UI changes.">
+						🤖 Auto-apply via NRS
+					</button>
+				</form>
+			</div>
+		{/if}
+	</div>
 
 	{#if form?.error}
 		<div class="mt-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{form.error}</div>
+	{/if}
+	{#if form && 'autoApplyResults' in form && form.autoApplyResults}
+		<div class="mt-4 space-y-2">
+			{#each form.autoApplyResults as r (r.vendorId)}
+				<div class="p-3 rounded text-sm border {r.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-200 text-amber-900'}">
+					<strong>{r.vendorDisplayName}</strong> ({r.rowCount} row{r.rowCount === 1 ? '' : 's'}):
+					{#if r.ok}
+						✓ applied{#if r.fileId} — NRS file #{r.fileId}{/if}{#if r.appliedChangeIds.length}, {r.appliedChangeIds.length} marked{/if}
+					{:else if r.error}
+						✗ {r.error}
+					{:else}
+						⚠ submitted but couldn't confirm success — {r.messages.length ? r.messages.join(' / ') : 'no message'}. Check NRS manually.
+					{/if}
+				</div>
+			{/each}
+		</div>
 	{/if}
 
 	<div class="mt-6 border-b border-gray-200">

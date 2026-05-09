@@ -1,11 +1,45 @@
 <script lang="ts">
 	import type { PageData, ActionData } from './$types';
 	import { enhance } from '$app/forms';
+	import {
+		printPartNumber,
+		isAvailable as isZebraAvailable,
+		BROWSER_PRINT_DOWNLOAD_URL,
+		ZebraPrintError
+	} from '$lib/utils/zebra-print-client';
+	import { onMount } from 'svelte';
 
 	export let data: PageData;
 	export let form: ActionData;
 
 	type Mode = 'create' | 'update' | 'delete';
+
+	let zebraReady: 'unknown' | 'yes' | 'no' = 'unknown';
+	let zebraBusyFor: string | null = null;
+	let zebraStatus: { partNumber: string; ok: boolean; message: string } | null = null;
+
+	onMount(async () => {
+		zebraReady = (await isZebraAvailable()) ? 'yes' : 'no';
+	});
+
+	async function printOnZebra(partNumber: string) {
+		zebraBusyFor = partNumber;
+		zebraStatus = null;
+		try {
+			await printPartNumber(partNumber);
+			zebraStatus = { partNumber, ok: true, message: `Sent ${partNumber} to Zebra.` };
+			zebraReady = 'yes';
+		} catch (err) {
+			const message =
+				err instanceof ZebraPrintError ? err.message : err instanceof Error ? err.message : 'Print failed';
+			zebraStatus = { partNumber, ok: false, message };
+			if (err instanceof ZebraPrintError && /not running|install/i.test(message)) {
+				zebraReady = 'no';
+			}
+		} finally {
+			zebraBusyFor = null;
+		}
+	}
 
 	let modalOpen = false;
 	let mode: Mode = 'create';
@@ -96,6 +130,64 @@
 	{#if form?.success === 'cancel'}
 		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">Change cancelled.</div>
 	{/if}
+	{#if form?.success === 'quickTag'}
+		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm flex items-center justify-between gap-2 flex-wrap">
+			<span>✓ Tag queued. Code: <code class="font-mono font-semibold">{form.partNumber}</code> — "{form.description}" — ${(Number(form.priceCents) / 100).toFixed(2)}</span>
+			<button
+				type="button"
+				class="btn btn-secondary text-xs whitespace-nowrap"
+				on:click={() => printOnZebra(String(form.partNumber))}
+				disabled={zebraBusyFor === String(form.partNumber)}>
+				{zebraBusyFor === String(form.partNumber) ? 'Sending…' : '🦓 Print on Zebra'}
+			</button>
+		</div>
+	{/if}
+
+	{#if zebraStatus}
+		<div class="mt-3 p-3 rounded text-sm border {zebraStatus.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-700'}">
+			{zebraStatus.ok ? '✓' : '⚠'} {zebraStatus.message}
+		</div>
+	{/if}
+
+	{#if zebraReady === 'no'}
+		<div class="mt-4 p-3 rounded text-sm bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 flex-wrap">
+			<span class="text-2xl leading-none">🦓</span>
+			<div class="flex-1 min-w-[200px]">
+				<strong>Zebra Browser Print not detected.</strong>
+				<p class="mt-1 text-amber-800">Install it once on this computer to print directly to your Zebra label printer. Free, signed by Zebra, Mac + Windows.</p>
+			</div>
+			<a href={BROWSER_PRINT_DOWNLOAD_URL} target="_blank" rel="noopener noreferrer" class="btn btn-secondary text-xs whitespace-nowrap">⬇ Download</a>
+		</div>
+	{/if}
+
+	<!-- Quick tag — fastest path: description + price → auto-generated barcode -->
+	{#if data.vendor.inventoryCodePrefix}
+		<section class="mt-6">
+			<div class="card">
+				<div class="card-header">
+					<h2 class="font-semibold text-gray-900">Make a tag</h2>
+					<p class="text-xs text-gray-500 mt-1">
+						Type the description and price. We'll generate a barcode like <code class="font-mono">{data.vendor.inventoryCodePrefix}YYYYMMDD0001</code> and queue it for the shop to add to NRS.
+					</p>
+				</div>
+				<div class="card-body">
+					<form method="POST" action="?/quickTag" use:enhance class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+						<div class="md:col-span-7">
+							<label class="label" for="qt-description">Description</label>
+							<input id="qt-description" name="description" type="text" class="input" required placeholder="Vintage Pyrex bowl, mid-century" />
+						</div>
+						<div class="md:col-span-3">
+							<label class="label" for="qt-price">Price ($)</label>
+							<input id="qt-price" name="priceDollars" type="number" step="0.01" min="0" class="input" required placeholder="24.99" />
+						</div>
+						<div class="md:col-span-2">
+							<button type="submit" class="btn btn-primary w-full">Make Tag</button>
+						</div>
+					</form>
+				</div>
+			</div>
+		</section>
+	{/if}
 
 	<!-- Pending changes -->
 	<section class="mt-6">
@@ -132,7 +224,16 @@
 											<div class="text-xs text-gray-500 mt-1">{p.nrsApplyNotes}</div>
 										{/if}
 									</td>
-									<td class="px-4 py-2 text-right">
+									<td class="px-4 py-2 text-right whitespace-nowrap">
+										{#if p.changeType !== 'delete'}
+											<button
+												type="button"
+												class="text-primary-600 hover:underline text-sm mr-3 disabled:opacity-50"
+												on:click={() => printOnZebra(p.partNumber)}
+												disabled={zebraBusyFor === p.partNumber}>
+												{zebraBusyFor === p.partNumber ? 'Sending…' : '🦓 Zebra'}
+											</button>
+										{/if}
 										{#if p.status === 'pending'}
 											<form method="POST" action="?/cancel" use:enhance class="inline">
 												<input type="hidden" name="id" value={p.id} />
@@ -180,6 +281,13 @@
 									<td class="px-4 py-2 tabular-nums">{item.unitsSold}</td>
 									<td class="px-4 py-2 tabular-nums">${item.lastPrice.toFixed(2)}</td>
 									<td class="px-4 py-2 text-right whitespace-nowrap">
+										<button
+											type="button"
+											class="text-primary-600 hover:underline mr-3 text-sm disabled:opacity-50"
+											on:click={() => printOnZebra(item.partNumber)}
+											disabled={zebraBusyFor === item.partNumber}>
+											{zebraBusyFor === item.partNumber ? 'Sending…' : '🦓 Zebra'}
+										</button>
 										<button type="button" class="text-primary-600 hover:underline mr-3 text-sm" on:click={() => openUpdate(item)}>Propose update</button>
 										<button type="button" class="text-red-600 hover:underline text-sm" on:click={() => openDelete(item)}>Remove</button>
 									</td>
