@@ -619,6 +619,7 @@ Continue with any remaining tasks from the original request. If there are more i
 		// Initial LLM call
 		let currentTurnToolCalls: ExecutedToolCall[] = [];
 		let currentTurnContent = '';
+		let currentTurnThinking: AnthropicContentBlock[] = [];
 		let escalationReason: string | null = null;
 
 		if (!anthropicProvider.stream) {
@@ -638,6 +639,8 @@ Continue with any remaining tasks from the original request. If there are more i
 				fullContent += chunk.content;
 				currentTurnContent += chunk.content;
 				yield { type: 'text', content: chunk.content };
+			} else if (chunk.type === 'thinking' && chunk.thinkingBlock) {
+				currentTurnThinking.push(chunk.thinkingBlock as AnthropicContentBlock);
 			} else if (chunk.type === 'tool_use' && chunk.toolCall) {
 				const { id, name, params } = chunk.toolCall;
 				if (model !== ESCALATION_MODEL && name === ESCALATION_TOOL_NAME) {
@@ -760,7 +763,10 @@ Continue with any remaining tasks from the original request. If there are more i
 			continuationTurn++;
 			needsContinuation = false;
 
-			const assistantContent: AnthropicContentBlock[] = [];
+			// Thinking blocks (if any) must come BEFORE text/tool_use blocks per
+			// the Anthropic content schema, and must be echoed back verbatim or
+			// thinking-mode models (DeepSeek V4 Flash etc.) reject the request.
+			const assistantContent: AnthropicContentBlock[] = [...currentTurnThinking];
 			if (currentTurnContent) {
 				assistantContent.push({ type: 'text', text: currentTurnContent });
 			}
@@ -784,6 +790,7 @@ Continue with any remaining tasks from the original request. If there are more i
 
 			currentTurnToolCalls = [];
 			currentTurnContent = '';
+			currentTurnThinking = [];
 
 			const toolResultContentForHistory: AnthropicContentBlock[] = toolResults.map(tr => ({
 				type: 'tool_result' as const,
@@ -797,6 +804,8 @@ Continue with any remaining tasks from the original request. If there are more i
 					fullContent += chunk.content;
 					currentTurnContent += chunk.content;
 					yield { type: 'text', content: chunk.content };
+				} else if (chunk.type === 'thinking' && chunk.thinkingBlock) {
+					currentTurnThinking.push(chunk.thinkingBlock as AnthropicContentBlock);
 				} else if (chunk.type === 'tool_use' && chunk.toolCall) {
 					const { id, name, params } = chunk.toolCall;
 					const toolId = id || `tool_${randomUUID().slice(0, 8)}`;
@@ -1065,6 +1074,7 @@ export async function* processUserMessageStream(
 		let needsContinuation = false;
 		let currentTurnToolCalls: ExecutedToolCall[] = [];
 		let currentTurnContent = '';
+		let currentTurnThinking: AnthropicContentBlock[] = [];
 		let escalationReason: string | null = null;
 
 		const lastUserContent = messages[messages.length - 1]?.content;
@@ -1091,6 +1101,8 @@ export async function* processUserMessageStream(
 				fullContent += chunk.content;
 				currentTurnContent += chunk.content;
 				yield { type: 'text', content: chunk.content };
+			} else if (chunk.type === 'thinking' && chunk.thinkingBlock) {
+				currentTurnThinking.push(chunk.thinkingBlock as AnthropicContentBlock);
 			} else if (chunk.type === 'tool_use' && chunk.toolCall) {
 				const { id, name, params } = chunk.toolCall;
 				// Intercept escalation signal before any user-visible event is yielded.
@@ -1247,8 +1259,10 @@ export async function* processUserMessageStream(
 			log.info({ chatId, turn: continuationTurn, pendingToolCalls: currentTurnToolCalls.length }, 'STREAM: Starting continuation turn');
 
 			// Build the assistant message with tool_use blocks for the previous turn
-			// IMPORTANT: Must include ALL tool_use blocks - Anthropic requires a tool_result for each one
-			const assistantContent: AnthropicContentBlock[] = [];
+			// IMPORTANT: Must include ALL tool_use blocks - Anthropic requires a tool_result for each one.
+			// Thinking blocks (if any) come first per the content schema and must be echoed back
+			// or thinking-mode models (DeepSeek V4 Flash etc.) reject the request.
+			const assistantContent: AnthropicContentBlock[] = [...currentTurnThinking];
 			if (currentTurnContent) {
 				assistantContent.push({ type: 'text', text: currentTurnContent });
 			}
@@ -1277,6 +1291,7 @@ export async function* processUserMessageStream(
 			// Reset for the next turn
 			currentTurnToolCalls = [];
 			currentTurnContent = '';
+			currentTurnThinking = [];
 
 			// Build tool result content for adding to history after this turn completes
 			const toolResultContentForHistory: AnthropicContentBlock[] = toolResults.map(tr => ({
@@ -1303,6 +1318,8 @@ export async function* processUserMessageStream(
 					fullContent += chunk.content;
 					currentTurnContent += chunk.content;
 					yield { type: 'text', content: chunk.content };
+				} else if (chunk.type === 'thinking' && chunk.thinkingBlock) {
+					currentTurnThinking.push(chunk.thinkingBlock as AnthropicContentBlock);
 				} else if (chunk.type === 'tool_use' && chunk.toolCall) {
 					const { id, name, params } = chunk.toolCall;
 					const toolId = id || `tool_${randomUUID().slice(0, 8)}`;

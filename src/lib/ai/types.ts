@@ -82,11 +82,24 @@ export interface ToolExecutionContext {
 	userId?: string;
 }
 
+/**
+ * A reasoning block emitted by thinking-mode models (Anthropic extended thinking,
+ * DeepSeek V4 Flash, etc). Must be echoed back verbatim on the next request when
+ * the assistant turn that produced it had a tool_use, or the API 400s.
+ */
+export interface ThinkingBlock {
+	type: 'thinking' | 'redacted_thinking';
+	thinking?: string;
+	signature?: string;
+	data?: string;
+}
+
 // Streaming event for chat responses
 export interface LLMStreamEvent {
-	type: 'text' | 'tool_use' | 'done';
+	type: 'text' | 'tool_use' | 'thinking' | 'done';
 	content?: string;
 	toolCall?: { id?: string; name: string; params: Record<string, unknown> };
+	thinkingBlock?: ThinkingBlock;
 	usage?: { inputTokens: number; outputTokens: number };
 }
 

@@ -32,13 +32,17 @@ export interface AnthropicMessage {
 }
 
 export interface AnthropicContentBlock {
-	type: 'text' | 'tool_use' | 'tool_result';
+	type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'redacted_thinking';
 	text?: string;
 	id?: string;
 	name?: string;
 	input?: Record<string, unknown>;
 	tool_use_id?: string;
 	content?: string;
+	// thinking / redacted_thinking
+	thinking?: string;
+	signature?: string;
+	data?: string;
 }
 
 interface AnthropicTool {
@@ -103,14 +107,6 @@ export const anthropicProvider: LLMProvider = {
 			system: request.systemPrompt,
 			messages
 		};
-
-		if (providerKey === 'deepseek') {
-			// DeepSeek V4 Flash defaults to thinking mode and demands the thinking
-			// blocks be echoed back on every continuation. We don't capture them
-			// today, so disable thinking outright — chat tool-calling doesn't need
-			// extended reasoning.
-			body.thinking = { type: 'disabled' };
-		}
 
 		if (request.tools && request.tools.length > 0) {
 			body.tools = convertToolsToAnthropic(request.tools);
@@ -184,10 +180,6 @@ export const anthropicProvider: LLMProvider = {
 			stream: true
 		};
 
-		if (providerKey === 'deepseek') {
-			body.thinking = { type: 'disabled' };
-		}
-
 		if (request.tools && request.tools.length > 0) {
 			body.tools = convertToolsToAnthropic(request.tools);
 
@@ -234,6 +226,10 @@ export const anthropicProvider: LLMProvider = {
 		let currentToolName = '';
 		let currentToolInput = '';
 		let currentToolId = '';
+		let currentThinkingType: 'thinking' | 'redacted_thinking' | null = null;
+		let currentThinkingText = '';
+		let currentThinkingSignature = '';
+		let currentThinkingData = '';
 		let inputTokens = 0;
 		let outputTokens = 0;
 		let chunkCount = 0;
@@ -258,12 +254,9 @@ export const anthropicProvider: LLMProvider = {
 
 					try {
 						const event = JSON.parse(data);
-						// Debug: log all event types and content
-						log.info({ eventType: event.type, hasContentBlock: !!event.content_block, hasDelta: !!event.delta }, 'ANTHROPIC STREAM: Event received');
 
 						if (event.type === 'message_start' && event.message?.usage) {
 							inputTokens = event.message.usage.input_tokens || 0;
-							log.info({ inputTokens, model: event.message.model }, 'ANTHROPIC STREAM: message_start with usage');
 						}
 
 						if (event.type === 'error') {
@@ -271,39 +264,35 @@ export const anthropicProvider: LLMProvider = {
 						}
 
 						if (event.type === 'content_block_start') {
-							log.info({ blockType: event.content_block?.type, blockIndex: event.index, toolName: event.content_block?.name, toolId: event.content_block?.id }, 'ANTHROPIC STREAM: content_block_start');
-							if (event.content_block?.type === 'tool_use') {
+							const bt = event.content_block?.type;
+							if (bt === 'tool_use') {
 								currentToolName = event.content_block.name || '';
 								currentToolId = event.content_block.id || '';
 								currentToolInput = '';
-								log.info({ currentToolName, currentToolId }, 'ANTHROPIC STREAM: Tool use started');
+							} else if (bt === 'thinking' || bt === 'redacted_thinking') {
+								currentThinkingType = bt;
+								currentThinkingText = '';
+								currentThinkingSignature = '';
+								currentThinkingData = event.content_block.data || '';
 							}
 						}
 
 						if (event.type === 'content_block_delta') {
-							log.info({ deltaType: event.delta?.type, hasText: !!event.delta?.text }, 'ANTHROPIC STREAM: content_block_delta');
 							if (event.delta?.type === 'text_delta' && event.delta.text) {
-								log.info({ textLength: event.delta.text.length }, 'ANTHROPIC STREAM: Yielding text');
 								yield { type: 'text', content: event.delta.text };
 							} else if (event.delta?.type === 'input_json_delta' && event.delta.partial_json) {
 								currentToolInput += event.delta.partial_json;
-								log.debug({ partialJsonLength: event.delta.partial_json.length, totalLength: currentToolInput.length }, 'ANTHROPIC STREAM: Accumulated input_json_delta');
-							} else if (event.delta?.type === 'thinking_delta') {
-								// Claude 4 might use thinking blocks - log but don't yield
-								log.info({ thinkingLength: event.delta?.thinking?.length }, 'ANTHROPIC STREAM: Thinking delta (not yielded)');
+							} else if (event.delta?.type === 'thinking_delta' && typeof event.delta.thinking === 'string') {
+								currentThinkingText += event.delta.thinking;
+							} else if (event.delta?.type === 'signature_delta' && typeof event.delta.signature === 'string') {
+								currentThinkingSignature += event.delta.signature;
 							}
 						}
 
-						if (event.type === 'content_block_stop') {
-							log.info({ blockIndex: event.index, hadToolUse: !!currentToolName }, 'ANTHROPIC STREAM: content_block_stop');
-						}
 						if (event.type === 'content_block_stop' && currentToolName) {
-							log.info({ currentToolName, currentToolId, inputLength: currentToolInput.length, rawInput: currentToolInput.substring(0, 200) }, 'ANTHROPIC STREAM: About to parse tool JSON');
 							try {
-								// Handle empty input (tools with no parameters)
 								const jsonToParse = currentToolInput.trim() || '{}';
 								const params = JSON.parse(jsonToParse);
-								log.info({ currentToolName, params }, 'ANTHROPIC STREAM: Tool JSON parsed, yielding tool_use');
 								yield { type: 'tool_use', toolCall: { id: currentToolId, name: currentToolName, params } };
 							} catch (parseError) {
 								log.error({ currentToolName, currentToolInput, parseError: parseError instanceof Error ? parseError.message : 'Unknown' }, 'ANTHROPIC STREAM: Failed to parse tool JSON');
@@ -311,6 +300,21 @@ export const anthropicProvider: LLMProvider = {
 							currentToolName = '';
 							currentToolInput = '';
 							currentToolId = '';
+						} else if (event.type === 'content_block_stop' && currentThinkingType) {
+							yield {
+								type: 'thinking',
+								thinkingBlock: currentThinkingType === 'redacted_thinking'
+									? { type: 'redacted_thinking', data: currentThinkingData }
+									: {
+										type: 'thinking',
+										thinking: currentThinkingText,
+										...(currentThinkingSignature ? { signature: currentThinkingSignature } : {})
+									}
+							};
+							currentThinkingType = null;
+							currentThinkingText = '';
+							currentThinkingSignature = '';
+							currentThinkingData = '';
 						}
 
 						if (event.type === 'message_delta' && event.usage) {
@@ -408,10 +412,6 @@ export async function* streamWithToolResults(
 		stream: true
 	};
 
-	if (providerKey === 'deepseek') {
-		body.thinking = { type: 'disabled' };
-	}
-
 	if (request.tools && request.tools.length > 0) {
 		body.tools = convertToolsToAnthropic(request.tools);
 	}
@@ -450,6 +450,10 @@ export async function* streamWithToolResults(
 	let currentToolName = '';
 	let currentToolInput = '';
 	let currentToolId = '';
+	let currentThinkingType: 'thinking' | 'redacted_thinking' | null = null;
+	let currentThinkingText = '';
+	let currentThinkingSignature = '';
+	let currentThinkingData = '';
 	let inputTokens = 0;
 	let outputTokens = 0;
 	let chunkCount = 0;
@@ -477,15 +481,19 @@ export async function* streamWithToolResults(
 
 					if (event.type === 'message_start' && event.message?.usage) {
 						inputTokens = event.message.usage.input_tokens || 0;
-						log.debug({ inputTokens }, 'ANTHROPIC CONTINUE: Message started');
 					}
 
 					if (event.type === 'content_block_start') {
-						if (event.content_block?.type === 'tool_use') {
+						const bt = event.content_block?.type;
+						if (bt === 'tool_use') {
 							currentToolName = event.content_block.name || '';
 							currentToolId = event.content_block.id || '';
 							currentToolInput = '';
-							log.debug({ toolName: currentToolName, toolId: currentToolId }, 'ANTHROPIC CONTINUE: Tool use started');
+						} else if (bt === 'thinking' || bt === 'redacted_thinking') {
+							currentThinkingType = bt;
+							currentThinkingText = '';
+							currentThinkingSignature = '';
+							currentThinkingData = event.content_block.data || '';
 						}
 					}
 
@@ -494,15 +502,17 @@ export async function* streamWithToolResults(
 							yield { type: 'text', content: event.delta.text };
 						} else if (event.delta?.type === 'input_json_delta' && event.delta.partial_json) {
 							currentToolInput += event.delta.partial_json;
+						} else if (event.delta?.type === 'thinking_delta' && typeof event.delta.thinking === 'string') {
+							currentThinkingText += event.delta.thinking;
+						} else if (event.delta?.type === 'signature_delta' && typeof event.delta.signature === 'string') {
+							currentThinkingSignature += event.delta.signature;
 						}
 					}
 
 					if (event.type === 'content_block_stop' && currentToolName) {
 						try {
-							// Handle empty input (tools with no parameters)
 							const jsonToParse = currentToolInput.trim() || '{}';
 							const params = JSON.parse(jsonToParse);
-							log.info({ toolName: currentToolName }, 'ANTHROPIC CONTINUE: Tool call complete');
 							yield { type: 'tool_use', toolCall: { id: currentToolId, name: currentToolName, params } };
 						} catch {
 							log.warn({ toolName: currentToolName, currentToolInput }, 'ANTHROPIC CONTINUE: Invalid tool JSON');
@@ -510,6 +520,21 @@ export async function* streamWithToolResults(
 						currentToolName = '';
 						currentToolInput = '';
 						currentToolId = '';
+					} else if (event.type === 'content_block_stop' && currentThinkingType) {
+						yield {
+							type: 'thinking',
+							thinkingBlock: currentThinkingType === 'redacted_thinking'
+								? { type: 'redacted_thinking', data: currentThinkingData }
+								: {
+									type: 'thinking',
+									thinking: currentThinkingText,
+									...(currentThinkingSignature ? { signature: currentThinkingSignature } : {})
+								}
+						};
+						currentThinkingType = null;
+						currentThinkingText = '';
+						currentThinkingSignature = '';
+						currentThinkingData = '';
 					}
 
 					if (event.type === 'message_delta' && event.usage) {
