@@ -212,6 +212,122 @@ export async function renderTagSvg(ctx: TagRenderContext): Promise<string> {
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${widthPx} ${heightPx}" width="${widthPx}" height="${heightPx}" style="background:white;border:1px solid #ddd;">${positioned}</svg>`;
 }
 
+export interface AverySheetItem extends TagItem {
+	copies?: number; // default 1
+}
+
+export interface AverySheetOptions {
+	formatCode: string;
+	startPosition?: number; // 1-based cell index; default 1
+	vendorDisplayName: string;
+	settings: VendorTagSettings | null;
+	items: AverySheetItem[];
+}
+
+/**
+ * Render a print-ready HTML page for an Avery-style sheet of tags. Each cell
+ * is positioned absolutely from the format's marginTop/marginLeft + the
+ * row/col pitch — same way the labels are die-cut on the actual sheet.
+ *
+ * The returned HTML is a complete document including a `<style>` block with
+ * `@page { size; margin: 0 }`. The vendor's print page loads this in an
+ * `<iframe srcdoc>` and calls `.contentWindow.print()` to trigger the
+ * browser's print dialog.
+ */
+export async function renderAverySheetHtml(opts: AverySheetOptions): Promise<string> {
+	const [format] = await db
+		.select()
+		.from(labelFormats)
+		.where(eq(labelFormats.code, opts.formatCode))
+		.limit(1);
+
+	if (!format || format.layout !== 'sheet') {
+		throw new Error(`Unknown or non-sheet label format: ${opts.formatCode}`);
+	}
+	if (!format.cols || !format.rows || !format.pageWidthInches || !format.pageHeightInches) {
+		throw new Error(`Sheet format "${opts.formatCode}" is missing page/cols/rows`);
+	}
+
+	const cols = format.cols;
+	const rows = format.rows;
+	const pageW = parseFloat(format.pageWidthInches);
+	const pageH = parseFloat(format.pageHeightInches);
+	const labelW = parseFloat(format.labelWidthInches);
+	const labelH = parseFloat(format.labelHeightInches);
+	const mTop = parseFloat(format.marginTopInches ?? '0.5');
+	const mLeft = parseFloat(format.marginLeftInches ?? '0.1875');
+	const vPitch = parseFloat(format.verticalPitchInches ?? String(labelH));
+	const hPitch = parseFloat(format.horizontalPitchInches ?? String(labelW));
+
+	const totalCells = cols * rows;
+	const startPos = Math.max(1, Math.min(opts.startPosition ?? 1, totalCells));
+
+	// Expand items by copies into a flat list of cells.
+	const queue: TagItem[] = [];
+	for (const it of opts.items) {
+		const copies = Math.max(1, Math.min(it.copies ?? 1, 100));
+		for (let i = 0; i < copies; i++) queue.push(it);
+	}
+
+	// Render each cell position 1..totalCells. Empty before startPos, item
+	// from queue after, blank when queue exhausted.
+	const cellsHtml: string[] = [];
+	let qIdx = 0;
+	for (let pos = 1; pos <= totalCells; pos++) {
+		// pos 1 = top-left, fill row-by-row
+		const idx = pos - 1;
+		const row = Math.floor(idx / cols);
+		const col = idx % cols;
+		const left = mLeft + col * hPitch;
+		const top = mTop + row * vPitch;
+		const style = `position:absolute;left:${left}in;top:${top}in;width:${labelW}in;height:${labelH}in;overflow:hidden;`;
+
+		if (pos < startPos || qIdx >= queue.length) {
+			cellsHtml.push(`<div class="cell" style="${style}"></div>`);
+			continue;
+		}
+		const item = queue[qIdx++];
+		const svg = await renderTagSvg({
+			vendorDisplayName: opts.vendorDisplayName,
+			settings: opts.settings,
+			item
+		});
+		cellsHtml.push(
+			`<div class="cell" style="${style};display:flex;align-items:center;justify-content:center;">${embedSvgFitContent(svg)}</div>`
+		);
+	}
+
+	// Force the SVG inside each cell to fill its container. The renderer
+	// emits a fixed pixel viewBox; setting width/height to 100% scales it
+	// nicely while preserving aspect ratio.
+	return [
+		'<!doctype html>',
+		'<html><head><meta charset="utf-8"><title>Print sheet</title>',
+		'<style>',
+		`@page { size: ${pageW}in ${pageH}in; margin: 0; }`,
+		'html, body { margin: 0; padding: 0; width: ' + pageW + 'in; height: ' + pageH + 'in; }',
+		'body { position: relative; font-family: Arial, sans-serif; }',
+		'.cell svg { width: 100%; height: 100%; border: none !important; background: transparent !important; }',
+		'@media screen { body { background: #fafafa; box-shadow: 0 0 12px rgba(0,0,0,0.1); margin: 16px auto; }',
+		'  .cell { outline: 1px dashed #ccc; }',
+		'}',
+		'@media print { .cell { outline: none; } }',
+		'</style></head><body>',
+		cellsHtml.join(''),
+		'</body></html>'
+	].join('\n');
+}
+
+/**
+ * Strip the outer fixed-size SVG wrapper to let the cell's CSS scale it.
+ */
+function embedSvgFitContent(svg: string): string {
+	return svg
+		.replace(/(<svg[^>]*?)\s+width="[^"]*"/, '$1')
+		.replace(/(<svg[^>]*?)\s+height="[^"]*"/, '$1')
+		.replace(/(<svg[^>]*?)\s+style="[^"]*"/, '$1');
+}
+
 /**
  * Render a single tag as a ZPL II program for Zebra thermal printers.
  *

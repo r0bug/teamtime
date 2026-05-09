@@ -35,6 +35,10 @@ export { queryMetricsTool } from './query-metrics';
 export { getVendorCorrelationsTool } from './get-vendor-correlations';
 export { analyzeStaffingPatternsTool } from './analyze-staffing-patterns';
 export { runSalesScraperTool } from './run-sales-scraper';
+export { listVendorsTool } from './list-vendors';
+export { getVendorTool } from './get-vendor';
+export { getVendorRecentSalesTool } from './get-vendor-recent-sales';
+export { listVendorPendingChangesTool } from './list-vendor-pending-changes';
 export { clockUserTool } from './clock-user';
 export { createTimeEntryTool } from './create-time-entry';
 export { editTimeEntryTool } from './edit-time-entry';
@@ -92,6 +96,10 @@ import { queryMetricsTool } from './query-metrics';
 import { getVendorCorrelationsTool } from './get-vendor-correlations';
 import { analyzeStaffingPatternsTool } from './analyze-staffing-patterns';
 import { runSalesScraperTool } from './run-sales-scraper';
+import { listVendorsTool } from './list-vendors';
+import { getVendorTool } from './get-vendor';
+import { getVendorRecentSalesTool } from './get-vendor-recent-sales';
+import { listVendorPendingChangesTool } from './list-vendor-pending-changes';
 import { clockUserTool } from './clock-user';
 import { createTimeEntryTool } from './create-time-entry';
 import { editTimeEntryTool } from './edit-time-entry';
@@ -117,6 +125,11 @@ export const officeManagerTools: AITool<any, any>[] = [
 	getChatDetailsTool,
 	viewSalesTool,
 	viewPointsTool,
+	// Vendor read-only tools
+	listVendorsTool,
+	getVendorTool,
+	getVendorRecentSalesTool,
+	listVendorPendingChangesTool,
 	// Metrics tools
 	queryMetricsTool,
 	getVendorCorrelationsTool,
