@@ -89,6 +89,54 @@ export async function send2FACode(email: string, code: string): Promise<boolean>
 	});
 }
 
+/**
+ * Send a vendor portal invitation with login URL + email + temp password.
+ * The vendor will be forced to change the password on first login.
+ */
+export async function sendVendorPortalInvitationEmail(input: {
+	to: string;
+	contactName: string;
+	loginUrl: string;
+	tempPassword: string;
+}): Promise<boolean> {
+	const { to, contactName, loginUrl, tempPassword } = input;
+	return sendEmail({
+		to,
+		subject: 'Welcome to Yakima Finds — your vendor portal login',
+		html: `
+			<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1f2937;">
+				<h2 style="color: #2563eb; margin-bottom: 8px;">Your vendor portal is ready</h2>
+				<p>Hi ${escapeHtml(contactName)},</p>
+				<p>Sign in to manage your inventory, print tags, and view your sales.</p>
+				<div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0; font-family: monospace; font-size: 14px;">
+					<div style="margin-bottom: 8px;"><strong>Login:</strong> <a href="${loginUrl}" style="color: #2563eb;">${loginUrl}</a></div>
+					<div style="margin-bottom: 8px;"><strong>Email:</strong> ${escapeHtml(to)}</div>
+					<div><strong>Password:</strong> <code style="background: white; padding: 2px 6px; border-radius: 4px;">${escapeHtml(tempPassword)}</code></div>
+				</div>
+				<p style="color: #6b7280; font-size: 13px;">You'll be asked to set a new password the first time you sign in.</p>
+				<p style="color: #6b7280; font-size: 12px; margin-top: 24px;">If you didn't expect this email, contact the shop.<br/>— The Yakima Finds team</p>
+			</div>
+		`,
+		text:
+			`Your Yakima Finds vendor portal is ready.\n\n` +
+			`Login: ${loginUrl}\n` +
+			`Email: ${to}\n` +
+			`Password: ${tempPassword}\n\n` +
+			`You'll set a new password on first login.\n\n` +
+			`If you didn't expect this email, contact the shop.\n` +
+			`— The Yakima Finds team`
+	});
+}
+
+function escapeHtml(s: string): string {
+	return s
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
 export async function sendPinResetCode(email: string, code: string): Promise<boolean> {
 	return sendEmail({
 		to: email,

@@ -74,8 +74,10 @@ export interface VendorPersonalStats {
 	allTimeGross: number;
 	allTimeVendorPortion: number;
 	bestDayEver: { date: string; gross: number; vendorPortion: number } | null;
-	bestWeekEver: { startDate: string; endDate: string; vendorPortion: number } | null;
+	bestWeekEver: { startDate: string; endDate: string; gross: number; vendorPortion: number } | null;
+	last30DaysGross: number;
 	last30DaysVendorPortion: number;
+	mtdGross: number;
 	mtdVendorPortion: number;
 	mtdRank: number | null;
 	totalVendorCount: number;
@@ -99,15 +101,22 @@ function todayPacific(): string {
 	}).format(new Date());
 }
 
-function addDays(yyyyMmDd: string, days: number): string {
-	const d = new Date(yyyyMmDd + 'T00:00:00Z');
+// postgres-js returns `date` columns as JS Date objects, not 'YYYY-MM-DD' strings.
+// Coerce both forms here so callers can pass either.
+function toYmd(input: string | Date): string {
+	if (input instanceof Date) return input.toISOString().slice(0, 10);
+	return input;
+}
+
+function addDays(input: string | Date, days: number): string {
+	const d = new Date(toYmd(input) + 'T00:00:00Z');
 	d.setUTCDate(d.getUTCDate() + days);
 	return d.toISOString().slice(0, 10);
 }
 
-function diffDaysInclusive(start: string, end: string): number {
-	const a = new Date(start + 'T00:00:00Z').getTime();
-	const b = new Date(end + 'T00:00:00Z').getTime();
+function diffDaysInclusive(start: string | Date, end: string | Date): number {
+	const a = new Date(toYmd(start) + 'T00:00:00Z').getTime();
+	const b = new Date(toYmd(end) + 'T00:00:00Z').getTime();
 	return Math.round((b - a) / (24 * 60 * 60 * 1000)) + 1;
 }
 
@@ -128,7 +137,12 @@ function defaultRange(): { start: string; end: string } {
 /** Pull the latest snapshot per saleDate within a window. */
 async function loadSnapshotsByDate(start: string, end: string): Promise<Map<string, SnapshotVendor[]>> {
 	const rows = await db
-		.select({ saleDate: salesSnapshots.saleDate, vendors: salesSnapshots.vendors })
+		.select({
+			// Cast to text — postgres-js returns `date` as JS Date, but every consumer
+			// downstream uses this as a YYYY-MM-DD string Map key.
+			saleDate: sql<string>`TO_CHAR(${salesSnapshots.saleDate}, 'YYYY-MM-DD')`,
+			vendors: salesSnapshots.vendors
+		})
 		.from(salesSnapshots)
 		.where(and(gte(salesSnapshots.saleDate, start), lte(salesSnapshots.saleDate, end)));
 
@@ -311,7 +325,8 @@ export async function getMostItemsInOneDay(opts: {
 	const rows = await db
 		.select({
 			vendorId: salesTransactions.vendorId,
-			invoiceDate: salesTransactions.invoiceDate,
+			// Cast to text — see comment in getLongestStreak.
+			invoiceDate: sql<string>`TO_CHAR(${salesTransactions.invoiceDate}, 'YYYY-MM-DD')`,
 			itemCount: sql<number>`COALESCE(SUM(${salesTransactions.quantity}), 0)::int`,
 			// arCashRegId is the cash-register transaction id — one per "receipt".
 			// Schema has no `invoiceNumber` column; this is the equivalent grouping key.
@@ -365,7 +380,9 @@ export async function getLongestStreak(opts: {
 	const pairs = await db
 		.selectDistinct({
 			vendorId: salesTransactions.vendorId,
-			invoiceDate: salesTransactions.invoiceDate
+			// Cast to text in SQL — postgres-js returns `date` as JS Date otherwise,
+			// which breaks the YYYY-MM-DD string comparisons below.
+			invoiceDate: sql<string>`TO_CHAR(${salesTransactions.invoiceDate}, 'YYYY-MM-DD')`
 		})
 		.from(salesTransactions)
 		.where(and(
@@ -505,7 +522,11 @@ export async function getHotBooth(opts: {
 export async function getVendorPersonalStats(nrsVendorId: number): Promise<VendorPersonalStats> {
 	// Pull all snapshot daily aggregates for this vendor (small — ~one row per day).
 	const snapshotRows = await db
-		.select({ saleDate: salesSnapshots.saleDate, vendors: salesSnapshots.vendors })
+		.select({
+			// Cast to text — see loadSnapshotsByDate comment.
+			saleDate: sql<string>`TO_CHAR(${salesSnapshots.saleDate}, 'YYYY-MM-DD')`,
+			vendors: salesSnapshots.vendors
+		})
 		.from(salesSnapshots);
 
 	// daily map for this vendor: date -> { gross, vendorPortion }
@@ -541,51 +562,77 @@ export async function getVendorPersonalStats(nrsVendorId: number): Promise<Vendo
 		}
 	}
 
-	// Best 7-day sliding window by vendorPortion (calendar-aligned, missing
-	// days count as zero — common for thrift booths that don't sell daily).
+	// Best 7-day sliding window. Ranked by vendorPortion when the vendor earns
+	// commission; for pass-through vendors (vendorPortion always 0) we fall
+	// back to ranking by gross so the card still surfaces a meaningful window.
 	let bestWeekEver: VendorPersonalStats['bestWeekEver'] = null;
 	if (sortedDates.length > 0) {
 		const first = sortedDates[0];
 		const last = sortedDates[sortedDates.length - 1];
-		// Iterate every calendar day in [first, last] and sum the next 7 days.
 		const totalDays = diffDaysInclusive(first, last);
 		for (let i = 0; i < totalDays; i++) {
 			const winStart = addDays(first, i);
 			const winEnd = addDays(winStart, 6);
-			let sum = 0;
+			let grossSum = 0;
+			let portionSum = 0;
 			for (let j = 0; j < 7; j++) {
 				const d = addDays(winStart, j);
 				const v = myDays.get(d);
-				if (v) sum += v.vendorPortion;
+				if (v) {
+					grossSum += v.gross;
+					portionSum += v.vendorPortion;
+				}
 			}
-			if (!bestWeekEver || sum > bestWeekEver.vendorPortion) {
-				bestWeekEver = { startDate: winStart, endDate: winEnd, vendorPortion: round2(sum) };
+			const rank = portionSum > 0 ? portionSum : grossSum;
+			const bestRank = bestWeekEver
+				? (bestWeekEver.vendorPortion > 0 ? bestWeekEver.vendorPortion : bestWeekEver.gross)
+				: -Infinity;
+			if (rank > bestRank) {
+				bestWeekEver = {
+					startDate: winStart,
+					endDate: winEnd,
+					gross: round2(grossSum),
+					vendorPortion: round2(portionSum)
+				};
 			}
 		}
-		if (bestWeekEver && bestWeekEver.vendorPortion <= 0) bestWeekEver = null;
+		if (bestWeekEver && bestWeekEver.gross <= 0 && bestWeekEver.vendorPortion <= 0) {
+			bestWeekEver = null;
+		}
 	}
 
-	// Last 30 days
+	// Last 30 days — track gross + vendor portion side by side.
 	const today = todayPacific();
 	const last30Start = addDays(today, -29);
-	let last30 = 0;
+	let last30Gross = 0;
+	let last30Portion = 0;
 	for (const [d, v] of myDays.entries()) {
-		if (d >= last30Start && d <= today) last30 += v.vendorPortion;
+		if (d >= last30Start && d <= today) {
+			last30Gross += v.gross;
+			last30Portion += v.vendorPortion;
+		}
 	}
 
-	// MTD vendor portion + rank
+	// MTD totals — both gross and vendor portion. Rank uses vendor portion when
+	// any vendor in the period earned commission, otherwise ranks by gross so
+	// pass-through-only periods still produce a meaningful ranking.
 	const mtdStart = `${today.slice(0, 7)}-01`;
-	const mtdTotals = new Map<number, number>();
+	const mtdGrossTotals = new Map<number, number>();
+	const mtdPortionTotals = new Map<number, number>();
 	for (const [d, dayVendors] of allByDay.entries()) {
 		if (d < mtdStart || d > today) continue;
 		for (const v of dayVendors) {
 			const id = parseInt(v.vendor_id, 10);
 			if (!Number.isFinite(id) || id === 0) continue;
-			mtdTotals.set(id, (mtdTotals.get(id) ?? 0) + (v.vendor_amount ?? 0));
+			mtdGrossTotals.set(id, (mtdGrossTotals.get(id) ?? 0) + (v.total_sales ?? 0));
+			mtdPortionTotals.set(id, (mtdPortionTotals.get(id) ?? 0) + (v.vendor_amount ?? 0));
 		}
 	}
-	const myMtd = mtdTotals.get(nrsVendorId) ?? 0;
-	const sortedMtd = Array.from(mtdTotals.entries()).sort((a, b) => b[1] - a[1]);
+	const myMtdGross = mtdGrossTotals.get(nrsVendorId) ?? 0;
+	const myMtdPortion = mtdPortionTotals.get(nrsVendorId) ?? 0;
+	const anyPortionEarned = Array.from(mtdPortionTotals.values()).some((n) => n > 0);
+	const rankSource = anyPortionEarned ? mtdPortionTotals : mtdGrossTotals;
+	const sortedMtd = Array.from(rankSource.entries()).sort((a, b) => b[1] - a[1]);
 	const mtdRankIdx = sortedMtd.findIndex(([id]) => id === nrsVendorId);
 	const mtdRank = mtdRankIdx === -1 ? null : mtdRankIdx + 1;
 
@@ -603,7 +650,9 @@ export async function getVendorPersonalStats(nrsVendorId: number): Promise<Vendo
 
 	// Streaks — distinct sale dates from transactions for this vendor.
 	const txDates = await db
-		.selectDistinct({ invoiceDate: salesTransactions.invoiceDate })
+		.selectDistinct({
+			invoiceDate: sql<string>`TO_CHAR(${salesTransactions.invoiceDate}, 'YYYY-MM-DD')`
+		})
 		.from(salesTransactions)
 		.where(eq(salesTransactions.vendorId, nrsVendorId));
 
@@ -641,8 +690,10 @@ export async function getVendorPersonalStats(nrsVendorId: number): Promise<Vendo
 		allTimeVendorPortion: round2(allTimeVendorPortion),
 		bestDayEver,
 		bestWeekEver,
-		last30DaysVendorPortion: round2(last30),
-		mtdVendorPortion: round2(myMtd),
+		last30DaysGross: round2(last30Gross),
+		last30DaysVendorPortion: round2(last30Portion),
+		mtdGross: round2(myMtdGross),
+		mtdVendorPortion: round2(myMtdPortion),
 		mtdRank,
 		totalVendorCount,
 		currentStreak,

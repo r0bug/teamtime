@@ -340,6 +340,7 @@ export const users = pgTable('users', {
 	canListOnEbay: boolean('can_list_on_ebay').notNull().default(false), // User can claim eBay listing tasks
 	includeInLaborCost: boolean('include_in_labor_cost').notNull().default(true), // Include hours in sales-screen labor cost calc
 	smsLockedUntil: timestamp('sms_locked_until', { withTimezone: true }), // If set, SMS office-manager commands are locked (after 3 failed PIN attempts)
+	mustChangePassword: boolean('must_change_password').notNull().default(false), // Set when admin sends temp credentials; cleared after first successful password reset
 	isActive: boolean('is_active').notNull().default(true),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
@@ -3121,7 +3122,7 @@ export const vendors = pgTable('vendors', {
 	notes: text('notes'),
 
 	// Onboarding & portal (Stage 2a)
-	// Per-vendor SKU prefix in NRS (2-6 chars [A-Z0-9]). All this vendor's
+	// Per-vendor SKU prefix in NRS (2-8 chars [A-Z0-9]). All this vendor's
 	// item codes start with this prefix (e.g. 'SR' → 'SR00212').
 	inventoryCodePrefix: text('inventory_code_prefix').unique(),
 	portalEnabled: boolean('portal_enabled').notNull().default(false),
@@ -3130,6 +3131,12 @@ export const vendors = pgTable('vendors', {
 	// "Inactive" column is present. Inactive vendors are hidden from the
 	// list by default and treated as removable by cleanup.
 	nrsInactive: boolean('nrs_inactive').notNull().default(false),
+
+	// Portal credentials delivery audit. Stamped each time an admin sends
+	// (or re-sends) the vendor a temp password via email/sms.
+	credentialsSentAt: timestamp('credentials_sent_at', { withTimezone: true }),
+	credentialsSentVia: text('credentials_sent_via'), // 'email' | 'sms' | 'email+sms'
+	credentialsSentByUserId: uuid('credentials_sent_by_user_id').references(() => users.id, { onDelete: 'set null' }),
 
 	// Audit
 	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),

@@ -2,7 +2,7 @@ import type { LayoutServerLoad } from './$types';
 import { redirect, error } from '@sveltejs/kit';
 import { getVendorForUser } from '$lib/server/services/vendor-service';
 
-export const load: LayoutServerLoad = async ({ locals }) => {
+export const load: LayoutServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');
 
 	const vendor = await getVendorForUser(locals.user.id);
@@ -13,5 +13,12 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		throw error(403, 'Vendor portal access is not enabled for your account');
 	}
 
-	return { vendor };
+	// Force the vendor to set their own password before reaching any portal
+	// page. The flag is set when admin sends them temp credentials; cleared
+	// when they save a new password at /vendor/set-password.
+	if (locals.user.mustChangePassword && url.pathname !== '/vendor/set-password') {
+		throw redirect(302, '/vendor/set-password');
+	}
+
+	return { vendor, mustChangePassword: locals.user.mustChangePassword === true };
 };

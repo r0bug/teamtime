@@ -26,10 +26,13 @@
 	});
 
 	$: user = data.user;
-	$: isAdmin = user?.role === 'admin';
-	$: isManager = user?.role === 'manager' || user?.role === 'admin';
-	$: isPurchaser = user?.role === 'purchaser' || isManager;
-	$: canListOnEbay = data.canListOnEbay || isManager;
+	$: isVendor = data.isVendor === true;
+	// Admin/manager elevation only applies to staff users — vendor portal users
+	// must never see staff/admin nav, even if their role column says otherwise.
+	$: isAdmin = !isVendor && user?.role === 'admin';
+	$: isManager = !isVendor && (user?.role === 'manager' || user?.role === 'admin');
+	$: isPurchaser = !isVendor && (user?.role === 'purchaser' || isManager);
+	$: canListOnEbay = !isVendor && (data.canListOnEbay || isManager);
 	$: modules = data.enabledModules || {};
 	$: mod = (key: string) => modules[key] !== false; // Default to enabled
 
@@ -69,21 +72,32 @@
 		return items.some(item => isActive(item.href));
 	}
 
-	$: navItems = [
-		{ href: '/dashboard', label: 'Home', icon: 'home', show: true },
-		{ href: '/schedule', label: 'Schedule', icon: 'calendar', show: mod('schedule') },
-		{ href: '/tasks', label: 'Tasks', icon: 'clipboard', show: mod('tasks') },
-		{ href: '/messages', label: 'Messages', icon: 'chat', show: mod('messages') },
-		{ href: '/leaderboard', label: 'Leaderboard', icon: 'trophy', show: mod('leaderboard') },
-		{ href: '/achievements', label: 'Achievements', icon: 'star', show: mod('achievements') },
-		{ href: '/sales', label: 'Sales', icon: 'chart', show: mod('sales') },
-		{ href: '/info', label: 'Info', icon: 'info', show: true },
-		{ href: '/pricing', label: 'Pricing', icon: 'tag', show: mod('pricing') },
-		{ href: '/inventory/drops', label: 'Drops', icon: 'box', show: isPurchaser && mod('inventory') },
-		{ href: '/ebay/tasks', label: 'eBay Tasks', icon: 'globe', show: canListOnEbay && mod('ebay') },
-		{ href: '/expenses', label: 'Expenses', icon: 'dollar', show: isPurchaser && mod('expenses') },
-		{ href: '/admin/office-manager/chat', label: 'Office Manager', icon: 'office-chat', show: isManager }
-	].filter(item => item.show);
+	const vendorNavItems = [
+		{ href: '/vendor', label: 'Home', icon: 'home', show: true, exact: true },
+		{ href: '/vendor/inventory', label: 'Inventory', icon: 'box', show: true },
+		{ href: '/vendor/print', label: 'Print Sheet', icon: 'tag', show: true },
+		{ href: '/vendor/leaderboard', label: 'Leaderboard', icon: 'trophy', show: true },
+		{ href: '/vendor/sales', label: 'Sales', icon: 'chart', show: true },
+		{ href: '/vendor/profile', label: 'Profile', icon: 'users', show: true }
+	];
+
+	$: navItems = isVendor
+		? vendorNavItems
+		: [
+			{ href: '/dashboard', label: 'Home', icon: 'home', show: true },
+			{ href: '/schedule', label: 'Schedule', icon: 'calendar', show: mod('schedule') },
+			{ href: '/tasks', label: 'Tasks', icon: 'clipboard', show: mod('tasks') },
+			{ href: '/messages', label: 'Messages', icon: 'chat', show: mod('messages') },
+			{ href: '/leaderboard', label: 'Leaderboard', icon: 'trophy', show: mod('leaderboard') },
+			{ href: '/achievements', label: 'Achievements', icon: 'star', show: mod('achievements') },
+			{ href: '/sales', label: 'Sales', icon: 'chart', show: mod('sales') },
+			{ href: '/info', label: 'Info', icon: 'info', show: true },
+			{ href: '/pricing', label: 'Pricing', icon: 'tag', show: mod('pricing') },
+			{ href: '/inventory/drops', label: 'Drops', icon: 'box', show: isPurchaser && mod('inventory') },
+			{ href: '/ebay/tasks', label: 'eBay Tasks', icon: 'globe', show: canListOnEbay && mod('ebay') },
+			{ href: '/expenses', label: 'Expenses', icon: 'dollar', show: isPurchaser && mod('expenses') },
+			{ href: '/admin/office-manager/chat', label: 'Office Manager', icon: 'office-chat', show: isManager }
+		].filter(item => item.show);
 
 	// Grouped admin sections
 	$: adminSections = [
@@ -161,6 +175,9 @@
 	].filter(section => section.items.length > 0);
 
 	function isActive(href: string): boolean {
+		// /vendor is the vendor portal home — treat as exact match so it doesn't
+		// also highlight when on /vendor/inventory, /vendor/leaderboard, etc.
+		if (href === '/vendor') return $page.url.pathname === '/vendor';
 		return $page.url.pathname === href || $page.url.pathname.startsWith(href + '/');
 	}
 

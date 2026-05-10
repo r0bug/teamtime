@@ -2991,12 +2991,73 @@ Vendor sees the applied/rejected status (and notes/reason) on their `/vendor/inv
 - Vendor portal: `src/routes/(app)/vendor/`
 - API: `src/routes/api/vendors/`, `src/routes/api/agreement-templates/`
 
-### Out of scope (deferred to Stage 2b)
+### Portal invitation flow (Stage 2b)
+
+Onboarding now includes a fourth gate: **credentials sent**. Admin sends the
+vendor a temp password via email, SMS, or both from `/admin/vendors/onboarding`
+(or the per-vendor detail page). The vendor signs in once, is forced to set a
+new password, and lands on the portal home.
+
+Mechanics:
+
+- **Service:** `inviteVendorToPortal({ vendorId, channels, sentByUserId })` in
+  `src/lib/server/services/vendor-service.ts`. Generates a 12-char temp password
+  from an unambiguous alphabet (no 0/O/1/l/I), creates or links the user with
+  `username = email` (slug fallback on collision), flags `users.must_change_password = true`,
+  delivers via the requested channels in parallel (`Promise.allSettled`), stamps
+  `vendors.credentials_sent_at/via/by_user_id`, and returns delivery status +
+  the temp password (so the admin UI can display it for manual relay if a
+  channel fails).
+- **Email template:** `sendVendorPortalInvitationEmail` in `src/lib/server/email/index.ts`.
+- **SMS:** uses existing `sendSMS()` with the standard "Yakima Finds Communiqué:" header.
+- **First-login gate:** `(app)/vendor/+layout.server.ts` redirects users with
+  `must_change_password = true` to `/vendor/set-password` before any other
+  vendor page renders.
+- **Set-password page:** `src/routes/(app)/vendor/set-password/+page.{server.ts,svelte}` —
+  hashes new password via `hashPin()` (Argon2), clears the flag, redirects to `/vendor`.
+
+Admin UI on `/admin/vendors/onboarding`:
+
+- Per-vendor card shows email + SMS checkboxes (auto-disabled when contact info
+  is missing on the vendor record).
+- After send, success banner shows `Sent via {channels}` with the temp password
+  for manual relay if delivery failed.
+- "Resend invitation" generates a new temp password and re-flips the
+  `must_change_password` flag; the previous password becomes invalid.
+
+### Vendor sidebar + dashboard polish
+
+Vendor users now see a vendor-specific sidebar (Home / Inventory / Print Sheet /
+Leaderboard / Sales / Profile) instead of the staff sidebar. `(app)/+layout.server.ts`
+returns `isVendor: boolean`; `(app)/+layout.svelte` swaps `navItems` accordingly
+and never picks up admin/manager elevation for vendor users.
+
+The `/vendor` home stats panel now displays both **gross** and **vendor portion**
+side by side (`Gross $X · Yours $Y`) — important for pass-through vendors where
+vendor portion is always zero.
+
+A **base-item check** card warns the vendor (and prompts staff) if no item with
+`partName = vendor.inventoryCodePrefix` exists in either `salesTransactions` or
+`pendingInventoryChanges` — the catch-all SKU staff use to ring up unmarked
+booth merchandise.
+
+### Login picker
+
+`/login` now shows an explicit picker:
+
+- **Staff** → email + PIN (`?as=staff`)
+- **Vendor** → email + password (`?as=vendor`)
+
+URL params drive the mode (back button works); the form action stays the same
+since the server already accepts both PIN and password per-user.
+
+### Out of scope (deferred to Stage 2c)
 
 - Direct NRS write API integration (proposals are still applied manually by staff)
 - Vendor messaging integrated with TeamTime messaging (groups, threads, direct messages)
 - In-portal performance dashboard beyond the simple sales view
 - Public vendor self-signup flow
+- "Forgot password" self-service for vendors (admin can resend invitation as a workaround)
 
 ---
 

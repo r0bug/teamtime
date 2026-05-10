@@ -42,6 +42,7 @@ interface DatabaseUserAttributes {
 	name: string;
 	phone: string | null;
 	isActive: boolean;
+	mustChangePassword: boolean;
 }
 
 export { lucia as auth };

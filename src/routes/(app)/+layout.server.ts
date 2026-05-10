@@ -28,6 +28,7 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 
 	// Vendor portal users can only see /vendor/* — redirect them away from
 	// staff routes. Logout is handled by /logout (top-level, outside this layout).
+	let isVendor = false;
 	if (locals.user.userTypeId) {
 		const [type] = await db
 			.select({ name: userTypes.name })
@@ -35,6 +36,7 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 			.where(eq(userTypes.id, locals.user.userTypeId))
 			.limit(1);
 		if (type?.name === 'Vendor') {
+			isVendor = true;
 			const path = url.pathname;
 			if (!path.startsWith('/vendor')) {
 				throw redirect(302, '/vendor');
@@ -77,6 +79,7 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 	return {
 		user: locals.user,
 		canListOnEbay: userData?.canListOnEbay || false,
-		enabledModules
+		enabledModules,
+		isVendor
 	};
 };

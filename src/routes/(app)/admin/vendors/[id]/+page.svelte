@@ -344,7 +344,7 @@
 							name="inventoryCodePrefix"
 							type="text"
 							class="input font-mono uppercase max-w-xs"
-							maxlength="6"
+							maxlength="8"
 							pattern={'[A-Za-z0-9]{2,6}'}
 							placeholder="SR"
 							bind:value={inventoryCodePrefix}

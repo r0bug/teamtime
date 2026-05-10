@@ -7,7 +7,7 @@
  */
 
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes } from 'crypto';
 import { db } from '$lib/server/db';
 import {
 	vendors,
@@ -27,6 +27,8 @@ import {
 } from '$lib/server/db/schema';
 import { getVendors as fetchNrsVendors, getVendorDetail, type NrsVendorDetail } from './nrs-api-client';
 import { hashPin } from '$lib/server/auth/pin';
+import { sendVendorPortalInvitationEmail } from '$lib/server/email';
+import { sendSMS, formatPhoneToE164 } from '$lib/server/twilio';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('services:vendor');
@@ -220,8 +222,10 @@ export async function signAgreement(input: {
 	});
 }
 
-// Empty-only fields: backfill from NRS without overwriting admin-edited data.
-const EMPTY_BACKFILL_KEYS = [
+// Identity fields where NRS is the source of truth. If NRS has a non-null
+// value, it always wins — admin should edit these in NRS, not TT.
+// (Empty NRS values do not wipe TT — protects against accidental clears in NRS.)
+const NRS_AUTHORITATIVE_KEYS = [
 	'contactName',
 	'contactEmail',
 	'contactPhone',
@@ -229,11 +233,14 @@ const EMPTY_BACKFILL_KEYS = [
 	'addressLine2',
 	'city',
 	'state',
-	'zip',
-	'inventoryCodePrefix'
+	'zip'
 ] as const;
 
-const PREFIX_RE_INNER = /^[A-Z0-9]{2,6}$/;
+// (Inventory prefix is the only TT-managed field worth backfilling from NRS —
+// rent/commission % come via the notes parser elsewhere. Special-cased inline
+// in nrsDetailToPatch.)
+
+const PREFIX_RE_INNER = /^[A-Z0-9]{2,8}$/;
 
 /**
  * Best-effort parse of the NRS `notes` field for booth rent + commission %.
@@ -298,7 +305,9 @@ function nrsDetailToPatch(
 ): Partial<typeof vendors.$inferInsert> {
 	const patch: Record<string, unknown> = {};
 
-	const fields: { key: typeof EMPTY_BACKFILL_KEYS[number]; value: string | null }[] = [
+	// Identity fields — NRS wins when it has a value. Lets admin keep contact
+	// info accurate by editing only in NRS; TT picks up changes on next sync.
+	const identityFields: { key: typeof NRS_AUTHORITATIVE_KEYS[number]; value: string | null }[] = [
 		{ key: 'contactName', value: detail.contact || null },
 		{ key: 'contactEmail', value: detail.email ? detail.email.trim().toLowerCase() : null },
 		{ key: 'contactPhone', value: detail.phone || null },
@@ -309,11 +318,15 @@ function nrsDetailToPatch(
 		{ key: 'zip', value: detail.zipCode || null }
 	];
 
-	for (const { key, value } of fields) {
-		if (current[key] === null && value) patch[key] = value;
+	for (const { key, value } of identityFields) {
+		// Only overwrite if NRS has a value AND it differs from what we have.
+		// Empty NRS doesn't wipe TT (guards against accidental clears upstream).
+		if (value && value !== current[key]) patch[key] = value;
 	}
 
 	// Inventory prefix: NRS `vendorCode` is the SKU prefix. Validate before applying.
+	// Backfill-only — admin may have set a different prefix locally for legacy
+	// reasons (e.g. tags already printed under an old code).
 	if (!current.inventoryCodePrefix && detail.vendorCode) {
 		const candidate = detail.vendorCode.trim().toUpperCase();
 		if (PREFIX_RE_INNER.test(candidate)) {
@@ -726,7 +739,7 @@ export async function removeUnusedVendorStubs(): Promise<{ removed: number; kept
 
 // ── Onboarding (Stage 2a) ────────────────────────────────────────────────────
 
-const PREFIX_RE = /^[A-Z0-9]{2,6}$/;
+const PREFIX_RE = /^[A-Z0-9]{2,8}$/;
 
 export class VendorServiceError extends Error {}
 
@@ -737,7 +750,7 @@ export class VendorServiceError extends Error {}
 export async function setInventoryPrefix(vendorId: string, prefixRaw: string | null): Promise<Vendor> {
 	const prefix = prefixRaw?.trim().toUpperCase() || null;
 	if (prefix !== null && !PREFIX_RE.test(prefix)) {
-		throw new VendorServiceError('Inventory code prefix must be 2-6 letters or digits (A-Z, 0-9)');
+		throw new VendorServiceError('Inventory code prefix must be 2-8 letters or digits (A-Z, 0-9)');
 	}
 
 	if (prefix) {
@@ -859,11 +872,20 @@ export async function enablePortal(input: {
 		} else {
 			// Vendors don't use PIN — set a random Argon2 hash they can't sign in with.
 			const dummyPinHash = await hashPin(randomUUID());
+			// Username defaults to email (login is by email anyway, so this keeps
+			// the two consistent for vendor messaging). Falls back to a slug if
+			// some other user already has this email as their username.
+			const [usernameCollision] = await tx
+				.select({ id: users.id })
+				.from(users)
+				.where(eq(users.username, email))
+				.limit(1);
+			const username = usernameCollision ? uniqueUsernameFromEmail(email) : email;
 			const [created] = await tx
 				.insert(users)
 				.values({
 					email,
-					username: uniqueUsernameFromEmail(email),
+					username,
 					name: input.contactName,
 					pinHash: dummyPinHash,
 					passwordHash,
@@ -904,6 +926,180 @@ export async function resetPortalPassword(vendorId: string, password: string): P
 	const passwordHash = await hashPin(password);
 	await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, vendor.userId));
 	log.info({ vendorId, userId: vendor.userId }, 'Reset vendor portal password');
+}
+
+/**
+ * Generate a memorable 12-char temp password from an unambiguous alphabet
+ * (no 0/O/1/l/I). ~71 bits of entropy. Used for emailed/texted credentials —
+ * always paired with `mustChangePassword=true` so the vendor sets their own
+ * password on first login.
+ */
+export function generateTempPassword(): string {
+	const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghjkmnpqrstuvwxyz';
+	const bytes = randomBytes(12);
+	let out = '';
+	for (let i = 0; i < bytes.length; i++) {
+		out += alphabet[bytes[i] % alphabet.length];
+	}
+	return out;
+}
+
+export interface InviteVendorChannels {
+	email: boolean;
+	sms: boolean;
+}
+
+export interface InviteVendorResult {
+	vendor: Vendor;
+	tempPassword: string; // returned to admin once for copy/paste fallback
+	channelsAttempted: string[];
+	channelsSucceeded: string[];
+	channelsFailed: { channel: string; error: string }[];
+}
+
+const PORTAL_LOGIN_URL =
+	process.env.PUBLIC_BASE_URL ?? 'https://backoffice.yakimafinds.com';
+
+/**
+ * Send (or re-send) portal credentials to a vendor. Generates a temp password,
+ * enables portal access if not already, flags `users.mustChangePassword=true`
+ * so the vendor sets their own password on first login, and delivers the
+ * credentials over the requested channels.
+ *
+ * Idempotent for resends: each call generates a fresh password and re-flags
+ * mustChangePassword. The vendor's previous password becomes invalid.
+ */
+export async function inviteVendorToPortal(input: {
+	vendorId: string;
+	channels: InviteVendorChannels;
+	sentByUserId: string;
+}): Promise<InviteVendorResult> {
+	if (!input.channels.email && !input.channels.sms) {
+		throw new VendorServiceError('Pick at least one channel: email or sms');
+	}
+
+	const [vendor] = await db.select().from(vendors).where(eq(vendors.id, input.vendorId)).limit(1);
+	if (!vendor) throw new VendorServiceError(`Vendor not found: ${input.vendorId}`);
+
+	if (input.channels.email && !vendor.contactEmail) {
+		throw new VendorServiceError('Vendor has no contact email — add one before sending');
+	}
+	if (input.channels.sms && !vendor.contactPhone) {
+		throw new VendorServiceError('Vendor has no contact phone — add one before sending');
+	}
+
+	const contactName = (vendor.contactName ?? vendor.displayName).trim() || vendor.displayName;
+	const email = (vendor.contactEmail ?? '').trim().toLowerCase();
+	if (!email) {
+		// Even SMS-only invites need an email on the user row (login is by email).
+		throw new VendorServiceError('Vendor needs an email on file to receive a login account');
+	}
+
+	const tempPassword = generateTempPassword();
+
+	// enablePortal handles user create-or-link, password hash, vendor flag flip.
+	const result = await enablePortal({
+		vendorId: input.vendorId,
+		email,
+		contactName,
+		password: tempPassword
+	});
+
+	// Flag the user for forced password change. enablePortal just set passwordHash,
+	// so this guarantees the vendor changes it on first login regardless of whether
+	// the user row already existed.
+	await db
+		.update(users)
+		.set({ mustChangePassword: true, updatedAt: new Date() })
+		.where(eq(users.id, result.userId));
+
+	// Deliver across requested channels in parallel. SMS failure shouldn't block email.
+	const attempts: { channel: 'email' | 'sms'; promise: Promise<{ success: boolean; error?: string }> }[] = [];
+	if (input.channels.email) {
+		attempts.push({
+			channel: 'email',
+			promise: sendVendorPortalInvitationEmail({
+				to: email,
+				contactName,
+				loginUrl: PORTAL_LOGIN_URL + '/login',
+				tempPassword
+			}).then(
+				(ok) => ({ success: ok, error: ok ? undefined : 'SMTP send returned false' }),
+				(err) => ({ success: false, error: err instanceof Error ? err.message : String(err) })
+			)
+		});
+	}
+	if (input.channels.sms) {
+		const phone = formatPhoneToE164(vendor.contactPhone ?? '');
+		if (!phone) {
+			attempts.push({
+				channel: 'sms',
+				promise: Promise.resolve({ success: false, error: 'Could not parse phone number' })
+			});
+		} else {
+			const body =
+				`Your vendor portal is ready.\n` +
+				`Sign in: ${PORTAL_LOGIN_URL}/login\n` +
+				`Email: ${email}\n` +
+				`Password: ${tempPassword}\n` +
+				`You'll set a new password on first login.`;
+			attempts.push({
+				channel: 'sms',
+				promise: sendSMS(phone, body).then((r) => ({
+					success: r.success,
+					error: r.success ? undefined : r.error ?? 'unknown SMS error'
+				}))
+			});
+		}
+	}
+
+	const settled = await Promise.all(attempts.map(async (a) => ({ channel: a.channel, ...(await a.promise) })));
+	const channelsAttempted = settled.map((s) => s.channel);
+	const channelsSucceeded = settled.filter((s) => s.success).map((s) => s.channel);
+	const channelsFailed = settled
+		.filter((s) => !s.success)
+		.map((s) => ({ channel: s.channel, error: s.error ?? 'unknown' }));
+
+	const sentVia =
+		channelsSucceeded.length === 0
+			? null
+			: channelsSucceeded.length === 2
+				? 'email+sms'
+				: channelsSucceeded[0];
+
+	let updatedVendor = result.vendor;
+	if (sentVia) {
+		const [stamped] = await db
+			.update(vendors)
+			.set({
+				credentialsSentAt: new Date(),
+				credentialsSentVia: sentVia,
+				credentialsSentByUserId: input.sentByUserId,
+				updatedAt: new Date()
+			})
+			.where(eq(vendors.id, input.vendorId))
+			.returning();
+		updatedVendor = stamped;
+	}
+
+	log.info(
+		{
+			vendorId: input.vendorId,
+			userId: result.userId,
+			channelsAttempted,
+			channelsSucceeded,
+			channelsFailed
+		},
+		'Sent vendor portal invitation'
+	);
+
+	return {
+		vendor: updatedVendor,
+		tempPassword,
+		channelsAttempted,
+		channelsSucceeded,
+		channelsFailed
+	};
 }
 
 /**

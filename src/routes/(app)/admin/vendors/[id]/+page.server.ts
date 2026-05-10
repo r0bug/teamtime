@@ -10,6 +10,7 @@ import {
 	setVendorGroups,
 	getVendorGroups,
 	enablePortal,
+	inviteVendorToPortal,
 	resetPortalPassword,
 	disablePortal,
 	markOnboardingComplete,
@@ -158,6 +159,33 @@ export const actions: Actions = {
 				password
 			});
 			return { success: 'enablePortal', createdUser: result.createdUser };
+		} catch (err) {
+			if (err instanceof VendorServiceError) return fail(400, { error: err.message });
+			throw err;
+		}
+	},
+
+	inviteToPortal: async ({ locals, params, request }) => {
+		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(401, { error: 'Not signed in' });
+		const data = await request.formData();
+		const sendEmail = data.get('sendEmail') === 'on';
+		const sendSms = data.get('sendSms') === 'on';
+		if (!sendEmail && !sendSms) {
+			return fail(400, { error: 'Pick at least one channel (email or SMS)' });
+		}
+		try {
+			const result = await inviteVendorToPortal({
+				vendorId: params.id,
+				channels: { email: sendEmail, sms: sendSms },
+				sentByUserId: locals.user.id
+			});
+			return {
+				success: 'inviteToPortal',
+				channelsSucceeded: result.channelsSucceeded,
+				channelsFailed: result.channelsFailed,
+				tempPassword: result.tempPassword
+			};
 		} catch (err) {
 			if (err instanceof VendorServiceError) return fail(400, { error: err.message });
 			throw err;

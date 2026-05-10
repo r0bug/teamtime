@@ -23,6 +23,10 @@
 		else set.add(groupId);
 		groupsByVendor = { ...groupsByVendor, [vendorId]: new Set(set) };
 	}
+
+	function formatFailures(failures: { channel: string; error: string }[]): string {
+		return failures.map((f) => `${f.channel} (${f.error})`).join('; ');
+	}
 </script>
 
 <svelte:head><title>Vendor Onboarding - TeamTime Admin</title></svelte:head>
@@ -79,7 +83,7 @@
 										name="inventoryCodePrefix"
 										type="text"
 										class="input font-mono uppercase"
-										maxlength="6"
+										maxlength="8"
 										value={item.vendor.inventoryCodePrefix ?? ''}
 										placeholder="SR"
 									/>
@@ -115,6 +119,71 @@
 								</div>
 								<button type="submit" class="btn btn-secondary self-start">Save groups</button>
 							</form>
+						</div>
+
+						<!-- Portal invitation -->
+						<div class="border-t border-gray-100 pt-3">
+							<div class="flex items-start justify-between flex-wrap gap-2 mb-2">
+								<div class="text-sm font-medium text-gray-700">Portal invitation</div>
+								{#if item.vendor.credentialsSentAt}
+									<span class="text-xs text-gray-500">
+										Sent <span class="font-medium">{item.vendor.credentialsSentVia ?? '?'}</span>
+										on {new Date(item.vendor.credentialsSentAt).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+									</span>
+								{/if}
+							</div>
+
+							{#if form?.success === 'invite' && form.vendorId === item.vendor.id}
+								<div class="mb-2 p-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded text-xs">
+									Sent via {form.channelsSucceeded?.join(', ') || 'no channels'}.
+									{#if form.channelsFailed && form.channelsFailed.length > 0}
+										<div class="text-red-700 mt-1">Failed: {formatFailures(form.channelsFailed)}</div>
+									{/if}
+									{#if form.tempPassword}
+										<div class="mt-1">Temp password (for manual relay if needed): <code class="font-mono bg-white px-1 rounded">{form.tempPassword}</code></div>
+									{/if}
+								</div>
+							{/if}
+
+							<form method="POST" action="?/invite" use:enhance class="flex flex-wrap items-end gap-3">
+								<input type="hidden" name="vendorId" value={item.vendor.id} />
+
+								<label class="inline-flex items-center gap-1.5 text-sm" class:opacity-50={!item.vendor.contactEmail}>
+									<input
+										type="checkbox"
+										name="sendEmail"
+										disabled={!item.vendor.contactEmail}
+										checked={!!item.vendor.contactEmail}
+									/>
+									<span>Email{item.vendor.contactEmail ? ` (${item.vendor.contactEmail})` : ' — none on file'}</span>
+								</label>
+
+								<label class="inline-flex items-center gap-1.5 text-sm" class:opacity-50={!item.vendor.contactPhone}>
+									<input
+										type="checkbox"
+										name="sendSms"
+										disabled={!item.vendor.contactPhone}
+										checked={!!item.vendor.contactPhone && !item.vendor.contactEmail}
+									/>
+									<span>SMS{item.vendor.contactPhone ? ` (${item.vendor.contactPhone})` : ' — none on file'}</span>
+								</label>
+
+								<button
+									type="submit"
+									class="btn btn-secondary text-sm"
+									disabled={!item.vendor.contactEmail && !item.vendor.contactPhone}
+								>
+									{item.vendor.credentialsSentAt ? 'Resend invitation' : 'Send invitation'}
+								</button>
+							</form>
+
+							{#if !item.vendor.contactEmail && !item.vendor.contactPhone}
+								<p class="text-xs text-amber-700 mt-2">
+									Add an email or phone on the
+									<a class="underline" href={`/admin/vendors/${item.vendor.id}`}>vendor detail page</a>
+									before sending an invitation.
+								</p>
+							{/if}
 						</div>
 
 						<div class="flex items-center justify-between border-t border-gray-100 pt-3">

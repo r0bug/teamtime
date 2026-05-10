@@ -643,9 +643,15 @@ CREATE TABLE vendors (
   notes TEXT,
 
   -- Onboarding & portal (Stage 2a)
-  inventory_code_prefix TEXT UNIQUE,         -- 2-6 [A-Z0-9], e.g. 'SR'
+  inventory_code_prefix TEXT UNIQUE,         -- 2-8 [A-Z0-9], e.g. 'SR' or 'YFMEDIA'
   portal_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE,
+  nrs_inactive BOOLEAN NOT NULL DEFAULT FALSE, -- Mirrors NRS CSV "Inactive" column
+
+  -- Portal invitation audit (stamped by inviteVendorToPortal)
+  credentials_sent_at TIMESTAMPTZ,
+  credentials_sent_via TEXT,                  -- 'email' | 'sms' | 'email+sms'
+  credentials_sent_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
 
   created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -656,6 +662,23 @@ CREATE INDEX idx_vendors_status ON vendors(status);
 CREATE INDEX idx_vendors_nrs_vendor_id ON vendors(nrs_vendor_id);
 CREATE INDEX idx_vendors_onboarding ON vendors(onboarding_complete);
 ```
+
+**Sync policy:** Identity fields (`contact_name/email/phone`, address fields) are
+NRS-authoritative — `syncFromNrs` overwrites them in TT whenever NRS has a non-null
+value. Empty NRS values do NOT wipe TT (guards against accidental upstream clears).
+`inventory_code_prefix` is backfill-only because admin may have a legacy reason to
+override (e.g. labels already printed under an old prefix).
+
+### Users Table — Vendor Portal Additions
+
+```sql
+-- Set when admin sends temp credentials via inviteVendorToPortal; cleared
+-- after the user saves a new password at /vendor/set-password.
+ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+```
+
+When a vendor signs in with a temp password, the `(app)/vendor/+layout.server.ts`
+gate redirects them to `/vendor/set-password` until the flag is cleared.
 
 ### Agreement Templates Table
 

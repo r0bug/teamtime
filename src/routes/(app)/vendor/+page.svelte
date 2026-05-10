@@ -21,7 +21,14 @@
 	}
 
 	$: stats = data.personalStats;
-	$: hasAnyStats = stats && (stats.bestDayEver !== null || stats.last30DaysVendorPortion > 0 || stats.mtdVendorPortion > 0 || stats.longestStreak > 0);
+	$: hasAnyStats = stats && (
+		stats.bestDayEver !== null ||
+		stats.last30DaysGross > 0 ||
+		stats.last30DaysVendorPortion > 0 ||
+		stats.mtdGross > 0 ||
+		stats.mtdVendorPortion > 0 ||
+		stats.longestStreak > 0
+	);
 </script>
 
 <svelte:head><title>{data.vendor.displayName} — Vendor Portal</title></svelte:head>
@@ -29,6 +36,26 @@
 <div class="p-4 lg:p-8 max-w-5xl mx-auto">
 	<h1 class="text-2xl font-bold text-gray-900">Welcome, {data.vendor.contactName ?? data.vendor.displayName}</h1>
 	<p class="text-gray-600 text-sm mt-1">Manage your inventory and view sales from your booth at the shop.</p>
+
+	<!-- Base-item warning -->
+	{#if data.baseItemCheck.checkable && !data.baseItemCheck.hasBaseItem}
+		<div class="mt-4 rounded-md border border-amber-300 bg-amber-50 p-4">
+			<div class="flex items-start gap-3">
+				<div class="text-2xl leading-none">⚠️</div>
+				<div class="flex-1">
+					<div class="font-semibold text-amber-900">
+						Missing your base item: <span class="font-mono">{data.baseItemCheck.expectedName}</span>
+					</div>
+					<p class="text-sm text-amber-800 mt-1">
+						Staff need a catch-all item named <span class="font-mono font-semibold">{data.baseItemCheck.expectedName}</span> to ring up unmarked merchandise from your booth. Submit one from the inventory page so this works at the register.
+					</p>
+					<a href="/vendor/inventory" class="inline-block mt-2 text-sm font-medium text-amber-900 underline">
+						Go to inventory →
+					</a>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<!-- Your Stats -->
 	<section class="mt-6">
@@ -48,17 +75,19 @@
 						<div>
 							<div class="text-xs text-gray-500 uppercase tracking-wide">🏔️ Best day ever</div>
 							{#if stats.bestDayEver}
-								<div class="text-2xl font-extrabold text-gray-900 tabular-nums mt-1">{fmtMoney(stats.bestDayEver.vendorPortion)}</div>
+								<div class="text-2xl font-extrabold text-gray-900 tabular-nums mt-1">{fmtMoney(stats.bestDayEver.gross)}</div>
+								<div class="text-xs text-gray-500 mt-0.5 tabular-nums">Yours: {fmtMoney(stats.bestDayEver.vendorPortion)}</div>
 								<div class="text-xs text-gray-500 mt-0.5">{fmtShortDate(stats.bestDayEver.date)}</div>
 							{:else}
 								<div class="text-2xl font-extrabold text-gray-300 mt-1">—</div>
 							{/if}
 						</div>
 
-						<!-- MTD vendor portion + rank -->
+						<!-- MTD totals + rank -->
 						<div>
-							<div class="text-xs text-gray-500 uppercase tracking-wide">📅 MTD vendor portion</div>
-							<div class="text-2xl font-extrabold text-gray-900 tabular-nums mt-1">{fmtMoney(stats.mtdVendorPortion)}</div>
+							<div class="text-xs text-gray-500 uppercase tracking-wide">📅 Month to date</div>
+							<div class="text-2xl font-extrabold text-gray-900 tabular-nums mt-1">{fmtMoney(stats.mtdGross)}</div>
+							<div class="text-xs text-gray-500 mt-0.5 tabular-nums">Yours: {fmtMoney(stats.mtdVendorPortion)}</div>
 							<div class="text-xs text-gray-500 mt-0.5">
 								{#if stats.mtdRank !== null}
 									Rank <span class="font-semibold text-gray-700">#{stats.mtdRank}</span> of {stats.totalVendorCount}
@@ -81,9 +110,10 @@
 						<!-- Last 30 days -->
 						<div>
 							<div class="text-xs text-gray-500 uppercase tracking-wide">Last 30 days</div>
-							<div class="text-2xl font-extrabold text-gray-900 tabular-nums mt-1">{fmtMoney(stats.last30DaysVendorPortion)}</div>
+							<div class="text-2xl font-extrabold text-gray-900 tabular-nums mt-1">{fmtMoney(stats.last30DaysGross)}</div>
+							<div class="text-xs text-gray-500 mt-0.5 tabular-nums">Yours: {fmtMoney(stats.last30DaysVendorPortion)}</div>
 							{#if stats.bestWeekEver}
-								<div class="text-xs text-gray-500 mt-0.5">Best week: {fmtMoney(stats.bestWeekEver.vendorPortion)}</div>
+								<div class="text-xs text-gray-500 mt-0.5">Best week: {fmtMoney(stats.bestWeekEver.gross)}</div>
 							{:else}
 								<div class="text-xs text-gray-500 mt-0.5">&nbsp;</div>
 							{/if}

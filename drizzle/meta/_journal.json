@@ -197,6 +197,13 @@
       "when": 1778221286726,
       "tag": "0027_military_nighthawk",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "5",
+      "when": 1778379944777,
+      "tag": "0028_opposite_spyke",
+      "breakpoints": true
     }
   ]
 }

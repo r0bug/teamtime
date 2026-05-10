@@ -12,7 +12,7 @@
  * have no TT row yet still rank — they appear with their NRS name.
  */
 
-import { and, gte, inArray, lte } from 'drizzle-orm';
+import { and, gte, inArray, lte, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { salesSnapshots, vendors } from '$lib/server/db/schema';
 
@@ -150,7 +150,12 @@ export async function computeLeaderboard(input: {
 
 async function aggregate(startDate: string, endDate: string): Promise<Map<number, AggRow>> {
 	const snapshots = await db
-		.select({ vendors: salesSnapshots.vendors, saleDate: salesSnapshots.saleDate })
+		.select({
+			vendors: salesSnapshots.vendors,
+			// Cast to text — postgres-js returns `date` columns as JS Date,
+			// which breaks Map<string, …> dedup by saleDate.
+			saleDate: sql<string>`TO_CHAR(${salesSnapshots.saleDate}, 'YYYY-MM-DD')`
+		})
 		.from(salesSnapshots)
 		.where(and(gte(salesSnapshots.saleDate, startDate), lte(salesSnapshots.saleDate, endDate)));
 

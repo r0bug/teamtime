@@ -65,7 +65,10 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - **Vendor performance leaderboard** at `/admin/vendors/leaderboard` — ranked by gross / vendor portion / retained, period selector, prior-period delta
 - **Onboarding queue** at `/admin/vendors/onboarding` — surfaces vendors missing prefix / group / portal decision; inline edits and "mark complete"
 - **Reporting groups** (many-to-many) for cross-vendor reporting
-- **Vendor portal** at `/vendor/*` — vendors log in with email + password (admin-set) on the same `/login` page, see their booth summary, sales (live NRS), and propose inventory create/update/delete changes (validated against their per-vendor inventory code prefix). Proposals queue into `pending_inventory_changes` for staff to apply to NRS
+- **Vendor portal** at `/vendor/*` — vendors log in with email + password on the `/login` page (which now shows an explicit Staff/Vendor picker), see their booth summary, sales (live NRS), and propose inventory create/update/delete changes (validated against their per-vendor inventory code prefix). Proposals queue into `pending_inventory_changes` for staff to apply to NRS
+- **Vendor portal invitations** — admin sends temp credentials via email, SMS, or both from `/admin/vendors/onboarding`. The vendor signs in once and is forced to set their own password before reaching any portal page (`users.must_change_password` flag, gated by `(app)/vendor/+layout.server.ts`)
+- **Vendor sidebar + dashboard** — vendor users see a vendor-specific sidebar (Home / Inventory / Print Sheet / Leaderboard / Sales / Profile), a dashboard that shows both gross and vendor portion side by side (so pass-through vendors see real numbers), and a base-item check that warns when a catch-all SKU named after the vendor's prefix isn't yet on file
+- **NRS sync** — `Sync from NRS` on `/admin/vendors` overwrites TT contact fields (`contact_name/email/phone`, address) when NRS has values; admin should edit identity in NRS, not TT (NRS is source of truth). Inventory code prefix is backfill-only to protect legacy printed labels
 
 ### Expense Tracking
 - Log ATM withdrawals with location and receipt photos

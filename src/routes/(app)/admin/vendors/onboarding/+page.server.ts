@@ -7,6 +7,7 @@ import {
 	setInventoryPrefix,
 	setVendorGroups,
 	markOnboardingComplete,
+	inviteVendorToPortal,
 	VendorServiceError
 } from '$lib/server/services/vendor-service';
 import { listGroups } from '$lib/server/services/vendor-group-service';
@@ -48,6 +49,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		if (!v.inventoryCodePrefix) missing.push('prefix');
 		if (memberships.length === 0) missing.push('group');
 		if (!v.portalEnabled) missing.push('portal');
+		if (!v.credentialsSentAt) missing.push('credentials');
 		return { vendor: v, groups: memberships, groupIds: memberships.map((g) => g.id), missing };
 	});
 
@@ -89,5 +91,36 @@ export const actions: Actions = {
 		if (!vendorId) return fail(400, { error: 'vendorId required' });
 		await markOnboardingComplete(vendorId, true);
 		return { success: 'markComplete', vendorId };
+	},
+
+	invite: async ({ locals, request }) => {
+		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(401, { error: 'Not signed in' });
+		const data = await request.formData();
+		const vendorId = data.get('vendorId') as string;
+		const sendEmail = data.get('sendEmail') === 'on';
+		const sendSms = data.get('sendSms') === 'on';
+		if (!vendorId) return fail(400, { error: 'vendorId required' });
+		if (!sendEmail && !sendSms) {
+			return fail(400, { error: 'Pick at least one channel (email or SMS)' });
+		}
+		try {
+			const result = await inviteVendorToPortal({
+				vendorId,
+				channels: { email: sendEmail, sms: sendSms },
+				sentByUserId: locals.user.id
+			});
+			return {
+				success: 'invite',
+				vendorId,
+				channelsSucceeded: result.channelsSucceeded,
+				channelsFailed: result.channelsFailed,
+				// Show admin the temp password so they can manually relay if a delivery failed.
+				tempPassword: result.tempPassword
+			};
+		} catch (err) {
+			if (err instanceof VendorServiceError) return fail(400, { error: err.message, vendorId });
+			throw err;
+		}
 	}
 };
