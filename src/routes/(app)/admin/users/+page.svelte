@@ -58,6 +58,27 @@
 
 	$: pinIsValid = /^\d{4,8}$/.test(resetPinValue);
 	$: passwordIsValid = passwordValue.length >= 8;
+
+	// Filters
+	let searchQuery = '';
+	let roleFilter = 'all';
+	let statusFilter: 'all' | 'active' | 'inactive' = 'active';
+
+	$: filteredUsers = data.users.filter((u) => {
+		if (statusFilter === 'active' && !u.isActive) return false;
+		if (statusFilter === 'inactive' && u.isActive) return false;
+		if (roleFilter !== 'all') {
+			const matchesPrimary = u.role === roleFilter;
+			const matchesExtra = u.extraRoles?.includes(roleFilter) ?? false;
+			if (!matchesPrimary && !matchesExtra) return false;
+		}
+		if (searchQuery.trim()) {
+			const q = searchQuery.toLowerCase();
+			const haystack = `${u.name} ${u.email} ${u.username} ${u.phone ?? ''}`.toLowerCase();
+			if (!haystack.includes(q)) return false;
+		}
+		return true;
+	});
 </script>
 
 <svelte:head>
@@ -90,6 +111,46 @@
 		</div>
 	{/if}
 
+	<!-- Filters -->
+	<div class="card p-4 mb-4">
+		<div class="flex flex-wrap gap-3 items-end">
+			<div class="flex-1 min-w-[200px]">
+				<label for="user-search" class="label">Search</label>
+				<input
+					id="user-search"
+					type="text"
+					bind:value={searchQuery}
+					placeholder="Name, email, username, phone"
+					class="input"
+				/>
+			</div>
+			<div>
+				<label for="role-filter" class="label">Role</label>
+				<select id="role-filter" bind:value={roleFilter} class="input">
+					<option value="all">All roles</option>
+					<option value="admin">Admin</option>
+					<option value="manager">Manager</option>
+					<option value="purchaser">Purchaser</option>
+					<option value="staff">Staff</option>
+					{#each data.extraRoleOptions as r}
+						<option value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
+					{/each}
+				</select>
+			</div>
+			<div>
+				<label for="status-filter" class="label">Status</label>
+				<select id="status-filter" bind:value={statusFilter} class="input">
+					<option value="active">Active</option>
+					<option value="inactive">Inactive</option>
+					<option value="all">All</option>
+				</select>
+			</div>
+			<div class="text-sm text-gray-500 ml-auto">
+				{filteredUsers.length} of {data.users.length}
+			</div>
+		</div>
+	</div>
+
 	<!-- Users Table -->
 	<div class="card">
 		<div class="overflow-x-auto">
@@ -110,7 +171,7 @@
 					</tr>
 				</thead>
 				<tbody class="bg-white divide-y divide-gray-200">
-					{#each data.users as user}
+					{#each filteredUsers as user}
 						<tr class="hover:bg-gray-50">
 							<td class="px-4 py-3 whitespace-nowrap font-medium text-gray-900">{user.name}</td>
 							<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{user.email}</td>
@@ -123,6 +184,11 @@
 									 'bg-gray-100 text-gray-800'}">
 									{user.role}
 								</span>
+								{#each user.extraRoles ?? [] as extra}
+									<span class="ml-1 px-2 py-1 text-xs font-medium rounded-full bg-emerald-100 text-emerald-800 capitalize">
+										{extra}
+									</span>
+								{/each}
 							</td>
 							{#if data.showLaborCost}
 								<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
@@ -258,6 +324,15 @@
 						<p class="text-xs text-gray-500 mt-1">Rounded overhead cost (pay + employer match)</p>
 					</div>
 					<div>
+						<span class="label">Additional Roles</span>
+						{#each data.extraRoleOptions as r}
+							<label class="flex items-center mt-1">
+								<input type="checkbox" name="extraRoles" value={r} class="mr-2" />
+								<span class="capitalize">{r}</span>
+							</label>
+						{/each}
+					</div>
+					<div>
 						<label for="pin" class="label">PIN (4-8 digits)</label>
 						<input type="password" id="pin" name="pin" required inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="8" class="input" />
 					</div>
@@ -317,6 +392,21 @@
 						<label for="edit-hourlyRate" class="label">Labor Cost ($/hr)</label>
 						<input type="number" id="edit-hourlyRate" name="hourlyRate" bind:value={editingUser.hourlyRate} step="1" min="0" class="input" placeholder="0" />
 						<p class="text-xs text-gray-500 mt-1">Rounded overhead cost (pay + employer match)</p>
+					</div>
+					<div>
+						<span class="label">Additional Roles</span>
+						{#each data.extraRoleOptions as r}
+							<label class="flex items-center mt-1">
+								<input
+									type="checkbox"
+									name="extraRoles"
+									value={r}
+									checked={editingUser.extraRoles?.includes(r) ?? false}
+									class="mr-2"
+								/>
+								<span class="capitalize">{r}</span>
+							</label>
+						{/each}
 					</div>
 					<div>
 						<label class="flex items-center">

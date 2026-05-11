@@ -203,15 +203,19 @@ function materializeSlot(
  * Return array of YYYY-MM-DD Pacific dates from startDate (inclusive) to endDate (inclusive).
  */
 function enumerateDates(startDate: string, endDate: string): string[] {
+	// Pure date-string arithmetic in UTC. We never convert through a timezone,
+	// because doing so reinterprets the cursor as a Date and shifts back to the
+	// previous Pacific day (UTC midnight ≈ 5 PM the previous day in PT).
 	const out: string[] = [];
 	let [y, m, d] = startDate.split('-').map(Number);
-	const endParts = endDate.split('-').map(Number);
-	const endTs = Date.UTC(endParts[0], endParts[1] - 1, endParts[2]);
-	let cursorTs = Date.UTC(y, m - 1, d);
-	while (cursorTs <= endTs) {
-		const cursor = new Date(cursorTs);
-		out.push(toPacificDateString(cursor));
-		cursorTs += 24 * 60 * 60 * 1000;
+	const [ey, em, ed] = endDate.split('-').map(Number);
+	while (true) {
+		out.push(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+		if (y === ey && m === em && d === ed) break;
+		const next = new Date(Date.UTC(y, m - 1, d + 1));
+		y = next.getUTCFullYear();
+		m = next.getUTCMonth() + 1;
+		d = next.getUTCDate();
 	}
 	return out;
 }

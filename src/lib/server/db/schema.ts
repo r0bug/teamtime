@@ -348,6 +348,18 @@ export const users = pgTable('users', {
 	phoneIdx: index('users_phone_idx').on(table.phone)
 }));
 
+// Additional roles a user holds beyond their primary `users.role`.
+// `role` is plain text (not the user_role enum) so we can add hats like 'vendor'
+// without touching the protected primary-role enum. Validation happens in app code.
+// Phase 1: only 'vendor' is used; future phases may extend this.
+export const userExtraRoles = pgTable('user_extra_roles', {
+	userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+	role: text('role').notNull(),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	pk: unique('user_extra_roles_pk').on(table.userId, table.role)
+}));
+
 // Sessions table (for Lucia auth)
 export const sessions = pgTable('sessions', {
 	id: text('id').primaryKey(),
@@ -3137,6 +3149,11 @@ export const vendors = pgTable('vendors', {
 	credentialsSentAt: timestamp('credentials_sent_at', { withTimezone: true }),
 	credentialsSentVia: text('credentials_sent_via'), // 'email' | 'sms' | 'email+sms'
 	credentialsSentByUserId: uuid('credentials_sent_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+
+	// AR Customer ID from NRS web UI (frmHeadArCustomerId). Required for vendors
+	// who pay booth rent (monthly_rent_cents > 0). Populated by syncFromNrs's
+	// web-scrape pass; staff fixes missing entries in NRS, then re-syncs.
+	nrsArCustomerId: text('nrs_ar_customer_id'),
 
 	// Audit
 	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),

@@ -6,9 +6,7 @@ import { isManager } from '$lib/server/auth/roles';
 import {
 	listVendors,
 	syncFromNrs,
-	removeUnusedVendorStubs,
-	importVendorsFromCsv,
-	VendorServiceError
+	removeUnusedVendorStubs
 } from '$lib/server/services/vendor-service';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -60,20 +58,6 @@ export const actions: Actions = {
 			return { stubsResult: result };
 		} catch (err) {
 			return fail(500, { error: err instanceof Error ? err.message : 'Cleanup failed' });
-		}
-	},
-
-	importCsv: async ({ locals, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
-		const data = await request.formData();
-		const csv = ((data.get('csv') as string) ?? '').trim();
-		if (!csv) return fail(400, { error: 'Paste the CSV content first' });
-		try {
-			const result = await importVendorsFromCsv(csv);
-			return { csvResult: result };
-		} catch (err) {
-			if (err instanceof VendorServiceError) return fail(400, { error: err.message });
-			return fail(500, { error: err instanceof Error ? err.message : 'CSV import failed' });
 		}
 	}
 };

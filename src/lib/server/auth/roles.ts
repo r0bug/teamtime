@@ -5,6 +5,20 @@ import type { UserPermissions } from './permissions';
 export const ROLES = ['admin', 'manager', 'purchaser', 'staff'] as const;
 export type UserRole = typeof ROLES[number];
 
+// Roles a user can hold IN ADDITION to their primary role (stored in user_extra_roles).
+export const EXTRA_ROLES = ['vendor'] as const;
+export type ExtraRole = typeof EXTRA_ROLES[number];
+
+type UserLike = (User & { extraRoles?: string[] }) | null | undefined;
+
+function hasExtraRole(user: UserLike, role: ExtraRole): boolean {
+	return user?.extraRoles?.includes(role) ?? false;
+}
+
+export function isVendor(user: UserLike): boolean {
+	return user?.role === ('vendor' as UserRole) || hasExtraRole(user, 'vendor');
+}
+
 export function isAdmin(user: User | null | undefined): boolean {
 	return user?.role === 'admin';
 }

@@ -65,7 +65,7 @@
 							</div>
 							<div class="flex flex-wrap gap-1 text-xs">
 								{#each item.missing as miss}
-									<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">missing: {miss}</span>
+									<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800" title={miss === 'ar-customer' ? 'Add an AR Customer in NRS so booth-rent invoices have somewhere to land, then re-sync.' : ''}>missing: {miss}</span>
 								{/each}
 								{#if item.missing.length === 0}
 									<span class="px-2 py-0.5 rounded-full bg-green-100 text-green-800">configured</span>

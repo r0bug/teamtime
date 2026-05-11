@@ -107,17 +107,17 @@
 						<button type="button" class="text-primary-600 hover:underline" on:click={() => toggleAll(false)}>Clear</button>
 					</div>
 				</div>
-				<div class="card-body p-0 max-h-[480px] overflow-y-auto">
+				<div class="card-body p-0 max-h-[480px] overflow-auto">
 					{#if data.items.length === 0}
 						<p class="text-sm text-gray-500 p-4">No items yet. Add some via the <a class="text-primary-600 hover:underline" href="/vendor/inventory">Make a tag</a> form.</p>
 					{:else}
-						<table class="w-full text-sm">
+						<table class="min-w-full text-sm">
 							<thead class="bg-gray-50 text-left sticky top-0">
 								<tr>
 									<th class="px-3 py-2 w-8"></th>
-									<th class="px-3 py-2 font-medium text-gray-700">Part #</th>
-									<th class="px-3 py-2 font-medium text-gray-700">Name</th>
-									<th class="px-3 py-2 font-medium text-gray-700 text-right">Price</th>
+									<th class="px-3 py-2 font-medium text-gray-700 whitespace-nowrap">Part #</th>
+									<th class="px-3 py-2 font-medium text-gray-700 whitespace-nowrap">Name</th>
+									<th class="px-3 py-2 font-medium text-gray-700 text-right whitespace-nowrap">Price</th>
 									<th class="px-3 py-2 font-medium text-gray-700 w-20">Copies</th>
 								</tr>
 							</thead>

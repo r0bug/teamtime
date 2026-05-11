@@ -1,6 +1,6 @@
 import type { Handle } from '@sveltejs/kit';
 import { lucia } from '$lib/server/auth';
-import { db, users } from '$lib/server/db';
+import { db, users, userExtraRoles } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { getUserPermissions } from '$lib/server/auth/permissions';
 import { dev } from '$app/environment';
@@ -102,7 +102,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 			return addSecurityHeaders(await resolve(event));
 		}
 
-		event.locals.user = fullUser || null;
+		if (fullUser) {
+			const extraRoleRows = await db
+				.select({ role: userExtraRoles.role })
+				.from(userExtraRoles)
+				.where(eq(userExtraRoles.userId, fullUser.id));
+			event.locals.user = { ...fullUser, extraRoles: extraRoleRows.map((r) => r.role) };
+		} else {
+			event.locals.user = null;
+		}
 
 		// Load user permissions for granular access control
 		if (fullUser) {

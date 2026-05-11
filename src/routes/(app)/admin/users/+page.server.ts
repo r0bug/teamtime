@@ -1,8 +1,8 @@
 import type { PageServerLoad, Actions } from './$types';
 import { redirect, fail } from '@sveltejs/kit';
-import { db, users, appSettings } from '$lib/server/db';
-import { eq } from 'drizzle-orm';
-import { isManager, isAdmin } from '$lib/server/auth/roles';
+import { db, users, appSettings, userExtraRoles } from '$lib/server/db';
+import { eq, inArray } from 'drizzle-orm';
+import { isManager, isAdmin, EXTRA_ROLES } from '$lib/server/auth/roles';
 import { hashPin, validatePinFormat, generatePin } from '$lib/server/auth/pin';
 import { createLogger } from '$lib/server/logger';
 
@@ -37,9 +37,28 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.from(users)
 		.orderBy(users.name);
 
+	const extraRoleRows = allUsers.length
+		? await db
+				.select()
+				.from(userExtraRoles)
+				.where(inArray(userExtraRoles.userId, allUsers.map((u) => u.id)))
+		: [];
+	const extraByUser = new Map<string, string[]>();
+	for (const r of extraRoleRows) {
+		const list = extraByUser.get(r.userId) ?? [];
+		list.push(r.role);
+		extraByUser.set(r.userId, list);
+	}
+
+	const usersWithExtras = allUsers.map((u) => ({
+		...u,
+		extraRoles: extraByUser.get(u.id) ?? []
+	}));
+
 	return {
 		isAdmin: isAdmin(locals.user),
-		users: allUsers,
+		users: usersWithExtras,
+		extraRoleOptions: EXTRA_ROLES,
 		showLaborCost: settingsMap['show_labor_cost'] === 'true',
 		canResetPins: isAdmin(locals.user) || settingsMap['managers_can_reset_pins'] === 'true',
 		pinOnlyLogin: settingsMap['pin_only_login'] !== 'false' // Default to true
@@ -60,24 +79,35 @@ export const actions: Actions = {
 		const role = formData.get('role') as string;
 		const hourlyRate = formData.get('hourlyRate') as string;
 		const isActive = formData.get('isActive') === 'true';
+		const submittedExtras = formData.getAll('extraRoles').map((v) => String(v));
+		const validExtras = submittedExtras.filter((r) => EXTRA_ROLES.includes(r as typeof EXTRA_ROLES[number]));
 
 		if (!userId || !name || !email) {
 			return fail(400, { error: 'Missing required fields' });
 		}
 
 		try {
-			await db
-				.update(users)
-				.set({
-					name,
-					email,
-					phone: phone || null,
-					role: role as 'admin' | 'manager' | 'purchaser' | 'staff',
-					hourlyRate: hourlyRate ? hourlyRate : null,
-					isActive,
-					updatedAt: new Date()
-				})
-				.where(eq(users.id, userId));
+			await db.transaction(async (tx) => {
+				await tx
+					.update(users)
+					.set({
+						name,
+						email,
+						phone: phone || null,
+						role: role as 'admin' | 'manager' | 'purchaser' | 'staff',
+						hourlyRate: hourlyRate ? hourlyRate : null,
+						isActive,
+						updatedAt: new Date()
+					})
+					.where(eq(users.id, userId));
+
+				await tx.delete(userExtraRoles).where(eq(userExtraRoles.userId, userId));
+				if (validExtras.length > 0) {
+					await tx.insert(userExtraRoles).values(
+						validExtras.map((r) => ({ userId, role: r }))
+					);
+				}
+			});
 
 			return { success: true, message: 'User updated successfully' };
 		} catch (error) {
@@ -162,18 +192,29 @@ export const actions: Actions = {
 			return fail(400, { error: 'PIN must be 4-8 digits' });
 		}
 
+		const submittedExtras = formData.getAll('extraRoles').map((v) => String(v));
+		const validExtras = submittedExtras.filter((r) => EXTRA_ROLES.includes(r as typeof EXTRA_ROLES[number]));
+
 		try {
 			const pinHash = await hashPin(pin);
 
-			await db.insert(users).values({
-				name,
-				email,
-				username,
-				phone: phone || null,
-				role: (role || 'staff') as 'admin' | 'manager' | 'purchaser' | 'staff',
-				hourlyRate: hourlyRate || null,
-				pinHash,
-				twoFactorEnabled: true
+			await db.transaction(async (tx) => {
+				const [created] = await tx.insert(users).values({
+					name,
+					email,
+					username,
+					phone: phone || null,
+					role: (role || 'staff') as 'admin' | 'manager' | 'purchaser' | 'staff',
+					hourlyRate: hourlyRate || null,
+					pinHash,
+					twoFactorEnabled: true
+				}).returning({ id: users.id });
+
+				if (validExtras.length > 0 && created) {
+					await tx.insert(userExtraRoles).values(
+						validExtras.map((r) => ({ userId: created.id, role: r }))
+					);
+				}
 			});
 
 			return { success: true, message: 'User created successfully' };

@@ -75,18 +75,18 @@
 		<!-- Top 10 -->
 		<section class="card lg:col-span-2">
 			<div class="card-header"><h2 class="font-semibold text-gray-900">Top 10 by vendor portion</h2></div>
-			<div class="card-body p-0">
+			<div class="card-body p-0 overflow-x-auto">
 				{#if !hasLeaderboardData}
 					<div class="px-4 py-6 text-sm text-gray-500">No sales data for this period yet.</div>
 				{:else}
-					<table class="w-full text-sm">
+					<table class="min-w-full text-sm">
 						<thead class="bg-gray-50 text-left">
 							<tr>
 								<th class="px-4 py-2 font-medium text-gray-700 w-10">#</th>
-								<th class="px-4 py-2 font-medium text-gray-700">Vendor</th>
-								<th class="px-4 py-2 font-medium text-gray-700">Booth</th>
-								<th class="px-4 py-2 font-medium text-gray-700 text-right">Vendor portion</th>
-								<th class="px-4 py-2 font-medium text-gray-700 text-right">vs prior</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Vendor</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Booth</th>
+								<th class="px-4 py-2 font-medium text-gray-700 text-right whitespace-nowrap">Vendor portion</th>
+								<th class="px-4 py-2 font-medium text-gray-700 text-right whitespace-nowrap">vs prior</th>
 							</tr>
 						</thead>
 						<tbody class="divide-y divide-gray-100">
@@ -165,17 +165,17 @@
 		<!-- Best-Selling Items -->
 		<section class="card lg:col-span-2">
 			<div class="card-header"><h2 class="font-semibold text-gray-900">💎 Best-Selling Items</h2></div>
-			<div class="card-body p-0">
+			<div class="card-body p-0 overflow-x-auto">
 				{#if data.bestItems.length === 0}
 					<div class="px-4 py-6 text-sm text-gray-500">No item-level transaction data in this window.</div>
 				{:else}
-					<table class="w-full text-sm">
+					<table class="min-w-full text-sm">
 						<thead class="bg-gray-50 text-left">
 							<tr>
-								<th class="px-4 py-2 font-medium text-gray-700">Item</th>
-								<th class="px-4 py-2 font-medium text-gray-700">Vendor</th>
-								<th class="px-4 py-2 font-medium text-gray-700 text-right">Units</th>
-								<th class="px-4 py-2 font-medium text-gray-700 text-right">Gross</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Item</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Vendor</th>
+								<th class="px-4 py-2 font-medium text-gray-700 text-right whitespace-nowrap">Units</th>
+								<th class="px-4 py-2 font-medium text-gray-700 text-right whitespace-nowrap">Gross</th>
 							</tr>
 						</thead>
 						<tbody class="divide-y divide-gray-100">

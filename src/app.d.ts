@@ -4,7 +4,7 @@ import type { UserPermissions } from '$lib/server/auth/permissions';
 declare global {
 	namespace App {
 		interface Locals {
-			user: User | null;
+			user: (User & { extraRoles: string[] }) | null;
 			session: import('lucia').Session | null;
 			userPermissions: UserPermissions | null;
 		}
@@ -15,7 +15,7 @@ declare global {
 		}
 
 		interface PageData {
-			user?: User | null;
+			user?: (User & { extraRoles: string[] }) | null;
 		}
 
 		interface Platform {}

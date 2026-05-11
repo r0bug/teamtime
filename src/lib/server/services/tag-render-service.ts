@@ -19,6 +19,11 @@ export interface TagRenderContext {
 	vendorDisplayName: string;
 	settings: VendorTagSettings | null; // null → defaults
 	item: TagItem;
+	/**
+	 * Optional 3-letter month code (e.g. "MAY") rendered as a bold badge in the
+	 * top-right corner. Used by the staff bulk tag designer to mark shelf-age.
+	 */
+	monthCode?: string | null;
 }
 
 export interface TagDimensions {
@@ -209,11 +214,36 @@ export async function renderTagSvg(ctx: TagRenderContext): Promise<string> {
 		return `<g transform="${transform}">${r.content.replace(/y="0"/g, `y="${r.height * 0.8}"`).replace(/translate\(([^,]+),\s*0\)/g, `translate($1, 0)`)}</g>`;
 	}).join('');
 
-	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${widthPx} ${heightPx}" width="${widthPx}" height="${heightPx}" style="background:white;border:1px solid #ddd;">${positioned}</svg>`;
+	// Optional shelf-age month badge — bold 3-letter code in the top-right corner.
+	// Sized at ~14% of the tag width so it stays readable on the tiniest formats
+	// without crowding the centered vendor header.
+	let monthBadge = '';
+	const code = ctx.monthCode?.trim().slice(0, 3).toUpperCase();
+	if (code) {
+		const badgeFs = Math.max(8, Math.round(widthPx * 0.07));
+		const padX = Math.max(2, Math.round(widthPx * 0.012));
+		const padY = Math.max(1, Math.round(heightPx * 0.02));
+		// Width estimate: ~0.62em per char + horizontal padding × 2
+		const badgeW = Math.round(code.length * badgeFs * 0.62 + padX * 2);
+		const badgeH = Math.round(badgeFs + padY * 2);
+		const bx = widthPx - badgeW - 2;
+		const by = 2;
+		monthBadge = `<g><rect x="${bx}" y="${by}" width="${badgeW}" height="${badgeH}" rx="3" ry="3" fill="black"/><text x="${bx + badgeW / 2}" y="${by + badgeH * 0.75}" font-family="Arial, sans-serif" font-size="${badgeFs}" font-weight="900" fill="white" text-anchor="middle">${escapeXml(code)}</text></g>`;
+	}
+
+	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${widthPx} ${heightPx}" width="${widthPx}" height="${heightPx}" style="background:white;border:1px solid #ddd;">${positioned}${monthBadge}</svg>`;
 }
 
 export interface AverySheetItem extends TagItem {
 	copies?: number; // default 1
+	/**
+	 * Per-cell overrides used by the staff bulk designer where each row may
+	 * belong to a different vendor. When null/undefined, the sheet-level
+	 * `vendorDisplayName` + `settings` are used (the single-vendor flow).
+	 */
+	vendorDisplayName?: string;
+	settings?: VendorTagSettings | null;
+	monthCode?: string | null;
 }
 
 export interface AverySheetOptions {
@@ -222,6 +252,8 @@ export interface AverySheetOptions {
 	vendorDisplayName: string;
 	settings: VendorTagSettings | null;
 	items: AverySheetItem[];
+	/** Sheet-wide month code; overridden by per-item monthCode when set. */
+	monthCode?: string | null;
 }
 
 /**
@@ -262,8 +294,9 @@ export async function renderAverySheetHtml(opts: AverySheetOptions): Promise<str
 	const totalCells = cols * rows;
 	const startPos = Math.max(1, Math.min(opts.startPosition ?? 1, totalCells));
 
-	// Expand items by copies into a flat list of cells.
-	const queue: TagItem[] = [];
+	// Expand items by copies into a flat list of cells. Each cell carries its
+	// own vendor/settings/monthCode so a mixed-vendor bulk sheet renders correctly.
+	const queue: AverySheetItem[] = [];
 	for (const it of opts.items) {
 		const copies = Math.max(1, Math.min(it.copies ?? 1, 100));
 		for (let i = 0; i < copies; i++) queue.push(it);
@@ -288,9 +321,10 @@ export async function renderAverySheetHtml(opts: AverySheetOptions): Promise<str
 		}
 		const item = queue[qIdx++];
 		const svg = await renderTagSvg({
-			vendorDisplayName: opts.vendorDisplayName,
-			settings: opts.settings,
-			item
+			vendorDisplayName: item.vendorDisplayName ?? opts.vendorDisplayName,
+			settings: item.settings !== undefined ? item.settings : opts.settings,
+			item,
+			monthCode: item.monthCode ?? opts.monthCode ?? null
 		});
 		cellsHtml.push(
 			`<div class="cell" style="${style};display:flex;align-items:center;justify-content:center;">${embedSvgFitContent(svg)}</div>`

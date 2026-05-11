@@ -249,6 +249,70 @@ function csvEscape(v: unknown): string {
 	return s;
 }
 
+/**
+ * Render one pending-change as the 39 NRS ImportInv cells. Shared by the
+ * vendor-scoped exporter and the bulk-tags exporter so column drift can only
+ * happen in one place.
+ */
+function renderNrsCsvCells(change: PendingInventoryChange, vendorDisplayName: string): string[] {
+	const p = (change.payload ?? {}) as Record<string, unknown>;
+	const partName = p.partName ?? p.name ?? '';
+	const description = p.description ?? '';
+	const priceCents = typeof p.priceCents === 'number' ? p.priceCents : null;
+	const retail = priceCents !== null ? (priceCents / 100).toFixed(2) : '';
+	const qty = typeof p.quantity === 'number' ? p.quantity : '';
+	const notes = p.notes ?? '';
+
+	return [
+		change.partNumber, // Part #
+		'', // Sort Order
+		partName, // Name * (required)
+		description, // Description
+		'Goods', // Inventory Type
+		qty, // Quantity On Hand
+		'', // Vendor Name (set on upload form via frmPassThroughApVendorId)
+		'', // Vendor Code
+		'', '', '', '', // 2nd/3rd vendor name+code
+		'Yes', // Pass-Through Item
+		vendorDisplayName, // Pass-Through Vendor Name
+		'', // Alternate Part #
+		'', // Alternate Description
+		'', // Put Away Location
+		'', // Reorder Qty
+		'', // Qty Per Carton
+		'1', // Tax Type — 1=Taxable (most consignment items)
+		'', // Category (use form default)
+		'Each', // Unit of Measure
+		'', // Cost
+		'', // Avg. Cost
+		retail, // Retail Price
+		'', // Previous Cost
+		'', '', // Min/Max Qty
+		'Yes', // Print Tag — we want NRS to flag these for tag printing
+		String(notes), // Notes
+		'', '', '', // Lead Days / Average / Last
+		'', '', // Last Order Date / Last Cost Date
+		'', '', '', // Billing / Billing Non-Tax / Receiving (use form defaults)
+		'' // Original Create Date
+	].map(String);
+}
+
+const NRS_HEADER_ROW = NRS_IMPORT_COLUMNS.map(csvEscape).join(',');
+
+/**
+ * Build an NRS ImportInv CSV string from already-fetched changes. Used when
+ * the caller has the rows in hand (bulk-tag flow) and wants the file directly.
+ */
+export function buildNrsCsvFromChangeRows(
+	rows: Array<{ change: PendingInventoryChange; vendorDisplayName: string }>
+): string {
+	const lines: string[] = [NRS_HEADER_ROW];
+	for (const r of rows) {
+		lines.push(renderNrsCsvCells(r.change, r.vendorDisplayName).map(csvEscape).join(','));
+	}
+	return lines.join('\r\n') + '\r\n';
+}
+
 export interface NrsImportCsvOptions {
 	/** Optional: only export rows for one vendor (TT vendorId). */
 	vendorId?: string;
@@ -290,66 +354,20 @@ export async function buildNrsImportCsv(opts: NrsImportCsvOptions = {}): Promise
 		.where(and(...conditions))
 		.orderBy(pendingInventoryChanges.submittedAt);
 
-	const lines: string[] = [NRS_IMPORT_COLUMNS.map(csvEscape).join(',')];
+	const lines: string[] = [NRS_HEADER_ROW];
 	const changeIds: string[] = [];
 	let vendorName: string | null = null;
 	let vendorCode: string | null = null;
 
 	for (const r of rows) {
-		const c = r.change;
-		const p = (c.payload ?? {}) as Record<string, unknown>;
 		// When the export is scoped to one vendor, surface that vendor's name/code
 		// in the result for the "you're about to import for X" UI banner.
 		if (opts.vendorId) {
 			vendorName = r.vendorDisplayName;
 			vendorCode = r.vendorCode;
 		}
-
-		const partName = p.partName ?? p.name ?? '';
-		const description = p.description ?? '';
-		const priceCents = typeof p.priceCents === 'number' ? p.priceCents : null;
-		const retail = priceCents !== null ? (priceCents / 100).toFixed(2) : '';
-		const qty = typeof p.quantity === 'number' ? p.quantity : '';
-		const notes = p.notes ?? '';
-
-		// One row per change. Defaults are conservative: leave GL/category/tax
-		// blank so the upload-form picker fills them in. Print Tag = Yes,
-		// Pass-Through Item = Yes, Inventory Type = Goods.
-		const cells = [
-			c.partNumber, // Part #
-			'', // Sort Order
-			partName, // Name * (required)
-			description, // Description
-			'Goods', // Inventory Type
-			qty, // Quantity On Hand
-			'', // Vendor Name (set on upload form via frmPassThroughApVendorId)
-			'', // Vendor Code
-			'', '', '', '', // 2nd/3rd vendor name+code
-			'Yes', // Pass-Through Item
-			r.vendorDisplayName, // Pass-Through Vendor Name
-			'', // Alternate Part #
-			'', // Alternate Description
-			'', // Put Away Location
-			'', // Reorder Qty
-			'', // Qty Per Carton
-			'1', // Tax Type — 1=Taxable (most consignment items)
-			'', // Category (use form default)
-			'Each', // Unit of Measure
-			'', // Cost
-			'', // Avg. Cost
-			retail, // Retail Price
-			'', // Previous Cost
-			'', '', // Min/Max Qty
-			'Yes', // Print Tag — we want NRS to flag these for tag printing
-			notes, // Notes
-			'', '', '', // Lead Days / Average / Last
-			'', '', // Last Order Date / Last Cost Date
-			'', '', '', // Billing / Billing Non-Tax / Receiving (use form defaults)
-			'' // Original Create Date
-		];
-
-		lines.push(cells.map(csvEscape).join(','));
-		changeIds.push(c.id);
+		lines.push(renderNrsCsvCells(r.change, r.vendorDisplayName).map(csvEscape).join(','));
+		changeIds.push(r.change.id);
 	}
 
 	return {

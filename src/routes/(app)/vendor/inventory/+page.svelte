@@ -196,15 +196,15 @@
 			<div class="card"><div class="card-body text-sm text-gray-500">No pending changes.</div></div>
 		{:else}
 			<div class="card">
-				<div class="card-body p-0">
-					<table class="w-full text-sm">
+				<div class="card-body p-0 overflow-x-auto">
+					<table class="min-w-full text-sm">
 						<thead class="bg-gray-50 text-left">
 							<tr>
-								<th class="px-4 py-2 font-medium text-gray-700">Type</th>
-								<th class="px-4 py-2 font-medium text-gray-700">Part #</th>
-								<th class="px-4 py-2 font-medium text-gray-700">Name</th>
-								<th class="px-4 py-2 font-medium text-gray-700">Submitted</th>
-								<th class="px-4 py-2 font-medium text-gray-700">Status</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Type</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Part #</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Name</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Submitted</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Status</th>
 								<th class="px-4 py-2"></th>
 							</tr>
 						</thead>
@@ -260,15 +260,15 @@
 			<div class="card"><div class="card-body text-sm text-gray-500">No sales found yet for your booth.</div></div>
 		{:else}
 			<div class="card">
-				<div class="card-body p-0">
-					<table class="w-full text-sm">
+				<div class="card-body p-0 overflow-x-auto">
+					<table class="min-w-full text-sm">
 						<thead class="bg-gray-50 text-left">
 							<tr>
-								<th class="px-4 py-2 font-medium text-gray-700">Part #</th>
-								<th class="px-4 py-2 font-medium text-gray-700">Name</th>
-								<th class="px-4 py-2 font-medium text-gray-700">Last sold</th>
-								<th class="px-4 py-2 font-medium text-gray-700">Units</th>
-								<th class="px-4 py-2 font-medium text-gray-700">Last price</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Part #</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Name</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Last sold</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Units</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Last price</th>
 								<th class="px-4 py-2"></th>
 							</tr>
 						</thead>

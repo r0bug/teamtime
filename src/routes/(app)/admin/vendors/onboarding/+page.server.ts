@@ -50,6 +50,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 		if (memberships.length === 0) missing.push('group');
 		if (!v.portalEnabled) missing.push('portal');
 		if (!v.credentialsSentAt) missing.push('credentials');
+		// Rent-paying vendors require an AR Customer in NRS so booth-rent
+		// invoices have somewhere to land. Populated by the web-scrape pass
+		// of syncFromNrs from `frmHeadArCustomerId`.
+		if (v.monthlyRentCents !== null && v.monthlyRentCents > 0 && !v.nrsArCustomerId) {
+			missing.push('ar-customer');
+		}
 		return { vendor: v, groups: memberships, groupIds: memberships.map((g) => g.id), missing };
 	});
 

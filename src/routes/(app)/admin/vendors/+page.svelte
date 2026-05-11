@@ -36,6 +36,7 @@
 		<div class="flex gap-2 flex-wrap">
 			<a href="/admin/vendors/leaderboard" class="btn btn-secondary">📊 Performance</a>
 			<a href="/admin/vendors/inventory-changes" class="btn btn-secondary">Changes Queue</a>
+			<a href="/admin/tags/bulk" class="btn btn-secondary">🏷 Bulk tags</a>
 			<a href="/admin/vendor-groups" class="btn btn-secondary">Groups</a>
 			<form method="POST" action="?/removeStubs" use:enhance>
 				<button type="submit" class="btn btn-secondary" title="Delete inactive vendor rows that have no sales, no agreements, and no portal access">Remove unused stubs</button>
@@ -59,44 +60,12 @@
 	{#if form?.error}
 		<div class="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{form.error}</div>
 	{/if}
-	{#if form && 'csvResult' in form && form.csvResult}
-		<div class="mb-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">
-			CSV import: parsed {form.csvResult.parsed} rows ({form.csvResult.unique} unique) → updated {form.csvResult.updated}, no-change {form.csvResult.noChange}, missed {form.csvResult.missed}{form.csvResult.missed > 0 ? ` (${form.csvResult.missedCodes.slice(0, 5).join(', ')}${form.csvResult.missedCodes.length > 5 ? '…' : ''})` : ''}.
-			{#if form.csvResult.inactiveDeleted > 0 || form.csvResult.inactiveKept > 0}
-				<div class="mt-1">
-					Inactive cleanup: deleted {form.csvResult.inactiveDeleted}, kept {form.csvResult.inactiveKept}{form.csvResult.inactiveKept > 0 ? ' (have agreements / portal / linked user)' : ''}.
-				</div>
-			{/if}
-		</div>
-	{/if}
 	{#if data.needsOnboardingCount > 0}
 		<div class="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded text-sm flex items-center justify-between">
 			<span>{data.needsOnboardingCount} vendor{data.needsOnboardingCount === 1 ? '' : 's'} need{data.needsOnboardingCount === 1 ? 's' : ''} onboarding (prefix, group, or portal access).</span>
 			<a href="/admin/vendors/onboarding" class="font-semibold underline">Open onboarding queue →</a>
 		</div>
 	{/if}
-
-	<details class="card mb-4">
-		<summary class="card-body cursor-pointer text-sm font-medium">
-			📋 Paste NRS vendor CSV export to backfill rent + payment %
-		</summary>
-		<div class="card-body border-t border-gray-100">
-			<form method="POST" action="?/importCsv" use:enhance class="space-y-3">
-				<p class="text-xs text-gray-500">
-					Paste the full NRS vendor grid export (CSV with header row). Match is by <code>Vendor ID</code> column → TT <code>inventoryCodePrefix</code>. Only fills blanks — never overwrites values you've already set.
-				</p>
-				<textarea
-					name="csv"
-					rows="6"
-					class="input font-mono text-xs"
-					placeholder="Vendor ID,Name,Contact,Phone,A/R Customer,Pass-Through Vendor Payment %,Booth Rent,..."
-				></textarea>
-				<div class="flex justify-end">
-					<button type="submit" class="btn btn-primary">Apply CSV</button>
-				</div>
-			</form>
-		</div>
-	</details>
 
 	<div class="card mb-4">
 		<div class="card-body grid grid-cols-1 md:grid-cols-4 gap-3 items-end">

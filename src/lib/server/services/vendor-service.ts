@@ -26,6 +26,7 @@ import {
 	type VendorGroup
 } from '$lib/server/db/schema';
 import { getVendors as fetchNrsVendors, getVendorDetail, type NrsVendorDetail } from './nrs-api-client';
+import { getVendorWebFlagsBatch } from './nrs-web-client';
 import { hashPin } from '$lib/server/auth/pin';
 import { sendVendorPortalInvitationEmail } from '$lib/server/email';
 import { sendSMS, formatPhoneToE164 } from '$lib/server/twilio';
@@ -359,6 +360,9 @@ export interface SyncFromNrsResult {
 	skipped: number;
 	filteredOut: number;
 	prefixCollisions: number;
+	inactiveFlagged: number;
+	inactiveDeleted: number;
+	inactiveKept: number;
 }
 
 /**
@@ -489,208 +493,162 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 		}
 	}
 
+	// Scrape the NRS web UI for the per-vendor "Inactive" flag (the JSON API
+	// doesn't expose this). Apply to TT in two steps:
+	//   1) Flip `nrs_inactive` per scrape result.
+	//   2) Delete newly-inactive vendors that have no TT-side data attached
+	//      (mirrors the safety rules in `importVendorsFromCsv`).
+	const { inactiveFlagged, inactiveDeleted, inactiveKept } = await applyNrsInactivityFromWeb();
+
 	const skipped = nrsVendors.length - created - enriched - filteredOut;
-	log.info({ created, enriched, skipped, filteredOut, prefixCollisions }, 'NRS sync complete');
-	return { created, enriched, skipped, filteredOut, prefixCollisions };
+	log.info(
+		{ created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept },
+		'NRS sync complete'
+	);
+	return { created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept };
 }
 
-// ── CSV import (NRS vendor grid export) ─────────────────────────────────────
-
-export interface VendorCsvImportResult {
-	parsed: number;
-	unique: number;
-	updated: number;
-	noChange: number;
-	missed: number;
-	missedCodes: string[];
+/**
+ * After API-driven sync, scrape the NRS web UI to populate `nrs_inactive` and
+ * remove vendors that are inactive AND have no TT-side data (no portal user,
+ * no signed agreements, no booth metadata worth keeping).
+ *
+ * Best-effort: if web login fails, we log and skip — the API-driven enrich
+ * already ran, so the user gets the contact-info refresh either way.
+ */
+async function applyNrsInactivityFromWeb(): Promise<{
+	inactiveFlagged: number;
 	inactiveDeleted: number;
 	inactiveKept: number;
-}
+}> {
+	const tracked = await db
+		.select({
+			id: vendors.id,
+			nrsVendorId: vendors.nrsVendorId,
+			nrsInactive: vendors.nrsInactive,
+			vendorPaymentPercent: vendors.vendorPaymentPercent,
+			nrsArCustomerId: vendors.nrsArCustomerId,
+			monthlyRentCents: vendors.monthlyRentCents
+		})
+		.from(vendors)
+		.where(sql`${vendors.nrsVendorId} IS NOT NULL`);
 
-/**
- * Tiny quote-aware CSV parser. Handles `"a, b"` cells. Doesn't support
- * escaped quotes (`""`) since the NRS export doesn't use them.
- */
-function parseCsv(text: string): string[][] {
-	const rows: string[][] = [];
-	let row: string[] = [];
-	let cell = '';
-	let inQuotes = false;
-	for (let i = 0; i < text.length; i++) {
-		const c = text[i];
-		if (inQuotes) {
-			if (c === '"') inQuotes = false;
-			else cell += c;
-		} else if (c === '"') {
-			inQuotes = true;
-		} else if (c === ',') {
-			row.push(cell);
-			cell = '';
-		} else if (c === '\n' || c === '\r') {
-			if (c === '\r' && text[i + 1] === '\n') i++;
-			row.push(cell);
-			cell = '';
-			if (row.some((x) => x.length > 0)) rows.push(row);
-			row = [];
-		} else {
-			cell += c;
+	const ids = tracked.map((v) => v.nrsVendorId).filter((n): n is number => n !== null);
+	if (ids.length === 0) {
+		return { inactiveFlagged: 0, inactiveDeleted: 0, inactiveKept: 0 };
+	}
+
+	let flagMap: Awaited<ReturnType<typeof getVendorWebFlagsBatch>>;
+	try {
+		flagMap = await getVendorWebFlagsBatch(ids);
+	} catch (err) {
+		log.warn({ err: err instanceof Error ? err.message : String(err) }, 'NRS web flag scrape failed; skipping inactive update');
+		return { inactiveFlagged: 0, inactiveDeleted: 0, inactiveKept: 0 };
+	}
+
+	let inactiveFlagged = 0;
+	const newlyInactiveIds: string[] = [];
+
+	for (const v of tracked) {
+		if (v.nrsVendorId === null) continue;
+		const scraped = flagMap.get(v.nrsVendorId);
+		if (scraped === undefined) continue; // parse failed; leave alone
+
+		const updates: Record<string, unknown> = {};
+		if (v.nrsInactive !== scraped.isInactive) {
+			updates.nrsInactive = scraped.isInactive;
 		}
-	}
-	if (cell.length > 0 || row.length > 0) {
-		row.push(cell);
-		if (row.some((x) => x.length > 0)) rows.push(row);
-	}
-	return rows;
-}
-
-/**
- * Import a NRS vendors CSV export (the format you get from the NRS web UI's
- * vendor grid). Matches by `inventoryCodePrefix` and fills empty TT fields:
- *   - monthly_rent_cents (from "Booth Rent")
- *   - vendor_payment_percent (from "Pass-Through Vendor Payment %")
- *   - contact_name / contact_email / contact_phone (only when blank)
- *
- * Never overwrites a value the admin has set.
- */
-export async function importVendorsFromCsv(csvText: string): Promise<VendorCsvImportResult> {
-	const all = parseCsv(csvText);
-	if (all.length === 0) throw new VendorServiceError('CSV is empty');
-	const header = all[0].map((h) => h.trim());
-	const dataRows = all.slice(1);
-	const idx = (name: string) => header.indexOf(name);
-	const codeCol = idx('Vendor ID');
-	const payCol = idx('Pass-Through Vendor Payment %');
-	const rentCol = idx('Booth Rent');
-	const contactCol = idx('Contact');
-	const phoneCol = idx('Phone');
-	const emailCol = idx('Email');
-	const inactiveCol = idx('Inactive');
-
-	if (codeCol < 0) {
-		throw new VendorServiceError('CSV is missing the "Vendor ID" column. Expected NRS vendor grid export format.');
-	}
-
-	// Dedupe by vendor code (NRS sometimes exports duplicates)
-	const byCode = new Map<string, string[]>();
-	for (const r of dataRows) {
-		const code = (r[codeCol] ?? '').trim().toUpperCase();
-		if (!code) continue;
-		byCode.set(code, r);
-	}
-
-	let updated = 0;
-	let noChange = 0;
-	let missed = 0;
-	const missedCodes: string[] = [];
-
-	for (const [code, row] of byCode.entries()) {
-		const paymentPctRaw = (row[payCol] ?? '').replace('%', '').trim();
-		const boothRentRaw = (row[rentCol] ?? '').trim();
-		const contactRaw = ((contactCol >= 0 ? row[contactCol] : '') ?? '').trim();
-		const phoneRaw = ((phoneCol >= 0 ? row[phoneCol] : '') ?? '').trim();
-		const emailRaw = ((emailCol >= 0 ? row[emailCol] : '') ?? '').trim();
-		const inactiveRaw = ((inactiveCol >= 0 ? row[inactiveCol] : '') ?? '').trim().toLowerCase();
-		const inactive = ['yes', 'y', 'true', '1', 'inactive'].includes(inactiveRaw);
-
-		const paymentPct = paymentPctRaw && paymentPctRaw !== '---' ? paymentPctRaw : null;
-		const rentDollars = boothRentRaw && boothRentRaw !== '---' ? parseFloat(boothRentRaw) : null;
-		const rentCents = rentDollars !== null && isFinite(rentDollars) ? Math.round(rentDollars * 100) : null;
-		const contact = contactRaw && contactRaw !== '---' ? contactRaw : null;
-		const phone = phoneRaw && phoneRaw !== '---' ? phoneRaw : null;
-		const email =
-			emailRaw && !emailRaw.startsWith('---') && emailRaw !== '---'
-				? emailRaw.toLowerCase()
-				: null;
-
-		const [match] = await db
-			.select()
-			.from(vendors)
-			.where(sql`upper(${vendors.inventoryCodePrefix}) = ${code}`)
-			.limit(1);
-		if (!match) {
-			missed++;
-			missedCodes.push(code);
-			continue;
+		// Authoritatively sync vendor_payment_percent from the form when NRS has a value.
+		if (
+			scraped.passThroughPercent !== null &&
+			String(scraped.passThroughPercent) !== v.vendorPaymentPercent
+		) {
+			updates.vendorPaymentPercent = String(scraped.passThroughPercent);
+		}
+		// AR Customer ID — surface what NRS has so onboarding can flag missing.
+		if (scraped.arCustomerId !== v.nrsArCustomerId) {
+			updates.nrsArCustomerId = scraped.arCustomerId;
+		}
+		// Booth rent — NRS is authoritative. Empty NRS doesn't wipe TT
+		// (legacy records may have rent we want to keep until staff clears it).
+		if (
+			scraped.monthlyRentCents !== null &&
+			scraped.monthlyRentCents !== v.monthlyRentCents
+		) {
+			updates.monthlyRentCents = scraped.monthlyRentCents;
+		}
+		if (Object.keys(updates).length > 0) {
+			updates.updatedAt = new Date();
+			await db.update(vendors).set(updates).where(eq(vendors.id, v.id));
 		}
 
-		const patch: Record<string, unknown> = {};
-		if (rentCents !== null && match.monthlyRentCents === null) patch.monthlyRentCents = rentCents;
-		if (paymentPct !== null && match.vendorPaymentPercent === null) patch.vendorPaymentPercent = paymentPct;
-		if (contact && !match.contactName) patch.contactName = contact;
-		if (email && !match.contactEmail) patch.contactEmail = email;
-		if (phone && !match.contactPhone) patch.contactPhone = phone;
-		// Inactive flag is authoritative — always overwrite from CSV when column present.
-		if (inactiveCol >= 0 && match.nrsInactive !== inactive) patch.nrsInactive = inactive;
-
-		if (Object.keys(patch).length === 0) {
-			noChange++;
-			continue;
-		}
-
-		await db.update(vendors).set({ ...patch, updatedAt: new Date() }).where(eq(vendors.id, match.id));
-		updated++;
+		if (scraped.isInactive) inactiveFlagged++;
+		if (scraped.isInactive && !v.nrsInactive) newlyInactiveIds.push(v.id);
 	}
 
-	// Delete vendors flagged nrs_inactive that have no TT-side data attached.
-	// Safety: never delete one with portal access, a linked user, or any signed
-	// agreement. Anything kept is left visible only when the toggle is on.
+	// Safe-delete: only nrs_inactive=true rows that have no portal user, no
+	// agreements, and no sales history. Same predicate as the CSV import path.
 	let inactiveDeleted = 0;
 	let inactiveKept = 0;
-	if (inactiveCol >= 0) {
-		const inactiveCandidates = await db
-			.select({
-				id: vendors.id,
-				userId: vendors.userId,
-				portalEnabled: vendors.portalEnabled
-			})
-			.from(vendors)
-			.where(eq(vendors.nrsInactive, true));
+	const inactiveCandidates = await db
+		.select({ id: vendors.id, nrsVendorId: vendors.nrsVendorId, userId: vendors.userId, portalEnabled: vendors.portalEnabled })
+		.from(vendors)
+		.where(eq(vendors.nrsInactive, true));
 
-		const candidateIds = inactiveCandidates
-			.filter((v) => !v.userId && !v.portalEnabled)
-			.map((v) => v.id);
+	const candidateIds = inactiveCandidates
+		.filter((v) => !v.userId && !v.portalEnabled)
+		.map((v) => v.id);
 
-		if (candidateIds.length > 0) {
-			const withAgreements = await db
-				.selectDistinct({ vendorId: vendorAgreements.vendorId })
-				.from(vendorAgreements)
-				.where(inArray(vendorAgreements.vendorId, candidateIds));
-			const blocked = new Set(withAgreements.map((r) => r.vendorId));
+	if (candidateIds.length > 0) {
+		const withAgreements = await db
+			.selectDistinct({ vendorId: vendorAgreements.vendorId })
+			.from(vendorAgreements)
+			.where(inArray(vendorAgreements.vendorId, candidateIds));
+		const blockedByAgreements = new Set(withAgreements.map((r) => r.vendorId));
 
-			const safeToDelete = candidateIds.filter((id) => !blocked.has(id));
-			if (safeToDelete.length > 0) {
-				await db.delete(vendors).where(inArray(vendors.id, safeToDelete));
-			}
-			inactiveDeleted = safeToDelete.length;
-			inactiveKept = inactiveCandidates.length - safeToDelete.length;
-		} else {
-			inactiveKept = inactiveCandidates.length;
+		// Also block deletion when sales history exists for that NRS vendor.
+		const candidateNrsIds = inactiveCandidates
+			.filter((v) => candidateIds.includes(v.id) && v.nrsVendorId !== null)
+			.map((v) => v.nrsVendorId as number);
+		const withSales = candidateNrsIds.length
+			? await db
+					.selectDistinct({ vendorId: salesTransactions.vendorId })
+					.from(salesTransactions)
+					.where(inArray(salesTransactions.vendorId, candidateNrsIds))
+			: [];
+		const nrsIdsWithSales = new Set(withSales.map((r) => r.vendorId));
+
+		const safeToDelete = candidateIds.filter((id) => {
+			const cand = inactiveCandidates.find((c) => c.id === id);
+			if (!cand) return false;
+			if (blockedByAgreements.has(id)) return false;
+			if (cand.nrsVendorId !== null && nrsIdsWithSales.has(cand.nrsVendorId)) return false;
+			return true;
+		});
+
+		if (safeToDelete.length > 0) {
+			await db.delete(vendors).where(inArray(vendors.id, safeToDelete));
 		}
+		inactiveDeleted = safeToDelete.length;
+		inactiveKept = inactiveCandidates.length - safeToDelete.length;
+	} else {
+		inactiveKept = inactiveCandidates.length;
 	}
 
-	log.info(
-		{
-			parsed: dataRows.length,
-			unique: byCode.size,
-			updated,
-			noChange,
-			missed,
-			inactiveDeleted,
-			inactiveKept
-		},
-		'CSV import complete'
-	);
-	return {
-		parsed: dataRows.length,
-		unique: byCode.size,
-		updated,
-		noChange,
-		missed,
-		missedCodes,
-		inactiveDeleted,
-		inactiveKept
-	};
+	if (newlyInactiveIds.length > 0 || inactiveDeleted > 0) {
+		log.info(
+			{ inactiveFlagged, newlyInactive: newlyInactiveIds.length, inactiveDeleted, inactiveKept },
+			'NRS web: applied inactivity flags'
+		);
+	}
+
+	return { inactiveFlagged, inactiveDeleted, inactiveKept };
 }
+
+// CSV-import workflow removed — `syncFromNrs` now scrapes the NRS web UI
+// for every field the CSV used to backfill (Inactive flag, Pass-Through %,
+// Booth Rent, AR Customer, contact info). See vendor-stats-service / web
+// client for the new scrape path.
 
 /**
  * Remove "stub" vendor rows that are inactive AND empty AND don't match the
