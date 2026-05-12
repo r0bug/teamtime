@@ -27,7 +27,13 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	const vendor = await getVendorForUser(locals.user.id);
 	if (!vendor) throw error(403, 'Vendor portal access not enabled');
-	if (!partNumber.startsWith(vendor.inventoryCodePrefix ?? '')) {
+	const prefix = vendor.inventoryCodePrefix ?? '';
+	if (!prefix) {
+		// startsWith('') is always true, so without a prefix the ownership
+		// check fails open. Refuse rather than render with no scope guard.
+		throw error(403, 'Vendor has no inventory code prefix configured');
+	}
+	if (!partNumber.startsWith(prefix)) {
 		throw error(403, 'Part number does not belong to this vendor');
 	}
 

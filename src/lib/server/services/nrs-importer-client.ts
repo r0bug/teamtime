@@ -143,7 +143,14 @@ export class NrsImporterClient {
 		clearInventory?: boolean;
 		allowDuplicateNames?: boolean;
 		useAltPartForVendorParts?: boolean;
-	}): Promise<{ ok: boolean; messages: string[]; rawHtmlSample: string }> {
+		/**
+		 * If supplied, ok is downgraded to false unless the response's parsed
+		 * imported-row count is a finite number that matches expectedRowCount.
+		 * This guards against the previous regex-only heuristic claiming
+		 * success on partial imports or template-echo pages.
+		 */
+		expectedRowCount?: number;
+	}): Promise<{ ok: boolean; messages: string[]; rawHtmlSample: string; importedCount: number | null }> {
 		const body = new URLSearchParams();
 		body.set('go', '1');
 		body.set('ReturnTo', '');
@@ -189,22 +196,58 @@ export class NrsImporterClient {
 			if (txt) messages.push(txt);
 		}
 
-		// Heuristic: did the import indicate success?
+		// Parse an explicit imported-row count. NRS renders phrasings like
+		// "47 items imported", "47 rows imported", "Imported 47 items".
+		// We capture the first such occurrence and use the number for both
+		// the success decision and the expectedRowCount cross-check.
+		let importedCount: number | null = null;
+		const countRe = /(?:imported|added|saved)\s*[:\s]\s*(\d+)|(\d+)\s*(?:items?|rows?)\s*(?:imported|added|saved)/i;
+		const countMatch = html.match(countRe);
+		if (countMatch) {
+			const n = parseInt(countMatch[1] || countMatch[2], 10);
+			if (Number.isFinite(n)) importedCount = n;
+		}
+
 		const lower = html.toLowerCase();
 		const hasError =
 			lower.includes('error') &&
 			(lower.includes('imported 0') || /failed.*import/i.test(html) || lower.includes('invalid'));
-		const looksLikeSuccess =
-			!hasError &&
-			(/\d+\s*(items?|rows?)\s*(imported|added|saved)/i.test(html) ||
-				/import\s+(complete|successful)/i.test(html) ||
-				messages.some((m) => /imported|added|saved/i.test(m)));
 
-		log.info(
-			{ fileId: opts.fileId, vendor: opts.passThroughApVendorId, ok: looksLikeSuccess, messages },
-			'NRS import form submitted'
-		);
-		return { ok: looksLikeSuccess, messages, rawHtmlSample: html.slice(0, 4000) };
+		// ok requires an explicit, non-zero parsed count and no error marker.
+		// The previous regex-only heuristic could trip on template-echo wording
+		// ("imports rows from a CSV...") or partial imports ("3 imported, 47
+		// failed") with no error marker.
+		let ok = !hasError && importedCount !== null && importedCount > 0;
+
+		// When the caller knows how many rows it submitted, require an exact
+		// match. Mismatch (partial import) is treated as failure so the caller
+		// does not stamp pending rows as applied.
+		if (ok && opts.expectedRowCount !== undefined && importedCount !== opts.expectedRowCount) {
+			ok = false;
+			messages.push(
+				`Imported count mismatch: expected ${opts.expectedRowCount}, got ${importedCount}`
+			);
+		}
+
+		const logPayload = {
+			fileId: opts.fileId,
+			vendor: opts.passThroughApVendorId,
+			ok,
+			importedCount,
+			expectedRowCount: opts.expectedRowCount,
+			messages
+		};
+		if (ok) {
+			log.info(logPayload, 'NRS import form submitted');
+		} else {
+			// On failure, include a larger HTML sample at error level so the
+			// audit trail has something to reconstruct from.
+			log.error(
+				{ ...logPayload, rawHtmlSample: html.slice(0, 4000) },
+				'NRS import form submission did not look successful'
+			);
+		}
+		return { ok, messages, rawHtmlSample: html.slice(0, 4000), importedCount };
 	}
 }
 
@@ -213,7 +256,9 @@ export async function applyCsvViaNrsImporter(opts: {
 	csv: string;
 	filename: string;
 	passThroughApVendorId: number;
-}): Promise<{ ok: boolean; messages: string[]; fileId: number; rawHtmlSample: string }> {
+	/** Forwarded to submitImport — see that signature. */
+	expectedRowCount?: number;
+}): Promise<{ ok: boolean; messages: string[]; fileId: number; rawHtmlSample: string; importedCount: number | null }> {
 	const client = new NrsImporterClient();
 	await client.login();
 	const csvBytes = new TextEncoder().encode(opts.csv);
@@ -221,7 +266,8 @@ export async function applyCsvViaNrsImporter(opts: {
 	const result = await client.submitImport({
 		fileId,
 		filename: opts.filename,
-		passThroughApVendorId: opts.passThroughApVendorId
+		passThroughApVendorId: opts.passThroughApVendorId,
+		expectedRowCount: opts.expectedRowCount
 	});
 	return { ...result, fileId };
 }

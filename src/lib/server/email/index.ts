@@ -31,8 +31,18 @@ function getTransporter(): Transporter {
 }
 
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
-	// In development or when SMTP is not configured, log the email instead of sending
 	if (!SMTP_HOST) {
+		// In development, log the email and report success so flows are testable
+		// without an SMTP server. In production, missing SMTP is a misconfiguration —
+		// returning true here would silently stamp credentialsSentVia='email' on
+		// vendors who never received anything. Surface it as a failure instead.
+		if (process.env.NODE_ENV === 'production') {
+			log.error({
+				to: options.to,
+				subject: options.subject
+			}, 'SMTP_HOST not configured in production — refusing to claim email success');
+			return false;
+		}
 		log.info({
 			to: options.to,
 			subject: options.subject,

@@ -35,6 +35,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	if (requested.length === 0) throw error(400, 'No items supplied');
 
 	const prefix = vendor.inventoryCodePrefix ?? '';
+	if (!prefix) {
+		// startsWith('') is always true, so without a prefix the ownership
+		// check fails open. Refuse rather than render with no scope guard.
+		throw error(403, 'Vendor has no inventory code prefix configured');
+	}
 	for (const it of requested) {
 		if (!it.partNumber.startsWith(prefix)) {
 			throw error(403, `Part ${it.partNumber} does not belong to this vendor`);

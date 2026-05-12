@@ -460,7 +460,8 @@ export async function autoApplyPendingViaImporter(opts: {
 			const importResult = await applyCsvViaNrsImporter({
 				csv: csvResult.csv,
 				filename,
-				passThroughApVendorId: v.vendorNrsId
+				passThroughApVendorId: v.vendorNrsId,
+				expectedRowCount: csvResult.rowCount
 			});
 
 			base.ok = importResult.ok;

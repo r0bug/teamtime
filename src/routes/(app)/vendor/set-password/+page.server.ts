@@ -17,6 +17,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 export const actions: Actions = {
 	default: async ({ locals, request }) => {
 		if (!locals.user) return fail(401, { error: 'Not signed in' });
+		// This route is only for users still on a temp password. Anyone whose
+		// must_change_password flag is already cleared must go through the
+		// regular change-password flow (which requires the current password).
+		if (!locals.user.mustChangePassword) return fail(403, { error: 'Use the regular change-password flow' });
 
 		const form = await request.formData();
 		const password = (form.get('password') as string) ?? '';
