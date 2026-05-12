@@ -270,7 +270,7 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-105 tables organized across domains:
+109 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries, break_entries
 - **Scheduling**: schedule_templates, schedule_template_shifts (referenced by `shifts.template_id` / `template_shift_id`)
