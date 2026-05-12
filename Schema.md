@@ -813,6 +813,25 @@ CREATE INDEX idx_pending_inventory_changes_vendor_status
 
 A `user_types` row with `name='Vendor'`, `based_on_role='staff'`, `priority=20`, `is_system=true` is seeded once on first deploy. The portal-enable flow assigns this `user_type_id` to the vendor's user account; the `(app)/+layout.server.ts` and `vendor/+layout.server.ts` gates check for this type and redirect non-vendor users away from `/vendor` and vendor users away from staff routes.
 
+### User Extra Roles Table
+
+Secondary roles a user holds in addition to their primary `users.role`. Enables giving a staff user a "vendor hat" without changing their primary role. See [Extra roles](./FEATURES.md#extra-roles-vendor-hat-on-staff-users) in FEATURES.md for the access-control flow.
+
+```sql
+CREATE TABLE user_extra_roles (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,                            -- plain text, validated in app (EXTRA_ROLES)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT user_extra_roles_pk UNIQUE (user_id, role)
+);
+```
+
+`role` is intentionally plain `text` (not the `user_role` enum) so new hats can be introduced without an enum migration. Phase 1 only uses `'vendor'`; `src/lib/server/auth/roles.ts` defines the accepted values and `isVendor(user)` checks primary role OR extra role.
+
+### Vendor NRS AR Customer ID
+
+`vendors.nrs_ar_customer_id TEXT` — required for vendors paying booth rent (`monthly_rent_cents > 0`). Scraped from the NRS web UI (`frmHeadArCustomerId` field) by `nrs-web-client` because the NRS REST API doesn't expose it. Populated by the web-scrape pass in `syncFromNrs`; staff fixes missing entries in NRS and re-syncs.
+
 ---
 
 *Last updated: May 2026*

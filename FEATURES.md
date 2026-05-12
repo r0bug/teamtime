@@ -3051,6 +3051,41 @@ booth merchandise.
 URL params drive the mode (back button works); the form action stays the same
 since the server already accepts both PIN and password per-user.
 
+### Extra roles ("vendor hat" on staff users)
+
+A user has one **primary role** (`users.role`, the protected `user_role` enum) and zero or more **extra roles** stored in `user_extra_roles`. Extra roles let a staff member also act as a vendor (own a booth) without losing their primary staff role.
+
+- **Table:** `user_extra_roles (user_id, role, created_at)` with `UNIQUE(user_id, role)`. `role` is plain text — not the enum — so future hats can be added without touching the primary-role enum. Phase 1 supports only `'vendor'`; app code validates against `EXTRA_ROLES` in `src/lib/server/auth/roles.ts`.
+- **Loaded on every request:** `hooks.server.ts` joins `user_extra_roles` and exposes `locals.user.extraRoles: string[]`.
+- **Access helper:** `isVendor(user)` in `src/lib/server/auth/roles.ts` returns true when `users.role === 'vendor'` OR `'vendor' ∈ extraRoles`. This is what `(app)/+layout.server.ts` uses to flip the sidebar to vendor mode.
+- **Admin UI:** `/admin/users` create + edit forms render an "Extra roles" checkbox group. Saves diff the existing set and insert/delete `user_extra_roles` rows accordingly.
+
+### AR Customer ID sync (NRS web scrape)
+
+`vendors.nrs_ar_customer_id` is required for vendors who pay booth rent (`monthly_rent_cents > 0`) because NRS keeps the AR (accounts-receivable) customer ID separate from the vendor record — it's only exposed in the NRS web UI's `frmHeadArCustomerId` field, not the REST API.
+
+- **Service:** `src/lib/server/services/nrs-web-client.ts` — logs into NRS web, scrapes the vendor edit page, extracts the AR customer ID.
+- **Sync flow:** `syncFromNrs` in `vendor-service.ts` runs a web-scrape pass for AR-billed vendors after the REST sync. Missing AR IDs are surfaced on `/admin/vendors/onboarding` so staff can fix in NRS and re-sync.
+- **No write-back:** TT never writes to NRS; this is a read-only enrichment.
+
+### Bulk tag printing (`/admin/tags/bulk`)
+
+Admin/manager batch-create new vendor inventory items + print their NRS-format price tags in one pass. Replaces the per-vendor `/vendor/print` flow when staff are tagging items for multiple vendors.
+
+- **UI:** spreadsheet-style row editor — pick a vendor, type description + price + copies, repeat. Pick tag format (Avery sheet vs. dymo roll variants) and starting position on the sheet.
+- **`POST /api/admin/bulk-tags/generate`** — for each row: generates a `partNumber` (vendor prefix + sequence) via `generatePartNumber()`, inserts a `pending_inventory_changes` row (`change_type='create'`, `status='pending'`). Returns the generated rows for the UI to pass to the next step.
+- **`POST /api/admin/bulk-tags/sheet`** — renders a print-ready PDF tag sheet using `tag-render-service`, honoring per-vendor tag settings.
+- **`POST /api/admin/bulk-tags/csv-zip`** — returns a zip of per-vendor NRS import CSVs so staff can bulk-upload to NRS, then mark the pending changes applied.
+- **Permission:** `isManager` (admin or manager).
+
+### Implementation files (Stage 2c additions)
+
+- `src/lib/server/auth/roles.ts` — `EXTRA_ROLES`, `isVendor()`, `hasExtraRole()`
+- `src/lib/server/services/nrs-web-client.ts` — NRS web scrape for AR customer ID
+- `src/routes/(app)/admin/tags/bulk/` — bulk tag printer UI
+- `src/routes/api/admin/bulk-tags/{generate,sheet,csv-zip}/+server.ts`
+- Schema additions: `user_extra_roles` table, `vendors.nrs_ar_customer_id` column
+
 ### Out of scope (deferred to Stage 2c)
 
 - Direct NRS write API integration (proposals are still applied manually by staff)
