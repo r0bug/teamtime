@@ -1,6 +1,6 @@
 import type { LayoutServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { db, users, userTypes, appSettings, vendors } from '$lib/server/db';
+import { db, users, userTypes, appSettings, vendors, userExtraRoles } from '$lib/server/db';
 import { eq, and } from 'drizzle-orm';
 
 // Default module states - all enabled
@@ -76,10 +76,33 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 		}
 	}
 
+	// Staff who are *also* linked to a vendor get a separate signal so the
+	// sidebar can offer a "Vendor Portal" entry. Distinct from isVendor (which
+	// means vendor-only — no staff UI). Only meaningful when isVendor is false.
+	let hasVendorAccess = false;
+	if (!isVendor) {
+		const [vendorRole] = await db
+			.select({ userId: userExtraRoles.userId })
+			.from(userExtraRoles)
+			.where(and(eq(userExtraRoles.userId, locals.user.id), eq(userExtraRoles.role, 'vendor')))
+			.limit(1);
+		// Also confirm the vendor record itself is still portal-enabled — the
+		// extra-role can outlive the link if disablePortal failed mid-way.
+		if (vendorRole) {
+			const [vendor] = await db
+				.select({ id: vendors.id })
+				.from(vendors)
+				.where(and(eq(vendors.userId, locals.user.id), eq(vendors.portalEnabled, true)))
+				.limit(1);
+			hasVendorAccess = !!vendor;
+		}
+	}
+
 	return {
 		user: locals.user,
 		canListOnEbay: userData?.canListOnEbay || false,
 		enabledModules,
-		isVendor
+		isVendor,
+		hasVendorAccess
 	};
 };

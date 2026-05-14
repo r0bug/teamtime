@@ -27,6 +27,7 @@
 
 	$: user = data.user;
 	$: isVendor = data.isVendor === true;
+	$: hasVendorAccess = data.hasVendorAccess === true;
 	// Admin/manager elevation only applies to staff users — vendor portal users
 	// must never see staff/admin nav, even if their role column says otherwise.
 	$: isAdmin = !isVendor && user?.role === 'admin';
@@ -96,7 +97,8 @@
 			{ href: '/inventory/drops', label: 'Drops', icon: 'box', show: isPurchaser && mod('inventory') },
 			{ href: '/ebay/tasks', label: 'eBay Tasks', icon: 'globe', show: canListOnEbay && mod('ebay') },
 			{ href: '/expenses', label: 'Expenses', icon: 'dollar', show: isPurchaser && mod('expenses') },
-			{ href: '/admin/office-manager/chat', label: 'Office Manager', icon: 'office-chat', show: isManager }
+			{ href: '/admin/office-manager/chat', label: 'Office Manager', icon: 'office-chat', show: isManager },
+			{ href: '/vendor', label: 'Vendor Portal', icon: 'box', show: hasVendorAccess }
 		].filter(item => item.show);
 
 	// Grouped admin sections
