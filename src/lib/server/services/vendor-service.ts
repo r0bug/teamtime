@@ -16,6 +16,7 @@ import {
 	salesTransactions,
 	users,
 	userTypes,
+	userExtraRoles,
 	vendorGroupMembers,
 	vendorGroups,
 	vendorPartnumberSequences,
@@ -817,12 +818,16 @@ export async function enablePortal(input: {
 		let createdUser = false;
 		if (existingUser) {
 			userId = existingUser.id;
+			// Existing user — vendor access is additive. Do NOT overwrite their
+			// userTypeId (would wipe granular permissions) or name (their staff
+			// name may differ from the vendor's contact name). Just give them a
+			// password they can sign in with and make sure the account is active.
+			// The 'vendor' extra-role (inserted below) is what marks them as a
+			// vendor user without clobbering their staff identity.
 			await tx
 				.update(users)
 				.set({
 					passwordHash,
-					userTypeId: vendorTypeId,
-					name: input.contactName,
 					isActive: true,
 					updatedAt: new Date()
 				})
@@ -857,6 +862,13 @@ export async function enablePortal(input: {
 			userId = created.id;
 			createdUser = true;
 		}
+
+		// Keep the 'vendor' extra-role in sync with the portal link so
+		// isVendor() / hasExtraRole(user, 'vendor') matches reality.
+		await tx
+			.insert(userExtraRoles)
+			.values({ userId, role: 'vendor' })
+			.onConflictDoNothing();
 
 		const [updatedVendor] = await tx
 			.update(vendors)
@@ -1061,23 +1073,43 @@ export async function inviteVendorToPortal(input: {
 }
 
 /**
- * Disable portal access. Flips `portalEnabled=false` and deactivates the
- * linked user so they can't log in. The user row remains for audit.
+ * Disable portal access. Flips `portalEnabled=false` and removes the 'vendor'
+ * extra-role. Deactivates the linked user only if they are a vendor-only
+ * account (userTypeId = Vendor); staff users who also happen to be vendors
+ * keep their staff access. The user row always remains for audit.
  */
 export async function disablePortal(vendorId: string): Promise<void> {
 	const [vendor] = await db.select().from(vendors).where(eq(vendors.id, vendorId)).limit(1);
 	if (!vendor) throw new VendorServiceError(`Vendor not found: ${vendorId}`);
+
+	const vendorTypeId = await getVendorUserTypeId();
 
 	await db.transaction(async (tx) => {
 		await tx
 			.update(vendors)
 			.set({ portalEnabled: false, updatedAt: new Date() })
 			.where(eq(vendors.id, vendorId));
+
 		if (vendor.userId) {
+			// Drop the 'vendor' extra-role so isVendor() reflects reality.
 			await tx
-				.update(users)
-				.set({ isActive: false, updatedAt: new Date() })
-				.where(eq(users.id, vendor.userId));
+				.delete(userExtraRoles)
+				.where(and(eq(userExtraRoles.userId, vendor.userId), eq(userExtraRoles.role, 'vendor')));
+
+			const [linkedUser] = await tx
+				.select({ userTypeId: users.userTypeId })
+				.from(users)
+				.where(eq(users.id, vendor.userId))
+				.limit(1);
+
+			// Only deactivate if this is a vendor-only account. A staff member
+			// who's also linked to a vendor keeps their staff login active.
+			if (linkedUser && linkedUser.userTypeId === vendorTypeId) {
+				await tx
+					.update(users)
+					.set({ isActive: false, updatedAt: new Date() })
+					.where(eq(users.id, vendor.userId));
+			}
 		}
 	});
 	log.info({ vendorId }, 'Disabled portal access for vendor');
