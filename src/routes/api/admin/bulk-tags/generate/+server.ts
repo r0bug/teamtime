@@ -9,6 +9,7 @@ import {
 	submitChange,
 	InventoryChangeError
 } from '$lib/server/services/inventory-change-service';
+import { audit } from '$lib/server/services/audit-service';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('api:bulk-tags');
@@ -104,6 +105,19 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		{ userId: locals.user.id, count: generated.length },
 		'Staff bulk-tags: generated changes'
 	);
+
+	const vendorIds = Array.from(new Set(generated.map((g) => g.vendorId)));
+	await audit({
+		userId: locals.user.id,
+		action: 'bulk_tags.changes_generated',
+		entityType: 'vendor',
+		metadata: {
+			rowCount: generated.length,
+			vendorCount: vendorIds.length,
+			vendorIds,
+			changeIds: generated.map((g) => g.changeId)
+		}
+	});
 
 	return json({ generated });
 };

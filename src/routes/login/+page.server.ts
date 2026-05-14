@@ -106,12 +106,21 @@ export const actions: Actions = {
 			});
 		}
 
+		// All "looks like an invalid credential" exits return this exact message,
+		// so the response can't be used to enumerate which emails exist or are
+		// disabled. The real reason is still recorded in audit/loginAttempts
+		// for admins. Add the same ~500ms delay everywhere so timing doesn't
+		// leak existence either.
+		const invalidMsg = pinOnly ? 'Invalid email or PIN' : 'Invalid email or password';
+		async function failInvalidGeneric() {
+			await new Promise((r) => setTimeout(r, 500));
+			return fail(400, { error: invalidMsg });
+		}
+
 		// Find user
 		const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
 		if (!user) {
-			// Use same delay as valid user to prevent timing attacks
-			await new Promise((r) => setTimeout(r, 500));
 			await recordLoginAttempt({
 				email,
 				ipAddress,
@@ -119,7 +128,7 @@ export const actions: Actions = {
 				result: 'invalid_credentials',
 				failureReason: 'User not found'
 			});
-			return fail(400, { error: pinOnly ? 'Invalid email or PIN' : 'Invalid email or password' });
+			return failInvalidGeneric();
 		}
 
 		if (!user.isActive) {
@@ -131,7 +140,10 @@ export const actions: Actions = {
 				userId: user.id,
 				failureReason: 'Account disabled'
 			});
-			return fail(400, { error: 'Account is disabled. Contact your administrator.' });
+			// Generic message — disclosing "disabled" leaks email validity.
+			// Disabled users who try to sign in won't know to contact an admin
+			// from the message alone; this is the cost of closing the oracle.
+			return failInvalidGeneric();
 		}
 
 		// Verify credentials. Use password if the request submitted one AND the
@@ -148,7 +160,10 @@ export const actions: Actions = {
 					userId: user.id,
 					failureReason: 'PIN required for this account'
 				});
-				return fail(400, { error: 'PIN is required for this account' });
+				// Reaches here when caller submitted a password but this user has
+				// no passwordHash. Returning a distinct message would confirm the
+				// email exists as a PIN-only account.
+				return failInvalidGeneric();
 			}
 			// Verify PIN
 			const validPin = await verifyPin(pin, user.pinHash);
@@ -171,7 +186,8 @@ export const actions: Actions = {
 				return fail(400, { error: 'Invalid email or PIN' });
 			}
 		} else {
-			// Verify password
+			// Verify password. (Unreachable under current logic — usePassword=true
+			// requires user.passwordHash — but kept as defense-in-depth.)
 			if (!user.passwordHash) {
 				await recordLoginAttempt({
 					email,
@@ -181,7 +197,7 @@ export const actions: Actions = {
 					userId: user.id,
 					failureReason: 'No password set'
 				});
-				return fail(400, { error: 'Password not set. Contact your administrator.' });
+				return failInvalidGeneric();
 			}
 			try {
 				const validPassword = await verify(user.passwordHash, password!);

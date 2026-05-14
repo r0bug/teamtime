@@ -8,6 +8,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createLogger } from '$lib/server/logger';
 import { isManager } from '$lib/server/auth/roles';
+import { getVendorForUser } from '$lib/server/services/vendor-service';
 import {
 	getVendorTrendsByEmployee,
 	getEmployeeTrendsByVendor,
@@ -25,8 +26,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	try {
 		// Parse query parameters
-		const userId = url.searchParams.get('userId');
-		const vendorId = url.searchParams.get('vendorId');
+		let userId = url.searchParams.get('userId');
+		let vendorId = url.searchParams.get('vendorId');
 		const periodType = url.searchParams.get('periodType') as 'daily' | 'weekly' | 'monthly' | null;
 		const startDate = url.searchParams.get('startDate');
 		const endDate = url.searchParams.get('endDate');
@@ -40,12 +41,26 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			}, { status: 400 });
 		}
 
-		// Non-managers can only view their own correlations
-		if (!isManager(locals.user) && userId && userId !== locals.user.id) {
-			return json({
-				success: false,
-				error: 'Forbidden - You can only view your own correlations'
-			}, { status: 403 });
+		// Scope check for non-managers. Two legitimate viewers:
+		//   employee → their own correlations (userId = self)
+		//   vendor user → correlations for the vendor they're linked to
+		// Anything outside that is a peek into someone else's performance data.
+		if (!isManager(locals.user)) {
+			const ownVendor = await getVendorForUser(locals.user.id);
+			const isSelfUserQuery = !!userId && userId === locals.user.id;
+			const isOwnVendorQuery = !!vendorId && !!ownVendor && vendorId === ownVendor.id;
+
+			if (userId && userId !== locals.user.id) {
+				return json({ success: false, error: 'Forbidden' }, { status: 403 });
+			}
+			if (vendorId && !isOwnVendorQuery) {
+				return json({ success: false, error: 'Forbidden' }, { status: 403 });
+			}
+			// If they specified neither, default-scope to self so the broad
+			// queryCorrelations path can't return other users' rows.
+			if (!isSelfUserQuery && !isOwnVendorQuery) {
+				userId = locals.user.id;
+			}
 		}
 
 		// Build date range - use defaults if not provided

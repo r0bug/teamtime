@@ -10,6 +10,7 @@ import {
 } from '$lib/server/db';
 import { isManager } from '$lib/server/auth/roles';
 import { buildNrsCsvFromChangeRows } from '$lib/server/services/inventory-change-service';
+import { audit } from '$lib/server/services/audit-service';
 
 /**
  * GET /api/admin/bulk-tags/csv-zip?changeIds=id1,id2,...
@@ -77,6 +78,19 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	await archive.finalize();
 	await finished;
 	const zipBuffer = Buffer.concat(chunks);
+
+	await audit({
+		userId: locals.user!.id,
+		action: 'bulk_tags.csv_zip_downloaded',
+		entityType: 'vendor',
+		metadata: {
+			changeCount: changes.length,
+			vendorCount: vendorIds.length,
+			vendorIds,
+			vendorPrefixes: vendorRows.map((v) => v.inventoryCodePrefix).filter(Boolean),
+			byteSize: zipBuffer.byteLength
+		}
+	});
 
 	return new Response(zipBuffer, {
 		headers: {

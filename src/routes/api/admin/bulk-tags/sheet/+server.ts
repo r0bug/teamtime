@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit';
 import { inArray } from 'drizzle-orm';
 import { db, vendors, vendorTagSettings } from '$lib/server/db';
 import { isManager } from '$lib/server/auth/roles';
+import { audit } from '$lib/server/services/audit-service';
 import {
 	renderAverySheetHtml,
 	type AverySheetItem
@@ -45,11 +46,26 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const vendorRows = await db
 		.select({
 			id: vendors.id,
-			displayName: vendors.displayName
+			displayName: vendors.displayName,
+			inventoryCodePrefix: vendors.inventoryCodePrefix
 		})
 		.from(vendors)
 		.where(inArray(vendors.id, vendorIds));
 	const vendorById = new Map(vendorRows.map((v) => [v.id, v]));
+
+	// Reject items whose part number doesn't match the claimed vendor's prefix.
+	// Prevents an admin (or a CSRF'd admin session) from printing a tag that
+	// silently misattributes a part to the wrong vendor — the printed barcode
+	// is what NRS scans, so a mismatched tag pays the wrong vendor.
+	for (const it of items) {
+		const v = vendorById.get(it.vendorId);
+		if (!v) throw error(400, `Unknown vendor ${it.vendorId}`);
+		const prefix = v.inventoryCodePrefix ?? '';
+		if (!prefix) throw error(400, `Vendor ${v.displayName} has no inventory code prefix`);
+		if (!it.partNumber.startsWith(prefix)) {
+			throw error(400, `Part ${it.partNumber} does not belong to vendor ${v.displayName}`);
+		}
+	}
 
 	const settingsRows = await db
 		.select()
@@ -80,6 +96,19 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		settings: null,
 		monthCode: body.monthCode ?? null,
 		items: sheetItems
+	});
+
+	await audit({
+		userId: locals.user!.id,
+		action: 'bulk_tags.sheet_rendered',
+		entityType: 'vendor',
+		metadata: {
+			itemCount: items.length,
+			vendorCount: vendorIds.length,
+			vendorIds,
+			formatCode: body.formatCode || 'avery_5160',
+			monthCode: body.monthCode ?? null
+		}
 	});
 
 	return new Response(html, {
