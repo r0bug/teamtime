@@ -345,7 +345,7 @@ Cross-platform smoke: `--self-check` CLI mode verifies bundled catalog parses, r
 
 ## Open questions for plan phase
 
-1. **Repository layout** — single monorepo with desktop + TT changes, or desktop in its own repo (e.g. `r0bug/yakima-label`) and TT changes as a parallel PR in `r0bug/teamtime`. Recommendation: separate repos; the desktop app and TT release independently.
+1. **Repository layout (partially decided):** this spec lives in `r0bug/teamtime` (the design describes server-side changes there). The Python desktop client likely gets its own repo (proposed: `r0bug/yakima-label`) so it can release independently of the TT web app. Confirm in plan phase.
 2. **Packaging format** — Linux: AppImage vs. .deb; Windows: PyInstaller .exe + Inno Setup vs. MSI. Defer to plan phase.
 3. **Vosk model size** — small (~50MB, lower accuracy) vs. medium (~1.6GB, better accuracy). Default to small; allow opt-in to medium via a settings download.
 4. **Specific Zebra/Avery catalog seed** — which exact part numbers ship bundled. Recommendation: shop staff pick the top 20–30 stocks they actually use; everything else admin-extensible at runtime.
