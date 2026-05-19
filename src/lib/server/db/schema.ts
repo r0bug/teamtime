@@ -3420,11 +3420,11 @@ export type VendorTagSettings = typeof vendorTagSettings.$inferSelect;
 export type NewVendorTagSettings = typeof vendorTagSettings.$inferInsert;
 
 // Per-vendor-per-day atomic counter for auto-generated part numbers.
-// Format: {vendor.inventoryCodePrefix}{YYYYMMDD}{0001..} — keeps codes
-// globally unique without requiring vendors to invent IDs.
+// Format: {vendor.inventoryCodePrefix}{M}{DD}{YY}{NNN} — e.g. SR51626001.
+// Counter resets daily; (vendor_id, date_str) uniqueness keeps writes atomic.
 export const vendorPartnumberSequences = pgTable('vendor_partnumber_sequences', {
 	vendorId: uuid('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
-	dateStr: text('date_str').notNull(), // YYYYMMDD
+	dateStr: text('date_str').notNull(), // MDDYY
 	lastNumber: integer('last_number').notNull().default(0),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 }, (table) => ({

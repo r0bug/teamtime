@@ -1117,13 +1117,13 @@ export async function disablePortal(vendorId: string): Promise<void> {
 
 /**
  * Generate the next sequential part number for a vendor.
- * Format: {vendor.inventoryCodePrefix}{YY}{M}{D}{NNNN}
- *   YY  = 2-digit year
+ * Format: {vendor.inventoryCodePrefix}{M}{DD}{YY}{NNN}
  *   M   = month, no leading zero (1..12)
- *   D   = day, no leading zero (1..31)
- *   NNNN = zero-padded serial within the (vendor, day) bucket
+ *   DD  = day, zero-padded to 2 digits (01..31)
+ *   YY  = 2-digit year
+ *   NNN = zero-padded serial within the (vendor, day) bucket
  *
- * Example: today (May 8, 2026) → SR2658{NNNN}
+ * Example: today (May 16, 2026) → SR51626001
  *
  * The compact date format is intentionally lossy — `26111` is ambiguous
  * between Jan 11 and Nov 1 — but uniqueness is preserved by the always-
@@ -1139,10 +1139,10 @@ export async function generatePartNumber(vendorId: string, opts?: { now?: Date }
 	}
 
 	const now = opts?.now ?? new Date();
-	const yy = String(now.getUTCFullYear()).slice(-2);
 	const m = String(now.getUTCMonth() + 1);
-	const d = String(now.getUTCDate());
-	const dateStr = `${yy}${m}${d}`;
+	const dd = String(now.getUTCDate()).padStart(2, '0');
+	const yy = String(now.getUTCFullYear()).slice(-2);
+	const dateStr = `${m}${dd}${yy}`;
 
 	// Atomic increment: insert with last_number=1 if no row, otherwise bump.
 	const [row] = await db
@@ -1157,7 +1157,7 @@ export async function generatePartNumber(vendorId: string, opts?: { now?: Date }
 		})
 		.returning({ lastNumber: vendorPartnumberSequences.lastNumber });
 
-	const serial = String(row.lastNumber).padStart(4, '0');
+	const serial = String(row.lastNumber).padStart(3, '0');
 	return `${vendor.inventoryCodePrefix}${dateStr}${serial}`;
 }
 
