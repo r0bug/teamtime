@@ -44,7 +44,18 @@ function readInput(data: FormData): LabelFormatInput {
 		marginTopInches: num('marginTopInches'),
 		marginLeftInches: num('marginLeftInches'),
 		verticalPitchInches: num('verticalPitchInches'),
-		horizontalPitchInches: num('horizontalPitchInches')
+		horizontalPitchInches: num('horizontalPitchInches'),
+		mediaShape: (((data.get('mediaShape') as string) || 'rectangle').trim()) as 'rectangle' | 'barbell' | 'circle' | 'custom',
+		shapeDimsJson: (() => {
+			const raw = (data.get('shapeDimsJson') as string)?.trim();
+			if (!raw) return null;
+			try { return JSON.parse(raw); } catch { return null; }
+		})(),
+		mediaSensor: (((data.get('mediaSensor') as string) || '').trim() || null) as 'gap' | 'mark' | 'continuous' | null,
+		category: (((data.get('category') as string) || 'sheet').trim()) as 'sheet' | 'thermal',
+		manufacturer: (((data.get('manufacturer') as string) || 'custom').trim()) as 'zebra' | 'avery' | 'custom',
+		partNumber: ((data.get('partNumber') as string) || '').trim() || null,
+		dpi: intVal('dpi')
 	};
 }
 
