@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { callHandler, callHandlerAs } from '../fixtures/api-helpers';
+import { callHandler, callHandlerAs } from '../../fixtures/api-helpers';
 
 vi.mock('$lib/server/services/label-format-service', () => ({
 	listFormatsModifiedSince: vi.fn()
 }));
 
-import { GET } from '../../src/routes/api/label-formats/+server';
+import { GET } from '../../../src/routes/api/label-formats/+server';
 import { listFormatsModifiedSince } from '$lib/server/services/label-format-service';
 
 describe('GET /api/label-formats', () => {
