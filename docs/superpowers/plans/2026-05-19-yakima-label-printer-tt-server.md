@@ -1392,7 +1392,11 @@ git commit -m "feat(api): tag-zpl supports ?copies=<n> via renderZpl"
 
 ---
 
-## Task 11: `GET /api/vendor/tag-sheet-pdf` — Avery sheet as PDF
+## Task 11: ~~`GET /api/vendor/tag-sheet-pdf` — Avery sheet as PDF~~ (DEFERRED TO PLAN 2)
+
+> **Decision (2026-05-20):** This task is dropped from Plan 1. Rather than add puppeteer (~170MB Chromium + system libs) to the production backoffice server and run a headless-Chrome process per request, the Avery-sheet PDF will be rendered client-side by the Plan-2 Python desktop client using `reportlab` (already in its planned `render/sheet.py`). The desktop client gets everything it needs from the existing `/api/vendor/items` (item data) and `/api/label-formats` (Avery grid dimensions) endpoints — no new server endpoint is required for v1. The steps below are retained for historical context but are NOT to be executed.
+
+<details><summary>Original Task 11 steps (not executed)</summary>
 
 **Files:**
 - Modify: `package.json` (add `puppeteer` dep)
@@ -1599,6 +1603,8 @@ git commit -m "feat(api): tag-sheet-pdf endpoint (puppeteer html→pdf)"
 ```
 
 ---
+
+</details>
 
 ## Task 12: Extend admin `/admin/label-formats/` UI for new fields
 
@@ -1820,7 +1826,7 @@ By the end of Task 14, the desktop client (Plan 2) can:
 - Sync its local item cache via `GET /api/vendor/items?modified_since=`.
 - Submit a new tag with `quantity` via the existing `quickTag` action.
 - Fetch ZPL with multi-copy via `GET /api/vendor/tag-zpl?partNumber=…&copies=…`.
-- Fetch an Avery sheet as PDF via `POST /api/vendor/tag-sheet-pdf`.
+- Render Avery sheets client-side (reportlab) from `/api/vendor/items` data + `/api/label-formats` grid dims — server-side PDF (Task 11) was deferred to Plan 2 on 2026-05-20.
 - Receive new SKUs in the agreed `{prefix}{MDDYY}{NNN}` format.
 
 That's the complete server-side contract the spec calls for.
