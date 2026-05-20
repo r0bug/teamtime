@@ -1125,9 +1125,10 @@ export async function disablePortal(vendorId: string): Promise<void> {
  *
  * Example: today (May 16, 2026) → SR51626001
  *
- * The compact date format is intentionally lossy — `26111` is ambiguous
- * between Jan 11 and Nov 1 — but uniqueness is preserved by the always-
- * incrementing serial counter keyed on (vendor, dateStr).
+ * The compact date format is intentionally lossy — `11126` is ambiguous
+ * between month=1, day=11, year=26 and month=11, day=1, year=26 — but
+ * uniqueness is preserved by the always-incrementing serial counter keyed
+ * on (vendor, dateStr).
  */
 export async function generatePartNumber(vendorId: string, opts?: { now?: Date }): Promise<string> {
 	const [vendor] = await db.select().from(vendors).where(eq(vendors.id, vendorId)).limit(1);
