@@ -20,7 +20,6 @@ export default defineConfig({
 			'**/build/**',
 			'tests/e2e/**', // E2E tests run with Playwright
 			'tests/api/**', // API tests need integration testing approach
-			'tests/integration/**', // Integration tests need full mocking
 			'src/lib/server/logger.test.ts' // Manual integration test, not Vitest
 		],
 
