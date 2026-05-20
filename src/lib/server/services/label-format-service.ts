@@ -7,9 +7,9 @@
  * the 5 originals (avery_5160 / 5163 / 5167, zebra_2x1 / 4x2).
  */
 
-import { and, asc, eq, sql } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { labelFormats, type LabelFormat, type NewLabelFormat } from '$lib/server/db/schema';
+import { and, asc, eq, gt, sql } from 'drizzle-orm';
+import { db, labelFormats } from '$lib/server/db';
+import type { LabelFormat, NewLabelFormat } from '$lib/server/db/schema';
 
 export type LabelLayout = 'sheet' | 'thermal';
 
@@ -112,7 +112,7 @@ export async function updateFormat(id: string, input: LabelFormatInput): Promise
 	if (conflict.length > 0) throw new LabelFormatError(`Code "${input.code}" is already in use`);
 	const [row] = await db
 		.update(labelFormats)
-		.set({ ...toRow(input), updatedAt: new Date() })
+		.set({ ...toRow(input), version: sql`${labelFormats.version} + 1`, updatedAt: new Date() })
 		.where(eq(labelFormats.id, id))
 		.returning();
 	if (!row) throw new LabelFormatError('Format not found');
@@ -131,4 +131,12 @@ export async function unarchiveFormat(id: string): Promise<void> {
 		.update(labelFormats)
 		.set({ isActive: true, updatedAt: new Date() })
 		.where(eq(labelFormats.id, id));
+}
+
+export async function listFormatsModifiedSince(sinceVersion: number) {
+	return db
+		.select()
+		.from(labelFormats)
+		.where(gt(labelFormats.version, sinceVersion))
+		.orderBy(asc(labelFormats.version));
 }
