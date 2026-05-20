@@ -3451,6 +3451,15 @@ export const labelFormats = pgTable('label_formats', {
 	marginLeftInches: decimal('margin_left_inches', { precision: 5, scale: 3 }),
 	verticalPitchInches: decimal('vertical_pitch_inches', { precision: 5, scale: 3 }),
 	horizontalPitchInches: decimal('horizontal_pitch_inches', { precision: 5, scale: 3 }),
+	// Catalog-sync fields (added 2026-05-19 for desktop label printer)
+	mediaShape: text('media_shape').notNull().default('rectangle'), // 'rectangle' | 'barbell' | 'circle' | 'custom'
+	shapeDimsJson: jsonb('shape_dims_json'),
+	mediaSensor: text('media_sensor'),                              // 'gap' | 'mark' | 'continuous', null for sheets
+	category: text('category').notNull().default('sheet'),          // 'thermal' | 'sheet'
+	manufacturer: text('manufacturer').notNull().default('custom'), // 'zebra' | 'avery' | 'custom'
+	partNumber: text('part_number'),
+	dpi: integer('dpi'),
+	version: integer('version').notNull().default(1),
 	isActive: boolean('is_active').notNull().default(true),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
