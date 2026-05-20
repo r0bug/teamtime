@@ -58,6 +58,52 @@
 						<input id="new-lh" name="labelHeightInches" type="number" step="0.001" class="input" required />
 					</div>
 
+					<div>
+						<label class="label" for="new-category">Category</label>
+						<select id="new-category" name="category" class="input">
+							<option value="sheet">Sheet</option>
+							<option value="thermal">Thermal</option>
+						</select>
+					</div>
+					<div>
+						<label class="label" for="new-manufacturer">Manufacturer</label>
+						<select id="new-manufacturer" name="manufacturer" class="input">
+							<option value="custom">Custom</option>
+							<option value="zebra">Zebra</option>
+							<option value="avery">Avery</option>
+						</select>
+					</div>
+					<div>
+						<label class="label" for="new-mediaShape">Media shape</label>
+						<select id="new-mediaShape" name="mediaShape" class="input">
+							<option value="rectangle">Rectangle</option>
+							<option value="barbell">Barbell</option>
+							<option value="circle">Circle</option>
+							<option value="custom">Custom</option>
+						</select>
+					</div>
+					<div>
+						<label class="label" for="new-mediaSensor">Media sensor</label>
+						<select id="new-mediaSensor" name="mediaSensor" class="input">
+							<option value="">(none)</option>
+							<option value="gap">Gap</option>
+							<option value="mark">Mark</option>
+							<option value="continuous">Continuous</option>
+						</select>
+					</div>
+					<div>
+						<label class="label" for="new-partNumber">Part number</label>
+						<input id="new-partNumber" name="partNumber" type="text" class="input" placeholder="10010044" />
+					</div>
+					<div>
+						<label class="label" for="new-dpi">DPI</label>
+						<input id="new-dpi" name="dpi" type="number" min="100" max="600" class="input" placeholder="203" />
+					</div>
+					<div class="md:col-span-3">
+						<label class="label" for="new-shapeDimsJson">Shape dims (JSON)</label>
+						<textarea id="new-shapeDimsJson" name="shapeDimsJson" class="input font-mono text-xs" rows="2" placeholder="&#123;&quot;panelA_width_in&quot;:0.5&#125;"></textarea>
+					</div>
+
 					{#if layout === 'sheet'}
 						<div>
 							<label class="label" for="new-pw">Page width (in)</label>

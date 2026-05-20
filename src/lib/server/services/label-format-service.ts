@@ -7,9 +7,9 @@
  * the 5 originals (avery_5160 / 5163 / 5167, zebra_2x1 / 4x2).
  */
 
-import { and, asc, eq, sql } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { labelFormats, type LabelFormat, type NewLabelFormat } from '$lib/server/db/schema';
+import { and, asc, eq, gt, sql } from 'drizzle-orm';
+import { db, labelFormats } from '$lib/server/db';
+import type { LabelFormat, NewLabelFormat } from '$lib/server/db/schema';
 
 export type LabelLayout = 'sheet' | 'thermal';
 
@@ -27,6 +27,13 @@ export interface LabelFormatInput {
 	marginLeftInches?: number | null;
 	verticalPitchInches?: number | null;
 	horizontalPitchInches?: number | null;
+	mediaShape?: 'rectangle' | 'barbell' | 'circle' | 'custom';
+	shapeDimsJson?: Record<string, unknown> | null;
+	mediaSensor?: 'gap' | 'mark' | 'continuous' | null;
+	category?: 'thermal' | 'sheet';
+	manufacturer?: 'zebra' | 'avery' | 'custom';
+	partNumber?: string | null;
+	dpi?: number | null;
 }
 
 export class LabelFormatError extends Error {}
@@ -86,7 +93,14 @@ function toRow(input: LabelFormatInput): Partial<NewLabelFormat> {
 		marginTopInches: input.marginTopInches != null ? String(input.marginTopInches) : null,
 		marginLeftInches: input.marginLeftInches != null ? String(input.marginLeftInches) : null,
 		verticalPitchInches: input.verticalPitchInches != null ? String(input.verticalPitchInches) : null,
-		horizontalPitchInches: input.horizontalPitchInches != null ? String(input.horizontalPitchInches) : null
+		horizontalPitchInches: input.horizontalPitchInches != null ? String(input.horizontalPitchInches) : null,
+		mediaShape: input.mediaShape ?? 'rectangle',
+		shapeDimsJson: input.shapeDimsJson ?? null,
+		mediaSensor: input.mediaSensor ?? null,
+		category: input.category ?? (input.layout as 'thermal' | 'sheet'),
+		manufacturer: input.manufacturer ?? 'custom',
+		partNumber: input.partNumber ?? null,
+		dpi: input.dpi ?? null
 	};
 }
 
@@ -112,7 +126,7 @@ export async function updateFormat(id: string, input: LabelFormatInput): Promise
 	if (conflict.length > 0) throw new LabelFormatError(`Code "${input.code}" is already in use`);
 	const [row] = await db
 		.update(labelFormats)
-		.set({ ...toRow(input), updatedAt: new Date() })
+		.set({ ...toRow(input), version: sql`${labelFormats.version} + 1`, updatedAt: new Date() })
 		.where(eq(labelFormats.id, id))
 		.returning();
 	if (!row) throw new LabelFormatError('Format not found');
@@ -131,4 +145,12 @@ export async function unarchiveFormat(id: string): Promise<void> {
 		.update(labelFormats)
 		.set({ isActive: true, updatedAt: new Date() })
 		.where(eq(labelFormats.id, id));
+}
+
+export async function listFormatsModifiedSince(sinceVersion: number) {
+	return db
+		.select()
+		.from(labelFormats)
+		.where(gt(labelFormats.version, sinceVersion))
+		.orderBy(asc(labelFormats.version));
 }

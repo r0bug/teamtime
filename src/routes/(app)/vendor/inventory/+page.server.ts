@@ -128,6 +128,7 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const description = ((form.get('description') as string) ?? '').trim();
 		const priceCents = parsePriceCents(form.get('priceDollars'));
+		const quantity = parseInt10(form.get('quantity'));
 
 		if (!description) return fail(400, { error: 'Description is required' });
 		if (priceCents === undefined) return fail(400, { error: 'Price is required' });
@@ -152,7 +153,12 @@ export const actions: Actions = {
 				submittedByUserId: locals.user.id,
 				changeType: 'create',
 				partNumber,
-				payload: { partName: description, description, priceCents },
+				payload: {
+						partName: description,
+						description,
+						priceCents,
+						...(quantity !== undefined ? { quantity } : {})
+					},
 				previousPayload: null
 			});
 		} catch (err) {

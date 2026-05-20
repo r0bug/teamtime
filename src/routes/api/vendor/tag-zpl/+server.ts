@@ -1,5 +1,5 @@
 import type { RequestHandler } from './$types';
-import { error } from '@sveltejs/kit';
+import { error, json } from '@sveltejs/kit';
 import { and, eq, desc } from 'drizzle-orm';
 import {
 	db,
@@ -24,6 +24,15 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	const partNumber = url.searchParams.get('partNumber')?.trim();
 	if (!partNumber) throw error(400, 'partNumber required');
+
+	const copiesRaw = url.searchParams.get('copies');
+	let copies: number | undefined = undefined;
+	if (copiesRaw !== null) {
+		if (!/^\d+$/.test(copiesRaw)) {
+			return json({ error: 'copies must be a positive integer' }, { status: 400 });
+		}
+		copies = parseInt(copiesRaw, 10);
+	}
 
 	const vendor = await getVendorForUser(locals.user.id);
 	if (!vendor) throw error(403, 'Vendor portal access not enabled');
@@ -85,7 +94,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const zpl = await renderZpl({
 		vendorDisplayName: vendor.displayName,
 		settings: settings ?? null,
-		item: { partNumber, name, description, priceCents }
+		item: { partNumber, name, description, priceCents },
+		copies
 	});
 
 	return new Response(zpl, {
