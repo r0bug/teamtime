@@ -3469,3 +3469,28 @@ export type VendorPartnumberSequence = typeof vendorPartnumberSequences.$inferSe
 export type LabelFormat = typeof labelFormats.$inferSelect;
 export type NewLabelFormat = typeof labelFormats.$inferInsert;
 
+// Per-printer kit configuration for the Yakima vendor label printer desktop
+// client. A shop-commissioned kit has owner_type='shop' and a kit_id label;
+// BYO vendor printers have owner_type='vendor_byo' and kit_id=null.
+export const kitProfiles = pgTable('kit_profiles', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	vendorId: uuid('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+	kitId: text('kit_id'),                                  // shop-issued label, e.g. "YK-007"; null for BYO
+	ownerType: text('owner_type').notNull().default('vendor_byo'), // 'shop' | 'vendor_byo'
+	printerModel: text('printer_model').notNull(),          // e.g. 'Zebra GK420t'
+	printerDpi: integer('printer_dpi').notNull(),
+	labelWidthDots: integer('label_width_dots').notNull(),
+	labelHeightDots: integer('label_height_dots').notNull(),
+	commandLang: text('command_lang').notNull().default('zpl2'), // 'zpl2' | 'epl' | 'cpcl'
+	mediaSensor: text('media_sensor').notNull().default('gap'),  // 'gap' | 'mark' | 'continuous'
+	mediaType: text('media_type').notNull().default('direct_thermal'), // 'direct_thermal' | 'transfer'
+	backend: text('backend').notNull(),                     // 'linux_usb' | 'win_usb' | 'win_spooler'
+	preferredFormatCode: text('preferred_format_code'),     // soft FK to label_formats.code
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	vendorKitUnique: unique('kit_profiles_vendor_kit_unique').on(table.vendorId, table.kitId)
+}));
+
+export type KitProfile = typeof kitProfiles.$inferSelect;
+export type NewKitProfile = typeof kitProfiles.$inferInsert;
