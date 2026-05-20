@@ -24,6 +24,8 @@ export interface TagRenderContext {
 	 * top-right corner. Used by the staff bulk tag designer to mark shelf-age.
 	 */
 	monthCode?: string | null;
+	/** Number of copies to print (^PQ). Clamped to [1, 99]; defaults to 1. */
+	copies?: number;
 }
 
 export interface TagDimensions {
@@ -372,6 +374,7 @@ function embedSvgFitContent(svg: string): string {
  * Code 128: ^BC. Data Matrix: ^BX. Vendor's `barcodeSymbology` setting picks.
  */
 export async function renderZpl(ctx: TagRenderContext): Promise<string> {
+	const copies = Math.max(1, Math.min(99, Math.floor(ctx.copies ?? 1)));
 	const eff = resolveSettings(ctx.settings);
 	const dims = await getFormatDimensions(eff.preferredFormat);
 	const dpi = eff.zebraDpi || 203;
@@ -467,7 +470,7 @@ export async function renderZpl(ctx: TagRenderContext): Promise<string> {
 		y += r.height + gap;
 	}
 
-	cmds.push('^PQ1');                 // print quantity
+	cmds.push(`^PQ${copies}`);                 // print quantity
 	cmds.push('^XZ');                  // end of label
 	return cmds.join('\n');
 }
