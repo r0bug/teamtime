@@ -1,2 +1,2 @@
-ALTER TABLE "kit_profiles" DROP CONSTRAINT "kit_profiles_vendor_kit_unique";--> statement-breakpoint
+ALTER TABLE "kit_profiles" DROP CONSTRAINT IF EXISTS "kit_profiles_vendor_kit_unique";--> statement-breakpoint
 ALTER TABLE "kit_profiles" ADD CONSTRAINT "kit_profiles_vendor_kit_unique" UNIQUE NULLS NOT DISTINCT("vendor_id","kit_id");
