@@ -3475,7 +3475,7 @@ export type NewLabelFormat = typeof labelFormats.$inferInsert;
 export const kitProfiles = pgTable('kit_profiles', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	vendorId: uuid('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
-	kitId: text('kit_id'),                                  // shop-issued label, e.g. "YK-007"; null for BYO
+	kitId: text('kit_id'), // shop-issued label e.g. "YK-007"; null for BYO. One BYO row per vendor enforced via NULLS NOT DISTINCT.
 	ownerType: text('owner_type').notNull().default('vendor_byo'), // 'shop' | 'vendor_byo'
 	printerModel: text('printer_model').notNull(),          // e.g. 'Zebra GK420t'
 	printerDpi: integer('printer_dpi').notNull(),
@@ -3489,7 +3489,7 @@ export const kitProfiles = pgTable('kit_profiles', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 }, (table) => ({
-	vendorKitUnique: unique('kit_profiles_vendor_kit_unique').on(table.vendorId, table.kitId)
+	vendorKitUnique: unique('kit_profiles_vendor_kit_unique').on(table.vendorId, table.kitId).nullsNotDistinct()
 }));
 
 export type KitProfile = typeof kitProfiles.$inferSelect;
