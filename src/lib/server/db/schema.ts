@@ -3420,11 +3420,11 @@ export type VendorTagSettings = typeof vendorTagSettings.$inferSelect;
 export type NewVendorTagSettings = typeof vendorTagSettings.$inferInsert;
 
 // Per-vendor-per-day atomic counter for auto-generated part numbers.
-// Format: {vendor.inventoryCodePrefix}{YYYYMMDD}{0001..} — keeps codes
-// globally unique without requiring vendors to invent IDs.
+// Format: {vendor.inventoryCodePrefix}{M}{DD}{YY}{NNN} — e.g. SR51626001.
+// Counter resets daily; (vendor_id, date_str) uniqueness keeps writes atomic.
 export const vendorPartnumberSequences = pgTable('vendor_partnumber_sequences', {
 	vendorId: uuid('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
-	dateStr: text('date_str').notNull(), // YYYYMMDD
+	dateStr: text('date_str').notNull(), // MDDYY
 	lastNumber: integer('last_number').notNull().default(0),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 }, (table) => ({
@@ -3451,6 +3451,15 @@ export const labelFormats = pgTable('label_formats', {
 	marginLeftInches: decimal('margin_left_inches', { precision: 5, scale: 3 }),
 	verticalPitchInches: decimal('vertical_pitch_inches', { precision: 5, scale: 3 }),
 	horizontalPitchInches: decimal('horizontal_pitch_inches', { precision: 5, scale: 3 }),
+	// Catalog-sync fields (added 2026-05-19 for desktop label printer)
+	mediaShape: text('media_shape').notNull().default('rectangle'), // 'rectangle' | 'barbell' | 'circle' | 'custom'
+	shapeDimsJson: jsonb('shape_dims_json'),
+	mediaSensor: text('media_sensor'),                              // 'gap' | 'mark' | 'continuous', null for sheets
+	category: text('category').notNull().default('sheet'),          // 'thermal' | 'sheet'
+	manufacturer: text('manufacturer').notNull().default('custom'), // 'zebra' | 'avery' | 'custom'
+	partNumber: text('part_number'),
+	dpi: integer('dpi'),
+	version: integer('version').notNull().default(1),
 	isActive: boolean('is_active').notNull().default(true),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
@@ -3460,3 +3469,28 @@ export type VendorPartnumberSequence = typeof vendorPartnumberSequences.$inferSe
 export type LabelFormat = typeof labelFormats.$inferSelect;
 export type NewLabelFormat = typeof labelFormats.$inferInsert;
 
+// Per-printer kit configuration for the Yakima vendor label printer desktop
+// client. A shop-commissioned kit has owner_type='shop' and a kit_id label;
+// BYO vendor printers have owner_type='vendor_byo' and kit_id=null.
+export const kitProfiles = pgTable('kit_profiles', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	vendorId: uuid('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+	kitId: text('kit_id'), // shop-issued label e.g. "YK-007"; null for BYO. One BYO row per vendor enforced via NULLS NOT DISTINCT.
+	ownerType: text('owner_type').notNull().default('vendor_byo'), // 'shop' | 'vendor_byo'
+	printerModel: text('printer_model').notNull(),          // e.g. 'Zebra GK420t'
+	printerDpi: integer('printer_dpi').notNull(),
+	labelWidthDots: integer('label_width_dots').notNull(),
+	labelHeightDots: integer('label_height_dots').notNull(),
+	commandLang: text('command_lang').notNull().default('zpl2'), // 'zpl2' | 'epl' | 'cpcl'
+	mediaSensor: text('media_sensor').notNull().default('gap'),  // 'gap' | 'mark' | 'continuous'
+	mediaType: text('media_type').notNull().default('direct_thermal'), // 'direct_thermal' | 'transfer'
+	backend: text('backend').notNull(),                     // 'linux_usb' | 'win_usb' | 'win_spooler'
+	preferredFormatCode: text('preferred_format_code'),     // soft FK to label_formats.code
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	vendorKitUnique: unique('kit_profiles_vendor_kit_unique').on(table.vendorId, table.kitId).nullsNotDistinct()
+}));
+
+export type KitProfile = typeof kitProfiles.$inferSelect;
+export type NewKitProfile = typeof kitProfiles.$inferInsert;
