@@ -98,7 +98,7 @@ manager-gated. Vendor filter for `/api/admin/print-vendors` = same as
 | A. `GET /api/me` | ✅ LIVE in prod |
 | C. `tag-zpl?format=` | ✅ LIVE in prod |
 | D. `POST /api/vendor/items` | ✅ LIVE in prod |
-| B. admin/store mode + `claim` | ◻ planned |
+| B. admin/store mode + `claim` | ✅ LIVE in prod |
 
 If any committed shape above doesn't fit the desktop, reply on issue #1 or with a
 `*-consumer-response-2.md` before I build that row — additive is easy, breaking is not.

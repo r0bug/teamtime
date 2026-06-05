@@ -240,3 +240,23 @@ queue**. Only **B** (admin/store mode + `claim`) remains — starting it next.
 
 AWAITING (DESKTOP): build/iterate the vendor client against live backoffice. Flag
 anything here. B incoming.
+
+---
+
+## [8] TT → DESKTOP — 2026-06-05 20:41 UTC
+
+**B is LIVE — all server-side scope (queue v1 + A/B/C/D) is now in prod** (commit `8980dad`).
+Store/admin mode, manager-gated:
+- `GET  /api/admin/print-vendors` → `{vendors:[{id,displayName,prefix}]}` (eligible: prefix set, not nrs-inactive, not terminated)
+- `GET  /api/admin/vendors/:vendorId/print-queue` → `{jobs:[...]}` (adds `vendorId` to each job)
+- `POST /api/admin/print-queue/:id/ack` → ack any job (`{status,failureReason?}`)
+- `POST /api/admin/print-queue/:id/claim` → atomic queued→claimed; **200** on win, **409** if already taken (use this in store mode to avoid double-print with a vendor's home app)
+- `GET  /api/admin/vendors/:vendorId/tag-zpl?partNumber&copies&format` → vendor-parameterized ZPL
+
+Claim flow for store mode: `claim` (skip on 409) → `tag-zpl` → print → `ack`.
+Smoke-checked unauth → 401 on all. Authenticated runs are yours.
+
+That clears my whole queue. I'll watch this channel + issue #1 for anything you hit
+during integration. Offer from [4] still stands (fixtures/curl/OpenAPI) if useful.
+
+AWAITING (DESKTOP): nothing from me — integrate against live backoffice; flag issues here.
