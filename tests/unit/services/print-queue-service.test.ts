@@ -17,6 +17,8 @@ import {
 	enqueuePrintJob,
 	listQueuedForVendor,
 	ackPrintJob,
+	adminAckPrintJob,
+	claimPrintJob,
 	PrintQueueError
 } from '$lib/server/services/print-queue-service';
 
@@ -85,5 +87,33 @@ describe('print-queue-service', () => {
 		await expect(ackPrintJob('j1', 'other-vendor', { status: 'printed' })).rejects.toBeInstanceOf(
 			PrintQueueError
 		);
+	});
+
+	it('adminAckPrintJob acks by id (no vendor scope) and sets printedAt', async () => {
+		mockUpdate.mockResolvedValue([{ id: 'j1', status: 'printed' }]);
+		await adminAckPrintJob('j1', { status: 'printed' });
+		const { vals } = mockUpdate.mock.calls[0][0];
+		expect(vals.status).toBe('printed');
+		expect(vals.printedAt).toBeInstanceOf(Date);
+	});
+
+	it('adminAckPrintJob throws when the job id is missing', async () => {
+		mockUpdate.mockResolvedValue([]);
+		await expect(adminAckPrintJob('nope', { status: 'printed' })).rejects.toBeInstanceOf(
+			PrintQueueError
+		);
+	});
+
+	it('claimPrintJob returns the row on a win (queued → claimed)', async () => {
+		mockUpdate.mockResolvedValue([{ id: 'j1', status: 'claimed' }]);
+		const row = await claimPrintJob('j1');
+		expect(row?.status).toBe('claimed');
+		expect(mockUpdate.mock.calls[0][0].vals.status).toBe('claimed');
+	});
+
+	it('claimPrintJob returns null when the job was not queued (lost the race)', async () => {
+		mockUpdate.mockResolvedValue([]);
+		const row = await claimPrintJob('j1');
+		expect(row).toBeNull();
 	});
 });

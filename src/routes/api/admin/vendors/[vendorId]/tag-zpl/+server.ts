@@ -1,18 +1,19 @@
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
-import { getVendorForUser } from '$lib/server/services/vendor-service';
+import { getVendor } from '$lib/server/services/vendor-service';
 import { assertThermalFormat, renderVendorTagZpl, TagZplError } from '$lib/server/services/tag-zpl-service';
 
 /**
- * GET /api/vendor/tag-zpl?partNumber=SR26580001&copies=N&format=CODE
- * Returns ZPL II text for a single tag for the calling vendor's own item.
- *
- * `format` is optional — omitted uses the vendor's preferred format; a provided
- * code must exist and be a thermal format (else 400). The browser (or the desktop
- * label app) forwards the body straight to the printer; ZPL is plain text.
+ * GET /api/admin/vendors/:vendorId/tag-zpl?partNumber=X&copies=N&format=CODE
+ * Manager-gated admin variant of the vendor tag-zpl endpoint — renders ZPL for a
+ * given vendor's part number (store/admin mode). The vendor endpoint is scoped to
+ * the caller's own prefix; this one takes an explicit vendorId behind the manager
+ * gate and validates the part number belongs to that vendor's prefix.
  */
-export const GET: RequestHandler = async ({ locals, url }) => {
+export const GET: RequestHandler = async ({ locals, params, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
+	const { isManager } = await import('$lib/server/auth/roles');
+	if (!isManager(locals.user)) throw error(403, 'Forbidden');
 
 	const partNumber = url.searchParams.get('partNumber')?.trim();
 	if (!partNumber) throw error(400, 'partNumber required');
@@ -28,16 +29,12 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	const formatCode = url.searchParams.get('format')?.trim() || undefined;
 
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) throw error(403, 'Vendor portal access not enabled');
+	const vendor = await getVendor(params.vendorId);
+	if (!vendor) throw error(404, 'Vendor not found');
 	const prefix = vendor.inventoryCodePrefix ?? '';
-	if (!prefix) {
-		// startsWith('') is always true, so without a prefix the ownership
-		// check fails open. Refuse rather than render with no scope guard.
-		throw error(403, 'Vendor has no inventory code prefix configured');
-	}
+	if (!prefix) throw error(409, 'Vendor has no inventory code prefix configured');
 	if (!partNumber.startsWith(prefix)) {
-		throw error(403, 'Part number does not belong to this vendor');
+		throw error(400, 'Part number does not belong to this vendor');
 	}
 
 	try {

@@ -86,3 +86,42 @@ export async function ackPrintJob(
 	if (!row) throw new PrintQueueError('Print job not found');
 	return row;
 }
+
+/**
+ * Manager-gated ack of any vendor's job (store/admin mode). The caller must
+ * already be authorized as a manager — this is not vendor-scoped.
+ */
+export async function adminAckPrintJob(
+	jobId: string,
+	outcome: { status: 'printed' | 'failed'; failureReason?: string | null }
+) {
+	if (outcome.status !== 'printed' && outcome.status !== 'failed') {
+		throw new PrintQueueError('status must be "printed" or "failed"');
+	}
+	const [row] = await db
+		.update(vendorPrintJobs)
+		.set({
+			status: outcome.status,
+			printedAt: outcome.status === 'printed' ? new Date() : null,
+			failureReason: outcome.status === 'failed' ? (outcome.failureReason ?? null) : null
+		})
+		.where(eq(vendorPrintJobs.id, jobId))
+		.returning();
+	if (!row) throw new PrintQueueError('Print job not found');
+	return row;
+}
+
+/**
+ * Atomically lease a queued job (queued → claimed) so two drainers (e.g. a
+ * vendor's home app and the store) can't both print it. Returns the row on a
+ * win, or null if it wasn't `queued` (already claimed/printed) — the caller
+ * should treat null as "someone else got it".
+ */
+export async function claimPrintJob(jobId: string) {
+	const [row] = await db
+		.update(vendorPrintJobs)
+		.set({ status: 'claimed' })
+		.where(and(eq(vendorPrintJobs.id, jobId), eq(vendorPrintJobs.status, 'queued')))
+		.returning();
+	return row ?? null;
+}
