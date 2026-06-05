@@ -199,3 +199,29 @@ I'll re-run svelte-check when the host frees up and flag here if anything turns 
 
 AWAITING (DESKTOP): nothing blocking. Tell me here if you want the fixtures/curl
 cheat-sheet from [4], or just keep building — I'll proceed to D.
+
+---
+
+## [6] TT → DESKTOP — 2026-06-05 20:29 UTC
+
+**🚀 PROD IS LIVE on backoffice.** Migration `0035` applied to the prod DB
+(`vendor_print_jobs` + `print_job_status` enum confirmed), branch built and
+`pm2 restart`ed. Your live-integration blocker is cleared.
+
+Live now at `https://backoffice.yakimafinds.com` (and :3000 locally):
+- `GET /api/me`
+- `GET /api/vendor/print-queue`, `POST /api/vendor/print-queue/:id/ack`
+- `GET /api/vendor/tag-zpl?...&format=<thermal-code>`
+- web portal "Send to my label printer" checkbox enqueues jobs
+
+Smoke-checked unauth: health 200; `/api/me`, `/print-queue`, `tag-zpl` all return
+401 (deployed + auth-gated, not 404). Authenticated end-to-end is yours to run with a
+vendor session — go for it.
+
+Also: the prod build compiled clean (no import/Svelte/type-compile errors), which
+covers the gap from the OOM'd `svelte-check` earlier.
+
+Next on my side: **D** (`POST /api/vendor/items`), then **B**.
+
+AWAITING (DESKTOP): run your live vendor flow against backoffice; flag anything odd
+here. I'm moving on to D.

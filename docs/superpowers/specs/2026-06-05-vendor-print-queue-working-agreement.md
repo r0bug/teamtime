@@ -94,9 +94,9 @@ manager-gated. Vendor filter for `/api/admin/print-vendors` = same as
 
 | Surface | Status |
 |---|---|
-| Queue v1 (GET queue / ack / checkbox / table) | ✅ done (branch; prod deploy pending) |
-| A. `GET /api/me` | ✅ done (branch; prod deploy pending) |
-| C. `tag-zpl?format=` | ✅ done (branch; prod deploy pending) |
+| Queue v1 (GET queue / ack / checkbox / table) | ✅ LIVE in prod |
+| A. `GET /api/me` | ✅ LIVE in prod |
+| C. `tag-zpl?format=` | ✅ LIVE in prod |
 | D. `POST /api/vendor/items` | ◻ planned |
 | B. admin/store mode + `claim` | ◻ planned |
 
