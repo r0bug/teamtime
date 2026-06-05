@@ -36,6 +36,7 @@
 		<div class="flex gap-2 flex-wrap">
 			<a href="/admin/vendors/leaderboard" class="btn btn-secondary">📊 Performance</a>
 			<a href="/admin/vendors/inventory-changes" class="btn btn-secondary">Changes Queue</a>
+			<a href="/admin/vendors/inventory-journal" class="btn btn-secondary">NRS Journal</a>
 			<a href="/admin/tags/bulk" class="btn btn-secondary">🏷 Bulk tags</a>
 			<a href="/admin/vendor-groups" class="btn btn-secondary">Groups</a>
 			<form method="POST" action="?/removeStubs" use:enhance>

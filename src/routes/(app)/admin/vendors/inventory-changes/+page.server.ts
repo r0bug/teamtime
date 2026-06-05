@@ -6,7 +6,7 @@ import {
 	pendingCountByStatus,
 	markApplied,
 	reject,
-	autoApplyPendingViaImporter,
+	autoApplyPendingCreatesViaApi,
 	InventoryChangeError
 } from '$lib/server/services/inventory-change-service';
 
@@ -60,13 +60,13 @@ export const actions: Actions = {
 		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
 		const vendorId = ((await request.formData()).get('vendorId') as string) || undefined;
 		try {
-			const results = await autoApplyPendingViaImporter({
-				appliedByUserId: locals.user!.id,
+			const result = await autoApplyPendingCreatesViaApi({
+				triggeredByUserId: locals.user!.id,
 				vendorId
 			});
-			return { success: 'autoApply', autoApplyResults: results };
+			return { success: 'autoApply', apiApply: result };
 		} catch (err) {
-			return fail(500, { error: err instanceof Error ? err.message : 'Auto-import failed' });
+			return fail(500, { error: err instanceof Error ? err.message : 'Apply via NRS API failed' });
 		}
 	}
 };

@@ -171,6 +171,23 @@ CRON_SECRET                 # AI trigger authentication
 
 Admins can enable/disable system modules via `/admin/settings`. Disabled modules are hidden from navigation and routes redirect to dashboard. Module state is stored in `appSettings` table as JSON under key `enabled_modules`.
 
+## Design System & UI Primitives
+
+Use the shared design system rather than hand-rolling raw Tailwind. This keeps UI elements and processes consistent across the 100+ pages.
+
+**Canonical CSS classes** (defined in `src/app.css`): buttons `.btn-primary | .btn-secondary | .btn-danger | .btn-ghost` (+ `.btn-sm | .btn-lg`); inputs `.input` (+ `.input-error`); `.label`; cards `.card` + `.card-header` + `.card-body`; status pills `.badge-primary | .badge-success | .badge-warning | .badge-danger | .badge-gray`; `.touch-target` (44px min). Color: the `primary` palette only — don't introduce `bg-blue-*`/`bg-indigo-*` for primary actions.
+
+**Shared formatters** (`$lib/utils`): `formatCurrency`, `formatDate`, `formatTime`, `formatDateTime`, `formatRelativeTime`. Don't reimplement `toFixed(2)` / `toLocaleDateString` inline.
+
+**Shared components** — prefer these over reinventing markup:
+- **Feedback:** `import { notify } from '$lib/notify'` → `notify.success(msg)` / `notify.error(msg)`. This is the canonical way to confirm an action or report an error. **Do not** use native `alert()` or one-off inline red/green `<div>` banners. `<ToastContainer>` is already mounted globally in `src/routes/+layout.svelte`.
+- **Destructive actions:** `ConfirmDialog.svelte` for any delete/irreversible action. **Do not** use native `confirm()`. Every destructive action must confirm.
+- **Status pills:** `StatusBadge.svelte` (`<StatusBadge status={x.status} />`) — auto-maps common statuses to `.badge-*`.
+- **Overlays/dialogs:** `Modal.svelte` (accessible: focus trap, Esc, backdrop, scroll lock). Don't hand-roll `fixed inset-0` backdrops.
+- **Empty states:** `EmptyState.svelte`. **Loading:** `Spinner.svelte` (inline) or `SkeletonLoader.svelte` (placeholder layouts).
+
+**Data/mutation pattern:** prefer SvelteKit `load` functions + `<form>` actions with `use:enhance` over client-side `fetch('/api/...')` in `onMount`/handlers. Never swallow errors silently — surface them via `notify.error`.
+
 ## Key Files to Understand First
 
 1. `src/lib/server/db/schema.ts` - Complete data model (93 tables)

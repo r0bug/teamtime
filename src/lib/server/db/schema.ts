@@ -387,6 +387,27 @@ export const twoFactorCodes = pgTable('two_factor_codes', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
+/**
+ * Single-use password-reset tokens for self-service recovery (vendor portal
+ * users sign in with a password and need a "text me a reset link" path). We
+ * store only the SHA-256 hash of the token — the raw token lives solely in the
+ * SMS/email link. Tokens expire and are marked `usedAt` on redemption.
+ */
+export const passwordResetTokens = pgTable('password_reset_tokens', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	tokenHash: text('token_hash').notNull().unique(),
+	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+	usedAt: timestamp('used_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	idxUser: index('idx_password_reset_tokens_user').on(table.userId)
+}));
+
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+
 // Locations table
 export const locations = pgTable('locations', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -3377,6 +3398,50 @@ export type VendorGroupMember = typeof vendorGroupMembers.$inferSelect;
 export type NewVendorGroupMember = typeof vendorGroupMembers.$inferInsert;
 export type PendingInventoryChange = typeof pendingInventoryChanges.$inferSelect;
 export type NewPendingInventoryChange = typeof pendingInventoryChanges.$inferInsert;
+
+/**
+ * Journal of NRS inventory write-API calls (invstock/save, …).
+ *
+ * Every auto-apply attempt — success or failure — is recorded here so staff
+ * have a durable audit trail inside TeamTime, independent of NRS. Failures
+ * leave the originating pendingInventoryChange in `pending` so the CSV/importer
+ * fallback can still pick it up; this table explains why. References use
+ * `set null`/no-cascade so the journal survives vendor or change deletion.
+ */
+export const nrsInventoryApiLog = pgTable('nrs_inventory_api_log', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	vendorId: uuid('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+	pendingChangeId: uuid('pending_change_id').references(() => pendingInventoryChanges.id, { onDelete: 'set null' }),
+	// Who triggered the call — the vendor user on auto-apply, or staff on a manual apply.
+	triggeredByUserId: uuid('triggered_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+
+	// Mirrors the change type that drove the call.
+	action: inventoryChangeTypeEnum('action').notNull(),
+	// NRS endpoint hit, e.g. 'invstock/save'.
+	endpoint: text('endpoint').notNull(),
+	partNumber: text('part_number'),
+	// NRS vendor id used for pass-through attribution at call time.
+	nrsVendorId: integer('nrs_vendor_id'),
+	// Resolved NRS item id (post-create lookup, or the update/delete target).
+	nrsPartId: integer('nrs_part_id'),
+
+	// Sanitized request body we sent (the API key is a header, never stored here).
+	requestPayload: jsonb('request_payload').$type<Record<string, unknown>>(),
+	// Raw JSON response from NRS (or the captured error shape).
+	responseBody: jsonb('response_body').$type<Record<string, unknown>>(),
+	httpStatus: integer('http_status'),
+	success: boolean('success').notNull(),
+	errorMessage: text('error_message'),
+
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	idxVendor: index('idx_nrs_inv_api_log_vendor').on(table.vendorId),
+	idxCreated: index('idx_nrs_inv_api_log_created').on(table.createdAt),
+	idxSuccess: index('idx_nrs_inv_api_log_success').on(table.success)
+}));
+
+export type NrsInventoryApiLog = typeof nrsInventoryApiLog.$inferSelect;
+export type NewNrsInventoryApiLog = typeof nrsInventoryApiLog.$inferInsert;
 
 // ============================================
 // VENDOR TAG TEMPLATES (Stage 3)

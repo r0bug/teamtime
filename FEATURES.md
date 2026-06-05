@@ -2954,7 +2954,7 @@ Cards: pending change count, link to sales, link to profile, plus a "Your booth"
 - **Section A — Items I've sold**: distinct `(partId, partNumber, partName)` from `salesTransactions` filtered by `vendorId = vendor.nrsVendorId`. Last sold date, units, last price. Each row has "Propose update" and "Remove" buttons.
 - **Section B — My pending changes**: rows from `pending_inventory_changes` for this vendor with status badges (`pending` / `applied` / `rejected` / `cancelled`). Pending rows have a Cancel button. Rejected rows show the reason; applied rows show NRS apply notes.
 - **Add new item** modal — collects `{ partNumber, partName, description, priceDollars, quantity }`. Server validates `partNumber.startsWith(vendor.inventoryCodePrefix)`.
-- All edits queue into `pending_inventory_changes` with `status='pending'` (NRS isn't written directly until we have a confirmed write API).
+- **New items auto-apply to NRS** on submit via the `invstock/save` API (attributed by `passThroughApVendorId = vendor.nrsVendorId`); the change flips to `applied`, or stays `pending` for the staff retry if the call fails. **Updates/deletes** still queue as `pending` for staff (NRS has no confirmed update endpoint; delete needs an externalCode/externalId mapping). See the [NRS Inventory Write API](#nrs-inventory-write-api--journal) section below.
 
 #### `/vendor/sales`
 
@@ -2985,8 +2985,8 @@ Vendor sees the applied/rejected status (and notes/reason) on their `/vendor/inv
   - `src/lib/server/services/agreement-template-service.ts` — versioning on edit
   - `src/lib/server/services/vendor-group-service.ts` — group CRUD
   - `src/lib/server/services/vendor-leaderboard-service.ts` — period resolution, aggregation, prior-period delta
-  - `src/lib/server/services/inventory-change-service.ts` — submit/cancel/markApplied/reject + listForReview/listForVendor
-  - `src/lib/server/services/nrs-api-client.ts` — extended with `getVendorSales(opts)` for per-vendor fetch
+  - `src/lib/server/services/inventory-change-service.ts` — submit/cancel/markApplied/reject + listForReview/listForVendor, plus `applyCreateViaApi`/`autoApplyPendingCreatesViaApi` (NRS write) and `checkVendorOwnsNrsItem` (ownership guard) + journal queries
+  - `src/lib/server/services/nrs-api-client.ts` — `getVendorSales(opts)` for per-vendor fetch, plus the inventory read/write methods (`listInvStock`, `getAllInvStockForVendor`, `getInvStock`, `saveInvStock`, `getInvCategories`)
 - Admin routes: `src/routes/(app)/admin/vendors/`, `src/routes/(app)/admin/vendor-agreements/templates/`, `src/routes/(app)/admin/vendor-groups/`
 - Vendor portal: `src/routes/(app)/vendor/`
 - API: `src/routes/api/vendors/`, `src/routes/api/agreement-templates/`
@@ -3086,14 +3086,38 @@ Admin/manager batch-create new vendor inventory items + print their NRS-format p
 - `src/routes/api/admin/bulk-tags/{generate,sheet,csv-zip}/+server.ts`
 - Schema additions: `user_extra_roles` table, `vendors.nrs_ar_customer_id` column
 
+### NRS Inventory Write API & Journal
+
+The legacy NRS-Importer CSV path (web-UI login + form-POST) has been **retired**. NRS shipped a real inventory API and TeamTime now writes to it directly.
+
+- **Client** (`src/lib/server/services/nrs-api-client.ts`): `listInvStock`, `getAllInvStockForVendor` (server-side `passThroughApVendorId` filter), `getInvStock`, `saveInvStock` (create), `getInvCategories`. Same `company: <NRS_API_KEY>` header auth as the sales client. Note: `invstock/getall` returns its array under the key `getall` (not `list`), and `invstock/save` is create-only and returns no id, so the new `invStockId` is resolved by re-querying the vendor's items.
+- **Auto-apply**: `applyCreateViaApi` (in `inventory-change-service.ts`) runs on vendor submit. On success the `pending_inventory_changes` row flips to `applied`; on failure it stays `pending` for the staff retry. Staff can bulk-retry all pending creates with `autoApplyPendingCreatesViaApi` (the "Apply pending creates to NRS" button on the change queue).
+- **Cross-vendor ownership guard**: `checkVendorOwnsNrsItem` verifies an item's NRS `passThroughVendorId` matches `vendor.nrsVendorId` before any update/delete is queued — a vendor can never act on another vendor's item, even with a spoofed `nrsPartId`.
+- **Journal**: every write is recorded to `nrs_inventory_api_log` (full request/response/error), viewable at `/admin/vendors/inventory-journal` (manager-gated, success/failure filter, expandable rows).
+- **Still gated on NRS**: whether `save` upserts an existing partNumber, and the `save`↔`delete` externalCode/externalId round-trip — until clarified, update/delete stay on the manual staff path.
+
+### Staff vendor-auth management
+
+On `/admin/vendors/[id]`, the Portal Access card now shows a consolidated auth snapshot (login email, active state, must-change-password, credentials-sent, **live lockout status**) plus actions:
+
+- **Link an existing user** — attach an existing user account (e.g. a staff member who is also a vendor) to the vendor record. Purely additive: sets `vendors.userId` + `portalEnabled` + the `vendor` extra-role without a new password or clobbering their staff identity (`linkExistingUserToVendor`). The picker disables users already linked to another vendor.
+- **Reset password**, **Unlock account** (clears an active `account_lockouts` entry via `unlockPortalAccount`), enable/invite/disable (unchanged; disable only deactivates *vendor-only* users, so staff keep their login).
+
+### Self-service password reset
+
+Vendor portal users can recover their own login:
+
+- `/forgot-password` — enter email; if it matches an active portal user, a single-use 30-minute reset link is **texted and emailed** (Twilio + SMTP). Enumeration-safe (always shows success, constant-ish delay).
+- `/reset-password?token=…` — validates the token and sets a new password, clears `must_change_password`, and invalidates existing sessions.
+- Tokens live in `password_reset_tokens` (SHA-256 hashed, single-use); logic in `src/lib/server/auth/password-reset.ts`. The login page's existing "Forgot your password?" link now resolves.
+
 ### Out of scope (deferred to Stage 2c)
 
-- Direct NRS write API integration (proposals are still applied manually by staff)
+- NRS update/delete via API (gated on NRS clarifying `save` upsert + `delete` externalCode/externalId mapping)
 - Vendor messaging integrated with TeamTime messaging (groups, threads, direct messages)
 - In-portal performance dashboard beyond the simple sales view
 - Public vendor self-signup flow
-- "Forgot password" self-service for vendors (admin can resend invitation as a workaround)
 
 ---
 
-*Last updated: May 2026*
+*Last updated: June 2026*

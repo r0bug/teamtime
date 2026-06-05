@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { notify } from '$lib/notify';
+	import Spinner from '$lib/components/Spinner.svelte';
 
 	let description = '';
 	let pickNotes = '';
 	let photos: Array<{ file: File; preview: string; uploading: boolean; uploaded?: { filePath: string; originalName: string; mimeType: string; sizeBytes: number } }> = [];
 	let submitting = false;
-	let error = '';
 
 	function handlePhotoSelect(event: Event) {
 		const input = event.target as HTMLInputElement;
@@ -56,7 +57,7 @@
 			console.error('Upload error:', e);
 			photos[index] = { ...photo, uploading: false };
 			photos = photos;
-			error = e instanceof Error ? e.message : 'Failed to upload photo';
+			notify.error(e instanceof Error ? e.message : 'Failed to upload photo');
 		}
 	}
 
@@ -71,16 +72,14 @@
 	}
 
 	async function handleSubmit() {
-		error = '';
-
 		// Validation
 		if (photos.length === 0) {
-			error = 'At least one photo is required';
+			notify.error('At least one photo is required');
 			return;
 		}
 
 		if (!description.trim()) {
-			error = 'Description is required';
+			notify.error('Description is required');
 			return;
 		}
 
@@ -93,7 +92,7 @@
 			// Check all photos uploaded successfully
 			const uploadedPhotos = photos.filter(p => p.uploaded).map(p => p.uploaded);
 			if (uploadedPhotos.length === 0) {
-				error = 'Failed to upload photos';
+				notify.error('Failed to upload photos');
 				submitting = false;
 				return;
 			}
@@ -120,7 +119,7 @@
 			goto(`/inventory/drops/${drop.id}`);
 		} catch (e) {
 			console.error('Submit error:', e);
-			error = e instanceof Error ? e.message : 'Failed to create inventory drop';
+			notify.error(e instanceof Error ? e.message : 'Failed to create inventory drop');
 			submitting = false;
 		}
 	}
@@ -161,12 +160,6 @@
 		<p class="text-gray-600 mt-1">Upload photos of items for AI identification</p>
 	</div>
 
-	{#if error}
-		<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-			{error}
-		</div>
-	{/if}
-
 	<form on:submit|preventDefault={handleSubmit} class="space-y-6">
 		<!-- Photos Section -->
 		<div class="card">
@@ -204,8 +197,8 @@
 								<img src={photo.preview} alt="Item photo" class="w-full h-full object-cover" />
 
 								{#if photo.uploading}
-									<div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-										<div class="animate-spin rounded-full h-8 w-8 border-2 border-white border-t-transparent"></div>
+									<div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center text-white">
+										<Spinner size="md" />
 									</div>
 								{:else if photo.uploaded}
 									<div class="absolute top-1 right-1 bg-green-500 text-white rounded-full p-1">
@@ -258,28 +251,28 @@
 				<h2 class="text-lg font-semibold">Details</h2>
 
 				<div>
-					<label for="description" class="block text-sm font-medium text-gray-700 mb-1">
+					<label for="description" class="label">
 						Description *
 					</label>
 					<textarea
 						id="description"
 						bind:value={description}
 						rows="3"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+						class="input"
 						placeholder="Describe what you're dropping off (e.g., 'Estate sale pickup - kitchen items, vintage glassware')"
 						required
 					></textarea>
 				</div>
 
 				<div>
-					<label for="pickNotes" class="block text-sm font-medium text-gray-700 mb-1">
+					<label for="pickNotes" class="label">
 						Pick Notes (Optional)
 					</label>
 					<textarea
 						id="pickNotes"
 						bind:value={pickNotes}
 						rows="2"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+						class="input"
 						placeholder="Any additional notes about the source, condition, or other details"
 					></textarea>
 				</div>
@@ -297,8 +290,8 @@
 				class="btn-primary flex-1"
 			>
 				{#if submitting}
-					<div class="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent mr-2"></div>
-					Creating Drop...
+					<Spinner size="sm" />
+					<span class="ml-2">Creating Drop...</span>
 				{:else}
 					Create Drop
 				{/if}

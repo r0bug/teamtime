@@ -65,8 +65,11 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - **Vendor performance leaderboard** at `/admin/vendors/leaderboard` — ranked by gross / vendor portion / retained, period selector, prior-period delta
 - **Onboarding queue** at `/admin/vendors/onboarding` — surfaces vendors missing prefix / group / portal decision; inline edits and "mark complete"
 - **Reporting groups** (many-to-many) for cross-vendor reporting
-- **Vendor portal** at `/vendor/*` — vendors log in with email + password on the `/login` page (which now shows an explicit Staff/Vendor picker), see their booth summary, sales (live NRS), and propose inventory create/update/delete changes (validated against their per-vendor inventory code prefix). Proposals queue into `pending_inventory_changes` for staff to apply to NRS
+- **Vendor portal** at `/vendor/*` — vendors log in with email + password on the `/login` page (which now shows an explicit Staff/Vendor picker), see their booth summary, sales (live NRS), and propose inventory create/update/delete changes (validated against their per-vendor inventory code prefix)
+- **NRS inventory write API** — vendor `create`s auto-apply straight to NRS via `invstock/save` on submit (attributed by `passThroughApVendorId`); update/delete queue in `pending_inventory_changes` for staff. Every write is recorded in `nrs_inventory_api_log` and viewable at `/admin/vendors/inventory-journal`. The legacy NRS-Importer CSV path has been retired. Cross-vendor safety: a vendor can only edit items whose NRS `passThroughVendorId` matches their `nrsVendorId`
 - **Vendor portal invitations** — admin sends temp credentials via email, SMS, or both from `/admin/vendors/onboarding`. The vendor signs in once and is forced to set their own password before reaching any portal page (`users.must_change_password` flag, gated by `(app)/vendor/+layout.server.ts`)
+- **Link an existing user to a vendor** — on `/admin/vendors/[id]`, admins can attach an existing user account (e.g. a staff member who is also a vendor) to a vendor record, granting portal access additively without a new password or clobbering their staff identity
+- **Self-service password reset** — `/forgot-password` texts and emails a single-use, 30-minute reset link (`password_reset_tokens`); `/reset-password` lets the vendor set a new password. Staff manage logins on `/admin/vendors/[id]`: reset password, unlock a locked-out account, and view live auth status
 - **Vendor sidebar + dashboard** — vendor users see a vendor-specific sidebar (Home / Inventory / Print Sheet / Leaderboard / Sales / Profile), a dashboard that shows both gross and vendor portion side by side (so pass-through vendors see real numbers), and a base-item check that warns when a catch-all SKU named after the vendor's prefix isn't yet on file
 - **NRS sync** — `Sync from NRS` on `/admin/vendors` overwrites TT contact fields (`contact_name/email/phone`, address) when NRS has values; admin should edit identity in NRS, not TT (NRS is source of truth). Inventory code prefix is backfill-only to protect legacy printed labels
 
@@ -270,7 +273,7 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-109 tables organized across domains:
+112 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries, break_entries
 - **Scheduling**: schedule_templates, schedule_template_shifts (referenced by `shifts.template_id` / `template_shift_id`)
@@ -281,10 +284,10 @@ All endpoints require authentication except static files. Role-based authorizati
 - **Messaging**: conversations, messages, message_photos, groups, group_members, thread_participants
 - **Gamification**: point_transactions, user_stats, achievements, user_achievements, leaderboard_snapshots, team_goals, shoutouts, award_types, demerits, clock_out_warnings, late_arrival_warnings
 - **Metrics & Analytics**: sales_snapshots, sales_transactions, vendor_employee_correlations, metric_definitions, metrics, metric_data_sources, metric_import_history, worker_pair_performance, worker_impact_metrics, staffing_level_metrics, day_of_week_metrics
-- **Vendor Management**: vendors, agreement_templates, vendor_agreements, vendor_groups, vendor_group_members, pending_inventory_changes
+- **Vendor Management**: vendors, agreement_templates, vendor_agreements, vendor_groups, vendor_group_members, pending_inventory_changes, nrs_inventory_api_log
 - **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes, ai_tool_config, ai_tool_keywords, ai_context_config, ai_context_keywords
 - **Shift Requests**: shift_requests, shift_request_responses
-- **Security**: login_attempts, account_lockouts
+- **Security**: login_attempts, account_lockouts, password_reset_tokens
 - **SMS**: sms_logs (delivery tracking, inbound replies, opt-out detection)
 - **Admin**: app_settings, audit_logs, info_posts, gamification_config
 

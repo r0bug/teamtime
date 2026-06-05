@@ -1,0 +1,2224 @@
+/
+/
+API Documentation - Yakima Networking LLC
+Yakima Networking LLC
+Home
+General Ledger
+Accts Payable
+Accts Receivable
+Inventory
+Payroll
+H.R.
+Admin
+My Account
+Support
+Log Out
+This website requires JavaScript to be enabled in your browser. Click Here for some directions .
+Authentication
+General
+/company
+/division/list
+Accounts Payable
+/vendor/list
+/vendor/getvendor
+/vendor/save
+/apinvoice/getinvoice
+/apinvoice/save
+/apinvoice/delete
+/apinvoicehist/list
+/apinvoicehist/getinvoice
+/apinvoicehist/setexternalinfo
+/apexpenseaccount/list
+/appaymenthist/get
+/appaymenthist/getpayment
+Accounts Receivable
+/arsalestaxtype/list
+/customer/list
+/customer/save
+/arcashreg/save
+/arinvoice/getinvoice
+/arinvoice/save
+/arinvoice/delete
+/arinvoicehist/list
+/arinvoicehist/getinvoice
+/arinvoicehist/setexternalinfo
+/arinvoicehistdetail/getall
+/arpaymenthist/get
+/arpaymenthist/getpayment
+/arcashreg/delete
+/arinvoice/getnextnumber
+General Ledger
+/glaccount/list
+/glpost/getnextnumber
+/glpost/save
+/glpost/delete
+Point of Sale
+/cashdrawer/list
+/posstore/list
+/poscashdrawer/list
+/poscashier/list
+/possales/getall
+Inventory
+/invstock/list
+/invstock/getall
+/invstock/get
+/invstock/save
+/invstock/delete
+/invcategory/list
+/invunitofmeasure/list
+Nursery
+/nurinventory/getall
+/nurinventory/simple
+/nurinventory/save
+/nurinventory/type/getall
+/nurvariety/getall
+/nurvariety/get
+/nurorder/getall
+/nurorder/get
+/nurorder/getdeleted
+/nurorderdetail/getall
+/nurorderdetail/get
+/nursize/getall
+/nursource/getall
+/nurboxpickup/scan
+/nurboxpickup/remove
+/nurboxpickup/complete
+Payroll
+/department/list
+/employee/list
+Job Cost
+/job/start
+/job/bidtypes
+/job/lookup
+/job/search
+/job/info
+/jccostcode/list
+/jccostsubcode/list
+Attachments
+/attachment/locations
+/attachment/list
+/attachment/generate
+/attachment/upload
+Utility Billing
+/client/save
+/client/billPdf
+/util/get
+/util/set
+Expense
+/expense/save
+Scanner
+/scanner/info
+/scanner/categories
+/scanner/form/setup
+/scanner/form/submit
+/scanner/attachment/categories
+/scanner/attachment/info
+/scanner/attachment/update
+/scanner/attachment/move
+/upload
+Devices
+/device/locations
+/device/list
+Display
+/display/show/url
+/display/sound/list
+API Errors
+Authentication
+Every request needs a Company HTTP header containing your API key. Find it under Admin -> Company Management . POST data goes as JSON in the request body. All responses are JSON.
+Basic request
+curl -X POST https://www.nrsaccounting.com/api/company \
+-H "Company: YOUR_API_KEY" \
+-H "Content-Type: application/json"
+With POST body
+curl -X POST https://www.nrsaccounting.com/api/customer/list \
+-H "Company: YOUR_API_KEY" \
+-H "Content-Type: application/json" \
+-d '{"customerId": 1}'
+/company
+https://www.nrsaccounting.com/api/company
+Returns basic company information.
+Example Response
+{
+"companyId": 1,
+"companyName": "Test Company"
+}
+/division/list
+https://www.nrsaccounting.com/api/division/list
+Returns all divisions.
+Example Response
+{
+"list": [
+{ "divisionId": 1, "name": "First Division" }
+]
+}
+/vendor/list
+https://www.nrsaccounting.com/api/vendor/list
+Returns all AP vendors. Lightweight — id and name only.
+Example Response
+{
+"list": [
+{ "vendorId": 1, "name": "ACME Supplies" }
+]
+}
+/vendor/getvendor
+https://www.nrsaccounting.com/api/vendor/getvendor
+Returns full detail for a single vendor including address, contact info, and a contacts array. Also returns vendorCode if the company has vendor codes enabled.
+Required
+vendorId
+Example Request
+{
+"vendorId": 1
+}
+Example Response
+{
+"getvendor": {
+"vendorId": 1,
+"companyId": 1,
+"vendorCode": "ACM",
+"address": "123 Main St",
+"address2": "",
+"address3": "",
+"city": "Spokane",
+"state": "WA",
+"zipCode": "99201",
+"country": "United States",
+"countryCode": "US",
+"countryCode3": "USA",
+"contact": "Jane Smith",
+"email": "jane@acme.com",
+"phone": "509-555-1234",
+"fax": "",
+"fedid": "12-3456789",
+"require1099": false,
+"nameFor1099": "",
+"ourAccountNumber": "ACCT-001",
+"minimumOrderValue": 50.00,
+"notes": "",
+"vendorNumber": "001",
+"portalAccess": false,
+"name": ["Jane Smith", "Bob Jones"],
+"title": ["Owner", "Manager"],
+"phone": ["509-555-1234", "509-555-5678"],
+"fax": ["", ""],
+"email": ["jane@acme.com", "bob@acme.com"],
+"notes": ["Primary contact", ""]
+}
+}
+/vendor/save
+https://www.nrsaccounting.com/api/vendor/save
+Creates or updates a vendor. Returns the vendorId of the saved record.
+Required
+name
+Optional
+address1
+address2
+address3
+city
+state
+zipCode
+country
+contact
+email
+phone
+fax
+fedid
+require1099
+nameFor1099
+ourAccountNumber
+minimumOrderValue
+notes
+vendorNumber
+Example Request
+{
+"name": "ACME Supplies",
+"address1": "123 Main St",
+"city": "Spokane",
+"state": "WA",
+"zipCode": "99201",
+"email": "jane@acme.com",
+"phone": "509-555-1234"
+}
+Example Response
+{
+"saved": 1
+}
+/apinvoice/getinvoice
+https://www.nrsaccounting.com/api/apinvoice/getinvoice
+Returns an AP invoice header (batch or posted history) matched by externalCode + externalId. Returns header fields only — no line items.
+Required
+externalCode
+externalId
+Example Request
+{
+"externalCode": "MySystem",
+"externalId": "INV-001"
+}
+Example Response
+{
+"getinvoice": {
+"apVendorId": 1,
+"name": "ACME Supplies",
+"address": "123 Main St",
+"address2": "",
+"city": "Spokane",
+"state": "WA",
+"zipCode": "99201",
+"sysCountry": "United States",
+"invoiceDate": "06/01/2024",
+"periodDate": "06/01/2024",
+"dueDate": "07/01/2024",
+"poNumber": "",
+"discountDate": "",
+"discountAmount": 0,
+"shipVia": "",
+"term": 1,
+"fob": "",
+"dateOrdered": "",
+"dateWanted": "",
+"vendorPO": "",
+"invoiceTotal": 500.00,
+"vendorInvoice": "VI-123",
+"description": "June supplies",
+"expectedDeliveryDate": "",
+"glAccountTax": "",
+"glAccountTaxDescription": "",
+"taxAmount": 0,
+"glAccountShipping": "",
+"glAccountShippingDescription": "",
+"shippingAmount": 0,
+"glAccountMisc1": "",
+"glAccountMisc1Description": "",
+"misc1Amount": 0,
+"glAccountMisc2": "",
+"glAccountMisc2Description": "",
+"misc2Amount": 0,
+"latestChangeDateTime": "2024-06-01 10:00:00",
+"totalPayments": 500.00,
+"totalDiscounts": 0,
+"totalPaymentsAndDiscounts": 500.00,
+"checkNumber": "1042",
+"isPaid": true
+}
+}
+/apinvoice/save
+https://www.nrsaccounting.com/api/apinvoice/save
+Creates a new AP invoice batch. Matches vendor by apVendorId or by name. Each detail line requires either glAccount or invStockId.
+Required
+name: vendor name (looked up by name if apVendorId not given)
+externalCode
+externalId
+invoiceDate
+details
+Optional
+apVendorId: vendor ID (preferred over name lookup)
+invoiceNumber: vendor's invoice number
+note: invoice description/memo
+dueDate
+divisionId
+jcJobId
+taxAmount, taxAccountId
+shippingAmount, shippingAccountId
+details[].glAccount (or invStockId)
+details[].note: line description
+details[].quantity (default 1)
+details[].unitCost or totalCost
+details[].vendorPart: vendor part number
+details[].jcJobId
+Example Request
+{
+"externalCode": "MySystem",
+"externalId": "INV-001",
+"apVendorId": 1,
+"invoiceDate": "06/01/2024",
+"invoiceNumber": "VI-123",
+"note": "June supplies",
+"taxAmount": 0,
+"shippingAmount": 0,
+"details": [
+{
+"glAccount": "1-500-00",
+"note": "Supplies",
+"quantity": 2,
+"totalCost": 500.00
+}
+]
+}
+Example Response
+{
+"saved": true
+}
+/apinvoice/delete
+https://www.nrsaccounting.com/api/apinvoice/delete
+Deletes an unposted AP invoice by externalCode + externalId. Cannot delete posted invoices.
+Required
+externalCode
+externalId
+Example Request
+{
+"externalCode": "MySystem",
+"externalId": "INV-001"
+}
+Example Response
+{
+"deleted": true
+}
+/apinvoicehist/list
+https://www.nrsaccounting.com/api/apinvoicehist/list
+Returns a paginated list of posted AP invoice history records. Use sinceDateTime for incremental sync.
+Optional
+sinceDateTime: return records changed after this datetime
+vendorId: filter to a single vendor
+page: page number (default 1)
+Example Request
+{
+"sinceDateTime": "2024-01-01 00:00:00"
+}
+Example Response
+{
+"list": [
+{
+"apInvHistHeaderId": 100,
+"vendorId": 1,
+"vendorName": "ACME Supplies",
+"invoiceDate": "06/01/2024",
+"dueDate": "07/01/2024",
+"invoiceTotal": 500.00,
+"vendorInvoice": "VI-123",
+"totalPayments": 500.00,
+"isPaid": true,
+"checkNumber": "1042",
+"externalCode": "MySystem",
+"externalId": "INV-001",
+"latestChangeDateTime": "2024-06-01 10:00:00"
+}
+],
+"nextPage": 2
+}
+/apinvoicehist/getinvoice
+https://www.nrsaccounting.com/api/apinvoicehist/getinvoice
+Returns full header detail for a single posted AP invoice history record. Returns header fields only — no line items.
+Required
+externalCode
+externalId
+Example Request
+{
+"externalCode": "MySystem",
+"externalId": "INV-001"
+}
+Example Response
+{
+"getinvoice": {
+"apVendorId": 1,
+"name": "ACME Supplies",
+"invoiceDate": "06/01/2024",
+"periodDate": "06/01/2024",
+"dueDate": "07/01/2024",
+"invoiceTotal": 500.00,
+"vendorInvoice": "VI-123",
+"description": "June supplies",
+"taxAmount": 0,
+"shippingAmount": 0,
+"totalPayments": 500.00,
+"totalDiscounts": 0,
+"totalPaymentsAndDiscounts": 500.00,
+"checkNumber": "1042",
+"isPaid": true,
+"latestChangeDateTime": "2024-06-01 10:00:00"
+}
+}
+/apinvoicehist/setexternalinfo
+https://www.nrsaccounting.com/api/apinvoicehist/setexternalinfo
+Updates the externalCode and externalId on a posted AP invoice history record.
+Required
+apInvHistHeaderId
+externalCode
+externalId
+Example Request
+{
+"apInvHistHeaderId": 100,
+"externalCode": "MySystem",
+"externalId": "INV-001"
+}
+Example Response
+{
+"saved": true
+}
+/apexpenseaccount/list
+https://www.nrsaccounting.com/api/apexpenseaccount/list
+Returns all AP expense accounts. Used to populate expense category selection in mobile expense submission.
+Example Response
+{
+"expenseAccounts": [
+{
+"apExpenseAccountId": 1,
+"accountId": 10,
+"glAccountId": 5,
+"name": "Travel"
+}
+]
+}
+/appaymenthist/get
+https://www.nrsaccounting.com/api/appaymenthist/get
+Returns all payment history records for a posted AP invoice. Each entry is one payment application detail.
+Required
+invoiceId: apInvHistHeaderId of the posted invoice
+Example Request
+{
+"invoiceId": 100
+}
+Example Response
+{
+"get": [
+{
+"companyId": 1,
+"paymentId": 200,
+"headerId": 50,
+"paymentMethod": "Check",
+"checkNumber": "1042",
+"description": "Payment for INV-001",
+"description1": "",
+"description2": "",
+"name": "ACME Supplies",
+"address": "123 Main St",
+"city": "Spokane",
+"state": "WA",
+"zipCode": "99201",
+"countryName": "United States",
+"countryCode": "US",
+"countryCode2": "US",
+"countryCode3": "USA",
+"paymentDate": "06/15/2024",
+"paymentAmount": 500.00,
+"discountAmount": 0,
+"void": false,
+"createDateTime": "2024-06-15 10:00:00",
+"latestChangeDateTime": "2024-06-15 10:00:00"
+}
+]
+}
+/appaymenthist/getpayment
+https://www.nrsaccounting.com/api/appaymenthist/getpayment
+Returns a single AP payment history detail record by its paymentId.
+Required
+paymentId: apPaymentHistDetailId
+Example Request
+{
+"paymentId": 200
+}
+Example Response
+{
+"getpayment": {
+"companyId": 1,
+"paymentId": 200,
+"checkNumber": "1042",
+"description": "Payment for INV-001",
+"description1": "",
+"description2": "",
+"name": "ACME Supplies",
+"address": "123 Main St",
+"city": "Spokane",
+"state": "WA",
+"zipCode": "99201",
+"countryName": "United States",
+"countryCode": "US",
+"paymentDate": "06/15/2024",
+"paymentAmount": 500.00,
+"discountAmount": 0,
+"void": false,
+"createDateTime": "2024-06-15 10:00:00",
+"latestChangeDateTime": "2024-06-15 10:00:00"
+}
+}
+/arsalestaxtype/list
+https://www.nrsaccounting.com/api/arsalestaxtype/list
+Returns all AR sales tax types.
+Example Response
+{
+"list": [
+{ "arSalesTaxTypeId": 1, "name": "WA State Tax" }
+]
+}
+/customer/list
+https://www.nrsaccounting.com/api/customer/list
+Returns all customers with balance and credit information.
+Example Response
+{
+"list": [
+{
+"customerId": 1,
+"name": "Tester McTesterson",
+"terms": "Net 30",
+"creditLimit": 1000.00,
+"creditHold": false,
+"balance": 500.00
+}
+]
+}
+/customer/save
+https://www.nrsaccounting.com/api/customer/save
+Creates or updates a customer. Returns the customerId of the saved record.
+Required
+name
+Optional
+customerId: include to update an existing customer
+address1
+address2
+address3
+city
+state
+zipCode
+country
+email
+phoneNumber
+fax
+company: business/company name
+terms: payment terms (e.g. Net 30)
+creditLimit
+internalReference: your system's reference ID
+divisionId
+Example Request
+{
+"name": "Tester McTesterson",
+"company": "Tester Inc.",
+"address1": "456 Elm St",
+"city": "Yakima",
+"state": "WA",
+"zipCode": "98901",
+"email": "tester@example.com",
+"creditLimit": 5000.00,
+"internalReference": "EXT-CUST-42"
+}
+Example Response
+{
+"saved": 42
+}
+/arcashreg/save
+https://www.nrsaccounting.com/api/arcashreg/save
+Creates an AR cash receipt (point-of-sale sale). Each detail line requires glAccount. Use invStock (ID or part number) to link to an inventory item.
+Required
+name: customer name or lookup key
+externalCode
+externalId
+invoiceDate
+details
+Optional
+arCustomerId: customer ID (preferred over name lookup)
+divisionId
+note: invoice description
+taxAmount, glAccountIdTax
+shippingAmount
+details[].glAccount
+details[].invStock: invStockId or part number to link inventory item
+details[].description
+details[].quantityOrdered (default 1)
+details[].price: unit price
+details[].totalPrice
+details[].arSalesTaxTypeId
+details[].hideFromInvoice: true/false
+Example Request
+{
+"arCustomerId": 1,
+"externalCode": "POS",
+"externalId": "SALE-001",
+"invoiceDate": "06/01/2024",
+"details": [
+{
+"glAccount": "4-100-00",
+"invStock": "WGT-001",
+"description": "Widget A",
+"quantityOrdered": 2,
+"price": 12.50,
+"totalPrice": 25.00
+}
+]
+}
+Example Response
+{
+"saved": true
+}
+/arinvoice/getinvoice
+https://www.nrsaccounting.com/api/arinvoice/getinvoice
+Returns an AR invoice header (batch or posted history) matched by externalCode + externalId. Returns header fields only — no line items.
+Required
+externalCode
+externalId
+Example Request
+{
+"externalCode": "MySystem",
+"externalId": "INV-2024-001"
+}
+Example Response
+{
+"getinvoice": {
+"invoiceId": 200,
+"invoiceNumber": "2024-001",
+"soNumber": "",
+"billToName": "Tester McTesterson",
+"company": "Tester Inc.",
+"address1": "456 Elm St",
+"city": "Yakima",
+"state": "WA",
+"zipCode": "98901",
+"sysCountry": "United States",
+"shipName": "",
+"shipAddress1": "",
+"shipCity": "",
+"shipState": "",
+"shipZipCode": "",
+"invoiceDate": "06/01/2024",
+"periodDate": "06/01/2024",
+"dueDate": "07/01/2024",
+"discountAvailableDate": "",
+"discountAvailableAmount": 0,
+"shipVia": "",
+"shipDate": "",
+"trackingNumber": "",
+"internalReference": "EXT-CUST-42",
+"term": "Net 30",
+"customerPO": "",
+"invoiceTotal": 250.00,
+"lineItemTotal": 250.00,
+"taxableTotal": 250.00,
+"nonTaxableTotal": 0,
+"taxRate": 0.088,
+"taxAmount": 22.00,
+"shippingAmount": 0,
+"misc1Amount": 0,
+"misc2Amount": 0,
+"retainageAmount": 0,
+"invoiceType": "Invoice",
+"description": "Services",
+"locationCode": "",
+"jobRelease": 0,
+"latestChangeDateTime": "2024-06-01 10:00:00"
+}
+}
+/arinvoice/save
+https://www.nrsaccounting.com/api/arinvoice/save
+Creates a new AR invoice batch. Matches customer by arCustomerId or by name. Each detail line requires glAccount.
+Required
+name: customer name (or arCustomerId)
+externalCode
+externalId
+invoiceDate
+details
+Optional
+arCustomerId: customer ID (preferred over name lookup)
+divisionId
+invoiceDate
+dueDate
+internalReference
+note: invoice description
+taxAmount, glAccountIdTax
+shippingAmount
+details[].glAccount
+details[].invStock: invStockId or part number
+details[].description
+details[].quantityOrdered (default 1)
+details[].price: unit price
+details[].totalPrice
+details[].arSalesTaxTypeId
+details[].hideFromInvoice: true/false
+Example Request
+{
+"arCustomerId": 1,
+"externalCode": "MySystem",
+"externalId": "INV-2024-001",
+"invoiceDate": "06/01/2024",
+"note": "Professional services",
+"details": [
+{
+"glAccount": "4-100-00",
+"description": "Consulting",
+"quantityOrdered": 1,
+"price": 250.00,
+"totalPrice": 250.00
+}
+]
+}
+Example Response
+{
+"saved": true
+}
+/arinvoice/delete
+https://www.nrsaccounting.com/api/arinvoice/delete
+Deletes an unposted AR invoice by externalCode + externalId. Cannot delete posted invoices.
+Required
+externalCode
+externalId
+Example Request
+{
+"externalCode": "MySystem",
+"externalId": "INV-2024-001"
+}
+Example Response
+{
+"deleted": true
+}
+/arinvoicehist/list
+https://www.nrsaccounting.com/api/arinvoicehist/list
+Returns a paginated list of posted AR invoice history records. Use sinceDateTime for incremental sync.
+Optional
+sinceDateTime: return records changed after this datetime
+customerId: filter to a single customer
+page: page number (default 1)
+Example Request
+{
+"sinceDateTime": "2024-01-01 00:00:00"
+}
+Example Response
+{
+"list": [
+{
+"arInvHistHeaderId": 200,
+"customerId": 1,
+"customerName": "Tester McTesterson",
+"invoiceNumber": "2024-001",
+"invoiceDate": "06/01/2024",
+"dueDate": "07/01/2024",
+"invoiceTotal": 250.00,
+"taxAmount": 22.00,
+"externalCode": "MySystem",
+"externalId": "INV-2024-001",
+"latestChangeDateTime": "2024-06-01 10:00:00"
+}
+],
+"nextPage": 2
+}
+/arinvoicehist/getinvoice
+https://www.nrsaccounting.com/api/arinvoicehist/getinvoice
+Returns full header detail for a single posted AR invoice history record. Returns header fields only — no line items.
+Required
+externalCode
+externalId
+Example Request
+{
+"externalCode": "MySystem",
+"externalId": "INV-2024-001"
+}
+Example Response
+{
+"getinvoice": {
+"invoiceId": 200,
+"invoiceNumber": "2024-001",
+"billToName": "Tester McTesterson",
+"company": "Tester Inc.",
+"address1": "456 Elm St",
+"city": "Yakima",
+"state": "WA",
+"zipCode": "98901",
+"invoiceDate": "06/01/2024",
+"periodDate": "06/01/2024",
+"dueDate": "07/01/2024",
+"invoiceTotal": 250.00,
+"lineItemTotal": 250.00,
+"taxAmount": 22.00,
+"shippingAmount": 0,
+"invoiceType": "Invoice",
+"description": "Professional services",
+"latestChangeDateTime": "2024-06-01 10:00:00"
+}
+}
+/arinvoicehist/setexternalinfo
+https://www.nrsaccounting.com/api/arinvoicehist/setexternalinfo
+Updates the externalCode and externalId on a posted AR invoice history record.
+Required
+arInvHistHeaderId
+externalCode
+externalId
+Example Request
+{
+"arInvHistHeaderId": 200,
+"externalCode": "MySystem",
+"externalId": "INV-2024-001"
+}
+Example Response
+{
+"saved": true
+}
+/arinvoicehistdetail/getall
+https://www.nrsaccounting.com/api/arinvoicehistdetail/getall
+Returns paginated posted AR invoice detail records — one row per line item. Same rich structure as possales/getall but for posted invoices. Supports incremental sync.
+Optional
+sinceDateTime: return records changed after this datetime
+arInvHistHeaderId: filter to a single invoice
+customerId: filter to a single customer
+page: page number (default 1)
+pageSize: max 2000 (default 2000)
+Example Request
+{
+"sinceDateTime": "2024-01-01 00:00:00",
+"page": 1
+}
+Example Response
+{
+"list": [
+{
+"arInvHistHeaderId": 200,
+"arInvHistDetailId": 500,
+"posted": true,
+"source": "Invoice",
+"invoiceDate": "2024-06-01",
+"invoiceMonth": 6,
+"invoiceMonthName": "June",
+"invoiceQuarter": 2,
+"invoiceYear": 2024,
+"periodDate": "2024-06-01",
+"customerId": 1,
+"customerName": "Tester McTesterson",
+"companyName": "Tester Inc.",
+"customerBillingAddress1": "456 Elm St",
+"customerBillingCity": "Yakima",
+"customerBillingState": "WA",
+"customerBillingZipCode": "98901",
+"vendorId": 0,
+"vendorName": null,
+"jobId": 0,
+"jobNumber": null,
+"divisionId": 1,
+"divisionName": "Main",
+"paidStatus": "Paid",
+"partId": 1,
+"partNumber": "WGT-001",
+"partName": "Widget A",
+"partDescription": "A great widget",
+"partType": "Goods",
+"itemDescription": "Consulting",
+"quantity": 1,
+"price": 250.00,
+"totalPrice": 250.00,
+"tax": 22.00,
+"shipping": 0.00,
+"lineItemTotalPrice": 272.00,
+"originalUnitPrice": 250.00,
+"originalTotalPrice": 250.00,
+"discountPercent": null,
+"discountAmount": 0.00,
+"couponCode": null,
+"discountPercentApplied": false,
+"discountAmountApplied": false,
+"couponCodeApplied": false,
+"salesTaxDescription": "WA State Tax",
+"taxableNonTaxable": "Taxable",
+"createDateTime": "2024-06-01 10:00:00",
+"latestChangeDateTime": "2024-06-01 10:00:00"
+}
+],
+"nextPage": 2
+}
+/arpaymenthist/get
+https://www.nrsaccounting.com/api/arpaymenthist/get
+Returns all payment history records applied to a posted AR invoice.
+Required
+invoiceId: arInvHistHeaderId of the posted invoice
+Example Request
+{
+"invoiceId": 200
+}
+Example Response
+{
+"get": [
+{
+"companyId": 1,
+"paymentId": 300,
+"checkNumber": "CHK-001",
+"paymentMethod": "Check",
+"note": "Payment received",
+"name": "Tester McTesterson",
+"address": "456 Elm St",
+"city": "Yakima",
+"state": "WA",
+"zipCode": "98901",
+"countryName": "United States",
+"countryCode": "US",
+"countryCode2": "US",
+"countryCode3": "USA",
+"paymentDate": "06/20/2024",
+"paymentAmount": 250.00,
+"discountAmount": 0,
+"createDateTime": "2024-06-20 14:00:00",
+"latestChangeDateTime": "2024-06-20 14:00:00"
+}
+]
+}
+/arpaymenthist/getpayment
+https://www.nrsaccounting.com/api/arpaymenthist/getpayment
+Returns a single AR payment history detail record by its paymentId.
+Required
+paymentId: arPaymentHistDetailId
+Example Request
+{
+"paymentId": 300
+}
+Example Response
+{
+"getpayment": {
+"companyId": 1,
+"paymentId": 300,
+"checkNumber": "CHK-001",
+"paymentMethod": "Check",
+"note": "Payment received",
+"name": "Tester McTesterson",
+"address": "456 Elm St",
+"city": "Yakima",
+"state": "WA",
+"zipCode": "98901",
+"countryName": "United States",
+"paymentDate": "06/20/2024",
+"paymentAmount": 250.00,
+"discountAmount": 0,
+"createDateTime": "2024-06-20 14:00:00",
+"latestChangeDateTime": "2024-06-20 14:00:00"
+}
+}
+/arcashreg/delete
+https://www.nrsaccounting.com/api/arcashreg/delete
+Deletes an AR cash receipt (sales receipt) by externalCode + externalId.
+Required
+externalCode
+externalId
+Example Request
+{
+"externalCode": "POS",
+"externalId": "SALE-001"
+}
+Example Response
+{
+"deleted": true
+}
+/arinvoice/getnextnumber
+https://www.nrsaccounting.com/api/arinvoice/getnextnumber
+Reserves and returns the next AR invoice number. Increments the company's invoice number sequence.
+Optional
+divisionId: use division-specific sequence if configured
+Example Request
+{
+"divisionId": 1
+}
+Example Response
+{
+"getnextnumber": "2024-0042"
+}
+/glaccount/list
+https://www.nrsaccounting.com/api/glaccount/list
+Returns all GL accounts.
+Example Response
+{
+"list": [
+{
+"glAccountId": 1,
+"accountNumber": "1-100-00",
+"description": "Cash - Checking"
+}
+]
+}
+/glpost/getnextnumber
+https://www.nrsaccounting.com/api/glpost/getnextnumber
+Returns the next available GL transaction number.
+Example Response
+{
+"getnextnumber": "2024-0042"
+}
+/glpost/save
+https://www.nrsaccounting.com/api/glpost/save
+Creates or updates a GL journal entry batch.
+Required
+transactionNumber
+transactionDate
+entries
+Optional
+description
+externalCode
+externalId
+Example Request
+{
+"transactionNumber": "2024-0042",
+"transactionDate": "06/01/2024",
+"description": "June adjustment",
+"entries": [
+{ "glAccount": "1-100-00", "debit": 500.00, "credit": 0, "description": "Cash in" },
+{ "glAccount": "4-100-00", "debit": 0, "credit": 500.00, "description": "Revenue" }
+]
+}
+Example Response
+{
+"saved": true
+}
+/glpost/delete
+https://www.nrsaccounting.com/api/glpost/delete
+Deletes an unposted GL batch by transactionNumber.
+Required
+transactionNumber
+Example Request
+{
+"transactionNumber": "2024-0042"
+}
+Example Response
+{
+"deleted": true
+}
+/cashdrawer/list
+https://www.nrsaccounting.com/api/cashdrawer/list
+Returns available cash drawers for the current company. If only one store and drawer exist, returns that single entry directly. Used by non-POS modules (e.g. Checkbook) to select a register.
+Example Response
+{
+"list": [
+{
+"storeId": 1,
+"posStoreId": 1,
+"drawerId": 2,
+"arCashRegDrawerId": 2,
+"description": "Main Store / Register 1"
+}
+]
+}
+/posstore/list
+https://www.nrsaccounting.com/api/posstore/list
+Returns all POS stores.
+Example Response
+{
+"list": [
+{
+"storeId": 1,
+"name": "Main Store",
+"location": "Front",
+"address1": "123 Main St",
+"city": "Spokane",
+"state": "WA",
+"taxCode": "WA",
+"taxRate": 0.088
+}
+]
+}
+/poscashdrawer/list
+https://www.nrsaccounting.com/api/poscashdrawer/list
+Returns all cash drawers for a given store.
+Required
+storeId
+Example Request
+{
+"storeId": 1
+}
+Example Response
+{
+"list": [
+{ "cashDrawerId": 1, "name": "Register 1", "storeId": 1 }
+]
+}
+/poscashier/list
+https://www.nrsaccounting.com/api/poscashier/list
+Returns all cashiers for a given store.
+Required
+storeId
+Example Request
+{
+"storeId": 1
+}
+Example Response
+{
+"list": [
+{ "cashierId": 1, "name": "Jane Smith", "storeId": 1 }
+]
+}
+/possales/getall
+https://www.nrsaccounting.com/api/possales/getall
+Returns POS sales detail records — one row per line item. Supports incremental sync and rich filtering. Includes discount, pass-through vendor, and remittance fields.
+Optional
+storeId
+cashDrawerId: arCashRegDrawerId
+cashierId: posCashierId
+customerId: arCustomerId
+billingCustomerId
+vendorId: apVendorId
+divisionId
+invoiceDate: exact date filter
+startInvoiceDate: start of date range
+sinceDateTime: records changed after this datetime (for sync)
+sinceDateTimeOrder: order records changed after this datetime
+includeUnposted: true to include unposted sales
+page: page number (default 1)
+pageSize: max 2000 (default 2000)
+Example Request
+{
+"storeId": 1,
+"sinceDateTime": "2024-06-01 00:00:00",
+"page": 1
+}
+Example Response
+{
+"list": [
+{
+"arCashRegId": 1001,
+"arCashRegDetailId": 5001,
+"posted": true,
+"storeId": 1,
+"storeName": "Main Store",
+"userName": "Jane Smith",
+"invoiceDate": "2024-06-01",
+"invoiceMonth": 6,
+"invoiceMonthName": "June",
+"invoiceQuarter": 2,
+"invoiceQuarterName": "Quarter 2",
+"invoiceYear": 2024,
+"periodDate": "2024-06-01",
+"customerId": 1,
+"customerName": "Tester McTesterson",
+"companyName": "Tester Inc.",
+"customerBillingAddress1": "456 Elm St",
+"customerBillingCity": "Yakima",
+"customerBillingState": "WA",
+"customerBillingZipCode": "98901",
+"customerEmailAddress": "tester@example.com",
+"customerPhoneNumber": "509-555-9999",
+"vendorId": 0,
+"vendorName": null,
+"jobId": 0,
+"jobNumber": null,
+"jobName": null,
+"divisionId": 1,
+"divisionName": "Main",
+"partId": 1,
+"partNumber": "WGT-001",
+"partName": "Widget A",
+"partDescription": "A great widget",
+"partType": "Goods",
+"itemDescription": "Widget A",
+"quantity": 2.0,
+"price": 12.50,
+"totalPrice": 25.00,
+"tax": 2.20,
+"shipping": 0.00,
+"lineItemTotalPrice": 27.20,
+"originalUnitPrice": 12.50,
+"originalTotalPrice": 25.00,
+"discountPercent": null,
+"discountAmount": 0.00,
+"couponCode": null,
+"discountPercentApplied": false,
+"discountAmountApplied": false,
+"couponCodeApplied": false,
+"salesTaxDescription": "WA State Tax",
+"taxableNonTaxable": "Taxable",
+"vendorPortionOfTotalPrice": 0.00,
+"retainedAmountFromVendor": 25.00,
+"existingPaymentsToVendor": 0.00,
+"totalRemittanceDueVendor": 0.00,
+"createDateTime": "2024-06-01 10:32:00",
+"latestChangeDateTime": "2024-06-01 10:32:00"
+}
+],
+"nextPage": 2
+}
+/invstock/list
+https://www.nrsaccounting.com/api/invstock/list
+Returns a simplified list of all active inventory stock items. Lightweight — no cost or quantity data.
+Example Response
+{
+"list": [
+{
+"invStockId": 1,
+"displayName": "Widget A",
+"partNumber": "WGT-001",
+"partSort": "WGT-001",
+"name": "Widget A",
+"description": "A great widget"
+}
+]
+}
+/invstock/getall
+https://www.nrsaccounting.com/api/invstock/getall
+Returns paginated inventory stock with full detail. Supports incremental sync via sinceDateTime. Pagination via nextPage / noMorePages.
+Optional
+sinceDateTime: return only records changed after this datetime (ISO format)
+passThroughApVendorId: filter to pass-through items for this vendor ID
+active: true to return only active items, false for inactive only
+page: page number (default 1)
+pageSize: results per page (default 2000, max 2000)
+Example Request
+{
+"sinceDateTime": "2024-01-01 00:00:00",
+"active": true,
+"page": 1
+}
+Example Response
+{
+"getall": [
+{
+"invStockId": 1,
+"displayName": "Widget A",
+"partNumber": "WGT-001",
+"partSort": "WGT-001",
+"name": "Widget A",
+"description": "A great widget",
+"invType": "Goods",
+"classification": "",
+"jcCostCode": "",
+"jcCostSubCode": "",
+"active": true,
+"arSalesTaxType": "WA State Tax",
+"nonTaxable": false,
+"quantityOnHand": 50,
+"valueOnHand": 625.00,
+"currentCost": 12.50,
+"lastCost": 11.00,
+"totalCost": 625.00,
+"retailPrice": 24.99,
+"minQuantity": 5,
+"maxQuantity": 100,
+"allocated": 2,
+"invWarehouse": "Main",
+"printTag": false,
+"quantityOnOrder": 10,
+"valueOnOrder": 125.00,
+"notes": "",
+"leadDays": 7,
+"leadDaysAverage": 6,
+"leadDaysLast": 5,
+"lastOrderDate": "2024-05-01",
+"lastCostDate": "2024-05-01",
+"glAccountIdBilling": "4-100-00",
+"glAccountIdBillingNonTaxable": "4-110-00",
+"glAccountIdReceiving": "1-200-00",
+"invCategory": "Hardware",
+"averageCost": 12.00,
+"passThroughVendorName": "",
+"latestChangeDateTime": "2024-06-01 10:30:00"
+}
+],
+"nextPage": 2
+}
+/invstock/get
+https://www.nrsaccounting.com/api/invstock/get
+Returns full detail for a single inventory stock item. Accepts either invStockId or stockId.
+Required
+invStockId (or stockId)
+Example Request
+{
+"invStockId": 1
+}
+Example Response
+{
+"get": {
+"invStockId": 1,
+"partNumber": "WGT-001",
+"partSort": "WGT-001",
+"name": "Widget A",
+"description": "A great widget",
+"invType": "Goods",
+"classification": "",
+"jcCostCode": "",
+"jcCostSubCode": "",
+"active": true,
+"arSalesTaxType": "WA State Tax",
+"nonTaxable": false,
+"quantityOnHand": 50,
+"valueOnHand": 625.00,
+"currentCost": 12.50,
+"lastCost": 11.00,
+"totalCost": 625.00,
+"retailPrice": 24.99,
+"minQuantity": 5,
+"maxQuantity": 100,
+"allocated": 2,
+"invWarehouse": "Main",
+"printTag": false,
+"quantityOnOrder": 10,
+"valueOnOrder": 125.00,
+"notes": "",
+"leadDays": 7,
+"leadDaysAverage": 6,
+"leadDaysLast": 5,
+"lastOrderDate": "2024-05-01",
+"lastCostDate": "2024-05-01",
+"glAccountIdBilling": "4-100-00",
+"glAccountIdBillingNonTaxable": "4-110-00",
+"glAccountIdReceiving": "1-200-00",
+"invCategory": "Hardware",
+"averageCost": 12.00,
+"passThroughVendorName": ""
+}
+}
+/invstock/save
+https://www.nrsaccounting.com/api/invstock/save
+Creates a new inventory stock item. partNumber is auto-generated from the company's next-number sequence if not supplied (and one is configured). GL accounts and sales tax type fall back to company defaults if omitted. Category and unit of measure can be resolved by ID, name, or code.
+Required
+name
+Optional
+partNumber: auto-generated if blank and a next-number sequence is configured
+partSort: sort key (defaults to partNumber)
+description
+invType: Goods (default), Service, or Assembly
+currentCost
+retailPrice
+totalCost
+minQuantity
+maxQuantity
+reorderQuantity
+quantityPerCarton
+notes
+leadDays
+altPartNumber
+altDescription
+putAwayLocation
+printTag: true/false
+doNotTrackCost: true/false
+currentCostDate
+invWarehouseId
+invCategoryId — or categoryName or categoryCode to resolve by name/code
+invUnitOfMeasureId — or unitOfMeasureDescription or unitOfMeasureAbbreviation
+arSalesTaxTypeId — defaults to company setting
+glAccountIdBilling — defaults to company setting
+glAccountIdBillingNonTaxable — defaults to company setting
+glAccountIdReceiving — defaults to company setting
+jcCostSubCodeId
+passThroughApVendorId — or vendorName or vendorCode; sets item as pass-through
+buyInvUnitOfMeasureId, buyUnitMultiplier, buyCurrentCost
+sellInvUnitOfMeasureId, sellUnitMultiplier
+hideGroupParts: true/false
+Example Request
+{
+"name": "Widget A",
+"partNumber": "WGT-001",
+"description": "A great widget",
+"invType": "Goods",
+"currentCost": 12.50,
+"retailPrice": 24.99,
+"minQuantity": 5,
+"maxQuantity": 100,
+"reorderQuantity": 10,
+"invCategoryId": 3,
+"arSalesTaxTypeId": 1,
+"glAccountIdBilling": "4-100-00"
+}
+Example Response
+{
+"saved": true
+}
+/invstock/delete
+https://www.nrsaccounting.com/api/invstock/delete
+Deletes an inventory stock item by its externalCode + externalId.
+Required
+externalCode
+externalId
+Example Request
+{
+"externalCode": "MySystem",
+"externalId": "WGT-001"
+}
+Example Response
+{
+"deleted": true
+}
+/invcategory/list
+https://www.nrsaccounting.com/api/invcategory/list
+Returns all inventory categories.
+Example Response
+{
+"list": [
+{
+"invCategoryId": 1,
+"code": "HW",
+"description": "Hardware"
+}
+]
+}
+/invunitofmeasure/list
+https://www.nrsaccounting.com/api/invunitofmeasure/list
+Returns all inventory units of measure.
+Example Response
+{
+"list": [
+{
+"invUnitOfMeasureId": 1,
+"abbreviation": "EA",
+"description": "Each"
+}
+]
+}
+/nurinventory/getall
+https://www.nrsaccounting.com/api/nurinventory/getall
+Returns nursery inventory as a flattened list grouped by variety, root, and source with per-size quantities.
+Optional
+year: inventory year, defaults to current year
+species: array of species IDs to filter
+Example Request
+{
+"year": 2024,
+"species": [1, 2]
+}
+Example Response
+{
+"year": 2024,
+"list": [
+{
+"nurVarietyId": 10,
+"varietyName": "Honeycrisp",
+"varietyCode": "HC",
+"speciesName": "Apple",
+"nurSourceId": 1,
+"sourceName": "Own Grown",
+"sizeQtyTotal": 200,
+"sizeQty1": 100,
+"sizeQty2": 100
+}
+]
+}
+/nurinventory/simple
+https://www.nrsaccounting.com/api/nurinventory/simple
+Returns a simplified nursery inventory list with only essential fields.
+Example Response
+{
+"list": [
+{
+"nurVarietyId": 10,
+"varietyName": "Honeycrisp",
+"speciesName": "Apple",
+"quantity": 200
+}
+]
+}
+/nurinventory/save
+https://www.nrsaccounting.com/api/nurinventory/save
+Creates or updates nursery inventory records.
+Required
+year
+nurVarietyId
+nurRootId
+nurSourceId
+entries
+Example Request
+{
+"year": 2024,
+"nurVarietyId": 10,
+"nurRootId": 1,
+"nurSourceId": 1,
+"entries": [
+{ "nurSizeId": 1, "quantity": 100 },
+{ "nurSizeId": 2, "quantity": 100 }
+]
+}
+Example Response
+{
+"saved": true
+}
+/nurinventory/type/getall
+https://www.nrsaccounting.com/api/nurinventory/type/getall
+Returns all nursery inventory types.
+Example Response
+{
+"list": [
+{ "nurInventoryTypeId": 1, "name": "Bare Root" }
+]
+}
+/nurvariety/getall
+https://www.nrsaccounting.com/api/nurvariety/getall
+Returns all nursery varieties.
+Example Response
+{
+"list": [
+{
+"nurVarietyId": 10,
+"description": "Honeycrisp",
+"code": "HC",
+"sku": "HC-001",
+"brandName": ""
+}
+]
+}
+/nurvariety/get
+https://www.nrsaccounting.com/api/nurvariety/get
+Returns full detail for a single nursery variety.
+Required
+nurVarietyId
+Example Request
+{
+"nurVarietyId": 10
+}
+Example Response
+{
+"nurVarietyId": 10,
+"description": "Honeycrisp",
+"code": "HC",
+"sku": "HC-001",
+"brandName": "",
+"speciesId": 2,
+"speciesName": "Apple"
+}
+/nurorder/getall
+https://www.nrsaccounting.com/api/nurorder/getall
+Returns all nursery orders. Supports incremental sync via sinceDateTime.
+Optional
+sinceDateTime
+year
+page
+Example Request
+{
+"year": 2024,
+"sinceDateTime": "2024-01-01 00:00:00"
+}
+Example Response
+{
+"list": [
+{
+"nurOrderId": 1,
+"orderDate": "2024-03-15",
+"customerName": "Valley Nursery",
+"status": "open",
+"year": 2024
+}
+]
+}
+/nurorder/get
+https://www.nrsaccounting.com/api/nurorder/get
+Returns full detail for a single nursery order including all line items.
+Required
+nurOrderId
+Example Request
+{
+"nurOrderId": 1
+}
+Example Response
+{
+"nurOrderId": 1,
+"orderDate": "2024-03-15",
+"customerName": "Valley Nursery",
+"status": "open",
+"details": [
+{ "nurVarietyId": 10, "varietyName": "Honeycrisp", "nurSizeId": 1, "quantity": 50 }
+]
+}
+/nurorder/getdeleted
+https://www.nrsaccounting.com/api/nurorder/getdeleted
+Returns nursery orders that have been deleted. Used to sync deletions to external systems.
+Optional
+sinceDateTime
+year
+Example Request
+{
+"sinceDateTime": "2024-01-01 00:00:00"
+}
+Example Response
+{
+"list": [
+{ "nurOrderId": 5, "deletedAt": "2024-05-10 14:22:00" }
+]
+}
+/nurorderdetail/getall
+https://www.nrsaccounting.com/api/nurorderdetail/getall
+Returns all nursery order detail lines. Supports incremental sync via sinceDateTime.
+Optional
+sinceDateTime
+nurOrderId
+year
+page
+Example Request
+{
+"nurOrderId": 1
+}
+Example Response
+{
+"list": [
+{
+"nurOrderDetailId": 10,
+"nurOrderId": 1,
+"nurVarietyId": 10,
+"varietyName": "Honeycrisp",
+"nurSizeId": 1,
+"sizeName": "5 Gallon",
+"quantity": 50,
+"unitPrice": 15.00
+}
+]
+}
+/nurorderdetail/get
+https://www.nrsaccounting.com/api/nurorderdetail/get
+Returns a single nursery order detail line.
+Required
+nurOrderDetailId
+Example Request
+{
+"nurOrderDetailId": 10
+}
+Example Response
+{
+"nurOrderDetailId": 10,
+"nurOrderId": 1,
+"nurVarietyId": 10,
+"varietyName": "Honeycrisp",
+"nurSizeId": 1,
+"quantity": 50,
+"unitPrice": 15.00
+}
+/nursize/getall
+https://www.nrsaccounting.com/api/nursize/getall
+Returns all nursery sizes.
+Example Response
+{
+"list": [
+{ "nurSizeId": 1, "description": "5 Gallon" }
+]
+}
+/nursource/getall
+https://www.nrsaccounting.com/api/nursource/getall
+Returns all nursery sources.
+Example Response
+{
+"list": [
+{ "nurSourceId": 1, "name": "Own Grown" }
+]
+}
+/nurboxpickup/scan
+https://www.nrsaccounting.com/api/nurboxpickup/scan
+Adds a box to a nursery pickup session by scanning its barcode.
+Required
+barcode
+Optional
+pickupId: existing pickup session ID
+Example Request
+{
+"barcode": "BOX-00042",
+"pickupId": 5
+}
+Example Response
+{
+"pickupId": 5,
+"boxCount": 3,
+"added": true
+}
+/nurboxpickup/remove
+https://www.nrsaccounting.com/api/nurboxpickup/remove
+Removes a box from a nursery pickup session.
+Required
+pickupId
+barcode
+Example Request
+{
+"pickupId": 5,
+"barcode": "BOX-00042"
+}
+Example Response
+{
+"removed": true,
+"boxCount": 2
+}
+/nurboxpickup/complete
+https://www.nrsaccounting.com/api/nurboxpickup/complete
+Completes and finalizes a nursery box pickup session.
+Required
+pickupId
+Example Request
+{
+"pickupId": 5
+}
+Example Response
+{
+"completed": true,
+"pickupId": 5,
+"boxCount": 2
+}
+/department/list
+https://www.nrsaccounting.com/api/department/list
+Returns all departments.
+Example Response
+{
+"list": [
+{ "departmentId": 1, "name": "First Department" }
+]
+}
+/employee/list
+https://www.nrsaccounting.com/api/employee/list
+Returns all employees with department memberships and credentials. Supports incremental sync via lastChange.
+Optional
+lastChange: Unix timestamp or datetime — return only records changed after this time
+activeOnly: true to return only active employees
+Example Request
+{
+"lastChange": "2024-01-01 00:00:00",
+"activeOnly": true
+}
+Example Response
+{
+"list": [
+{
+"employeeId": 1,
+"departmentId": 2,
+"lastChanged": "2024-05-15 09:00:00",
+"number": "EMP-001",
+"canUseClock": true,
+"displayName": "John Smith",
+"firstName": "John",
+"lastName": "Smith",
+"departments": [
+{
+"departmentId": 2,
+"member": true,
+"supervisorAuth": false,
+"supervisor": false
+}
+],
+"creds": [
+{
+"type": "pin",
+"value": "1234",
+"date": "2024-01-01 00:00:00"
+}
+]
+}
+]
+}
+/job/start
+https://www.nrsaccounting.com/api/job/start
+Reserves and returns a new job number. All parameters optional.
+Optional
+jobName
+divisionId
+customerId
+orderedBy
+description
+phoneNumber
+customerPO
+bidType
+bidPrice
+orderDate
+Example Request
+{
+"jobName": "Test Job",
+"divisionId": 1,
+"customerId": 1,
+"bidType": 2,
+"bidPrice": 1000.00,
+"orderDate": "10/25/2014"
+}
+Example Response
+{
+"jobNumber": 2000,
+"jobId": 1234
+}
+/job/bidtypes
+https://www.nrsaccounting.com/api/job/bidtypes
+Returns available job bid types.
+Example Response
+{
+"list": [
+{ "bidTypeId": 2, "name": "Time & Materials" }
+]
+}
+/job/lookup
+https://www.nrsaccounting.com/api/job/lookup
+Looks up job IDs by PO number or job number.
+Optional
+poNumber
+jobNumber
+ids: true to return record IDs instead of job numbers
+Example Request
+{
+"poNumber": 1200,
+"ids": true
+}
+Example Response
+{
+"list": [1000, 1001]
+}
+/job/search
+https://www.nrsaccounting.com/api/job/search
+Searches jobs. All parameters optional.
+Optional
+jobNumber
+status: open|completed|void
+division
+department
+customer
+Example Request
+{
+"status": "open",
+"customer": "Jimbo"
+}
+Example Response
+{
+"list": [
+{
+"id": 123456,
+"jobName": "Awesome Job",
+"jobNumber": "5050",
+"status": "Open",
+"customer": "Awesome Customer",
+"division": "DIV",
+"department": "DEP",
+"bidType": "Time & Materials",
+"bidPrice": 100.00
+}
+]
+}
+/job/info
+https://www.nrsaccounting.com/api/job/info
+Returns full details for one job. Send either jobId or jobNumber.
+Example Request
+{
+"jobId": 123456
+}
+Example Response
+{
+"data": {
+"id": 123456,
+"jobName": "Awesome Job",
+"jobNumber": "5050",
+"status": "Open"
+}
+}
+/jccostcode/list
+https://www.nrsaccounting.com/api/jccostcode/list
+Returns all job cost codes.
+Example Response
+{
+"list": [
+{
+"jcCostCodeId": 1,
+"classification": "Labor",
+"code": "LAB",
+"name": "Labor",
+"glAccountId": 42
+}
+]
+}
+/jccostsubcode/list
+https://www.nrsaccounting.com/api/jccostsubcode/list
+Returns all job cost sub-codes.
+Example Response
+{
+"list": [
+{
+"jcCostSubCodeId": 1,
+"jcCostCodeId": 1,
+"code": "LAB-REG",
+"description": "Regular Labor",
+"glAccountId": 42
+}
+]
+}
+/attachment/locations
+https://www.nrsaccounting.com/api/attachment/locations
+Returns all attachment locations and their categories.
+Example Response
+{
+"list": [
+{
+"id": 1,
+"name": "Job",
+"namePlural": "Jobs",
+"categories": [
+{ "id": 1, "name": "First Category" }
+]
+}
+]
+}
+/attachment/list
+https://www.nrsaccounting.com/api/attachment/list
+Returns paginated entries for a given location. 500 results per page.
+Required
+location: id from attachment/locations
+Optional
+page: page number, default 1
+Example Request
+{
+"location": 1,
+"page": 1
+}
+Example Response
+{
+"page": 1,
+"pages": 25,
+"list": [ { "id": 1000, "jobNumber": "AJ2", "jobName": "Awesome Job #2" } ]
+}
+/attachment/generate
+https://www.nrsaccounting.com/api/attachment/generate
+Generates a lookup ID (barcode value) used to upload a file.
+Required
+category: id from attachment/locations
+id: item id from attachment/list
+description
+Example Request
+{
+"category": 1,
+"id": 282449,
+"description": "My file"
+}
+Example Response
+{
+"lookup": 1000
+}
+/attachment/upload
+https://www.nrsaccounting.com/api/attachment/upload
+Uploads a file to the lookup ID generated by attachment/generate. Uses multipart/form-data with a field named file .
+Curl Example
+curl -v https://www.nrsaccounting.com/api/attachment/upload/{lookup} \
+-H "Company: YOUR_API_KEY" \
+-F "file=@/{filename}"
+/client/save
+https://www.nrsaccounting.com/api/client/save
+Updates client billing preferences.
+Example Request
+[
+{
+"accountNumber": "01-0052-00-02",
+"email": "test@test.net",
+"emailBilling": true,
+"paperBilling": true,
+"emailNewsletter": true
+}
+]
+Example Response
+{
+"saved": {
+"0100520002": true
+}
+}
+/client/billPdf
+https://www.nrsaccounting.com/api/client/billPdf
+Returns a base64-encoded PDF of a billing record.
+Example Request
+{
+"UtilMasterClientBillingId": 12345
+}
+Example Response
+{
+"size": 123,
+"pdf": "..."
+}
+/util/get
+https://www.nrsaccounting.com/api/util/get
+Returns utility table data for the portal.
+/util/set
+https://www.nrsaccounting.com/api/util/set
+Updates utility table data.
+Required
+entries
+Example Request
+{
+"entries": [
+{ "accountNumber": "01-0052-00-02", "meterRead": 1234 }
+]
+}
+Example Response
+{
+"saved": true
+}
+/expense/save
+https://www.nrsaccounting.com/api/expense/save
+Submits a mobile employee expense. Creates a checkbook credit-card entry (ckEntryTypeId 50) against the chosen expense account. Attach receipt photos separately via upload with foreignTable=ckCheckReg and the returned ckCheckRegId . Both save and submit are accepted as the action name.
+Required
+apExpenseAccountId: id from apexpenseaccount/list
+amount: must be > 0
+Optional
+apVendorId: vendor to pay; defaults to NOF (no-vendor) if omitted
+name: payee name (used when no vendor or NOF vendor)
+address1, address2, address3, city, state, zip
+description: defaults to "Mobile Expense - {account name}"
+accountId: override the bank/cash account; defaults to company mobile expense setting
+Example Request
+{
+"apExpenseAccountId": 1,
+"amount": 45.99,
+"description": "Client lunch",
+"name": "Corner Cafe",
+"address1": "789 Oak Ave",
+"city": "Spokane",
+"state": "WA",
+"zip": "99202"
+}
+Example Response
+{
+"saved": true,
+"ckCheckRegId": 5001
+}
+/scanner/info
+https://www.nrsaccounting.com/api/scanner/info
+Returns configuration info for a scanner device by its identifier.
+Required
+deviceId
+Example Request
+{
+"deviceId": "SCAN-01"
+}
+Example Response
+{
+"deviceId": "SCAN-01",
+"name": "Front Desk Scanner",
+"locationId": 1
+}
+/scanner/categories
+https://www.nrsaccounting.com/api/scanner/categories
+Returns all scanner form categories.
+Example Response
+{
+"list": [
+{ "categoryId": 1, "name": "Receiving" }
+]
+}
+/scanner/form/setup
+https://www.nrsaccounting.com/api/scanner/form/setup
+Returns the field configuration for a scanner form.
+Required
+categoryId
+Example Request
+{
+"categoryId": 1
+}
+Example Response
+{
+"fields": [
+{ "name": "jobNumber", "label": "Job Number", "type": "text", "required": true }
+]
+}
+/scanner/form/submit
+https://www.nrsaccounting.com/api/scanner/form/submit
+Submits a completed scanner form.
+Required
+categoryId
+data
+Example Request
+{
+"categoryId": 1,
+"data": {
+"jobNumber": "5050",
+"quantity": 10
+}
+}
+Example Response
+{
+"saved": true
+}
+/scanner/attachment/categories
+https://www.nrsaccounting.com/api/scanner/attachment/categories
+Returns attachment categories available for a given scanner category.
+Required
+categoryId
+Example Request
+{
+"categoryId": 1
+}
+Example Response
+{
+"list": [
+{ "id": 1, "name": "Invoice Scan" }
+]
+}
+/scanner/attachment/info
+https://www.nrsaccounting.com/api/scanner/attachment/info
+Returns info for a scanned attachment by its lookup code.
+Required
+lookup
+Example Request
+{
+"lookup": "NRS0000001000"
+}
+Example Response
+{
+"lookupId": 1000,
+"description": "My file",
+"location": "Job",
+"itemId": 282449
+}
+/scanner/attachment/update
+https://www.nrsaccounting.com/api/scanner/attachment/update
+Updates the description or category of an existing scanned attachment.
+Required
+lookupId
+Optional
+description
+categoryId
+Example Request
+{
+"lookupId": 1000,
+"description": "Updated description"
+}
+Example Response
+{
+"saved": true
+}
+/scanner/attachment/move
+https://www.nrsaccounting.com/api/scanner/attachment/move
+Moves a scanned attachment to a different item or location.
+Required
+lookupId
+location
+itemId
+Example Request
+{
+"lookupId": 1000,
+"location": 1,
+"itemId": 282500
+}
+Example Response
+{
+"moved": true
+}
+/upload
+https://www.nrsaccounting.com/api/upload
+Uploads a scanned document. Uses multipart/form-data with a field named file .
+Curl Example
+curl -v https://www.nrsaccounting.com/api/upload \
+-H "Company: YOUR_API_KEY" \
+-F "lookup=NRS0000001000" \
+-F "file=@/{filename}"
+/device/locations
+https://www.nrsaccounting.com/api/device/locations
+Returns all device locations.
+Example Response
+{
+"list": [
+{ "locationId": 1, "description": "Location 1" }
+]
+}
+/device/list
+https://www.nrsaccounting.com/api/device/list
+Returns all devices.
+Example Response
+{
+"list": [
+{ "type": "Timeclock", "locationId": 1, "uniqueId": "4d5ds6sd" }
+]
+}
+/display/show/url
+https://www.nrsaccounting.com/api/display/show/url
+Tells one or more display devices to show a URL.
+Required
+device: uniqueId string or array of uniqueId strings
+url
+Optional
+description
+displayTimeSeconds
+scrollPixelsPerSecond
+scrollUntilComplete
+scrollToPixel
+pauseAtBottomSeconds
+soundId
+Example Request
+{
+"device": "4d5ds6sd",
+"description": "GOOGLE!",
+"url": "http://www.google.com/",
+"displayTimeSeconds": 30,
+"soundId": 6
+}
+Example Response
+{
+"sent": true
+}
+/display/sound/list
+https://www.nrsaccounting.com/api/display/sound/list
+Returns all available display device sounds.
+Example Response
+{
+"list": [
+{ "id": 6, "name": "My Awesome Sound", "url": "https://..." }
+]
+}
+API Errors
+All errors are returned as JSON with a numeric code and message.
+Example Response
+{
+"err": {
+"num": 103,
+"msg": "Company Not Found"
+}
+}

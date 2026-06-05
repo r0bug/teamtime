@@ -165,3 +165,23 @@ export async function sendPinResetCode(email: string, code: string): Promise<boo
 		text: `Your TeamTime PIN reset code is: ${code}. This code will expire in 10 minutes.`
 	});
 }
+
+/** Password-reset link email (vendor portal self-service recovery). */
+export async function sendPasswordResetLinkEmail(email: string, resetUrl: string): Promise<boolean> {
+	return sendEmail({
+		to: email,
+		subject: 'TeamTime - Reset your password',
+		html: `
+			<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+				<h2 style="color: #2563eb;">Reset your password</h2>
+				<p>Tap the button below to set a new password. This link expires in 30 minutes and can be used once.</p>
+				<div style="margin: 24px 0;">
+					<a href="${resetUrl}" style="background:#2563eb;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold;">Set a new password</a>
+				</div>
+				<p style="color:#6b7280;font-size:12px;">Or paste this link into your browser:<br>${resetUrl}</p>
+				<p style="color: #6b7280; font-size: 12px;">If you didn't request this, you can ignore this email — your password won't change.</p>
+			</div>
+		`,
+		text: `Reset your TeamTime password (link expires in 30 minutes, single use): ${resetUrl}`
+	});
+}

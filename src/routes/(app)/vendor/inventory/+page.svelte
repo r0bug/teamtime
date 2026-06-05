@@ -125,14 +125,20 @@
 		<div class="mt-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{form.error}</div>
 	{/if}
 	{#if form?.success === 'submit'}
-		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">Change submitted. Staff will review and apply it to NRS.</div>
+		{#if form.applied}
+			<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">✓ New item created in NRS.</div>
+		{:else if form.applyError}
+			<div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded text-sm">Item saved and queued — staff will apply it to NRS shortly.</div>
+		{:else}
+			<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">Change submitted. Staff will review and apply it to NRS.</div>
+		{/if}
 	{/if}
 	{#if form?.success === 'cancel'}
 		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">Change cancelled.</div>
 	{/if}
 	{#if form?.success === 'quickTag'}
 		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm flex items-center justify-between gap-2 flex-wrap">
-			<span>✓ Tag queued. Code: <code class="font-mono font-semibold">{form.partNumber}</code> — "{form.description}" — ${(Number(form.priceCents) / 100).toFixed(2)}</span>
+			<span>{form.applied ? '✓ Tag created in NRS.' : '✓ Tag queued (staff will apply to NRS).'} Code: <code class="font-mono font-semibold">{form.partNumber}</code> — "{form.description}" — ${(Number(form.priceCents) / 100).toFixed(2)}</span>
 			<button
 				type="button"
 				class="btn btn-secondary text-xs whitespace-nowrap"

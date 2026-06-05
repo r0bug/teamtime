@@ -5,6 +5,7 @@ import { db, salesTransactions } from '$lib/server/db';
 import {
 	listForVendor,
 	submitChange,
+	applyCreateViaApi,
 	cancelChange,
 	InventoryChangeError,
 	type ChangePayload
@@ -100,8 +101,9 @@ export const actions: Actions = {
 		const vendor = await getVendorForUser(locals.user.id);
 		if (!vendor) return fail(403, { error: 'Vendor portal access not enabled' });
 
+		let changeId: string;
 		try {
-			await submitChange({
+			const row = await submitChange({
 				vendorId: vendor.id,
 				submittedByUserId: locals.user.id,
 				changeType,
@@ -110,11 +112,20 @@ export const actions: Actions = {
 				payload,
 				previousPayload
 			});
+			changeId = row.id;
 		} catch (err) {
 			if (err instanceof InventoryChangeError) return fail(400, { error: err.message });
 			throw err;
 		}
-		return { success: 'submit' };
+
+		// New items auto-apply straight to NRS via invstock/save. Updates/deletes
+		// stay pending for staff. A failed auto-apply isn't an error — the change
+		// is queued for the staff fallback and the journal records why.
+		if (changeType === 'create') {
+			const apply = await applyCreateViaApi(changeId, locals.user.id);
+			return { success: 'submit', applied: apply.applied, applyError: apply.error ?? null };
+		}
+		return { success: 'submit', applied: false, applyError: null };
 	},
 
 	/**
@@ -147,8 +158,9 @@ export const actions: Actions = {
 			throw err;
 		}
 
+		let changeId: string;
 		try {
-			await submitChange({
+			const row = await submitChange({
 				vendorId: vendor.id,
 				submittedByUserId: locals.user.id,
 				changeType: 'create',
@@ -161,12 +173,14 @@ export const actions: Actions = {
 					},
 				previousPayload: null
 			});
+			changeId = row.id;
 		} catch (err) {
 			if (err instanceof InventoryChangeError) return fail(400, { error: err.message });
 			throw err;
 		}
 
-		return { success: 'quickTag', partNumber, description, priceCents };
+		const apply = await applyCreateViaApi(changeId, locals.user.id);
+		return { success: 'quickTag', partNumber, description, priceCents, applied: apply.applied, applyError: apply.error ?? null };
 	},
 
 	cancel: async ({ locals, request }) => {

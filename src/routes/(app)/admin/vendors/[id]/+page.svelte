@@ -5,6 +5,7 @@
 	import SignatureCapture from '$lib/components/SignatureCapture.svelte';
 	import SalesOverTimeChart from '$lib/components/SalesOverTimeChart.svelte';
 	import TopItemsBarChart from '$lib/components/TopItemsBarChart.svelte';
+	import { formatDate, formatDateTime } from '$lib/utils';
 
 	export let data: PageData;
 	export let form: ActionData;
@@ -217,6 +218,12 @@
 	{#if form && 'success' in form && form.success === 'signAgreement'}
 		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded text-sm">Agreement signed.</div>
 	{/if}
+	{#if form && 'success' in form && form.success === 'unlockPortal'}
+		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded text-sm">Account unlocked.</div>
+	{/if}
+	{#if form && 'success' in form && form.success === 'linkUser'}
+		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded text-sm">User linked — portal access enabled.</div>
+	{/if}
 
 	<!-- Tabs -->
 	<div class="mt-6 border-b border-gray-200">
@@ -393,8 +400,47 @@
 			<div class="card-body space-y-4">
 				{#if data.vendor.portalEnabled && data.vendor.userId}
 					<div class="p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">
-						Portal access is <strong>enabled</strong>. Linked to user <code>{data.vendor.userId}</code>.
+						Portal access is <strong>enabled</strong>.
+						{#if data.authStatus.email}Login: <code>{data.authStatus.email}</code>.{/if}
 					</div>
+
+					<!-- Auth status snapshot -->
+					<dl class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+						<div>
+							<dt class="text-xs text-gray-500">Account</dt>
+							<dd>{data.authStatus.isActive ? 'Active' : 'Inactive'}</dd>
+						</div>
+						<div>
+							<dt class="text-xs text-gray-500">Must change password</dt>
+							<dd>{data.authStatus.mustChangePassword ? 'Yes (first login pending)' : 'No'}</dd>
+						</div>
+						<div>
+							<dt class="text-xs text-gray-500">Credentials sent</dt>
+							<dd>{data.authStatus.credentialsSentAt ? formatDate(data.authStatus.credentialsSentAt) + (data.authStatus.credentialsSentVia ? ` (${data.authStatus.credentialsSentVia})` : '') : '—'}</dd>
+						</div>
+						<div>
+							<dt class="text-xs text-gray-500">Login lock</dt>
+							<dd>
+								{#if data.authStatus.lockout.isLocked}
+									<span class="badge-danger">Locked</span>
+								{:else}
+									<span class="badge-success">Clear</span>
+								{/if}
+							</dd>
+						</div>
+					</dl>
+
+					{#if data.authStatus.lockout.isLocked}
+						<div class="p-3 bg-red-50 border border-red-200 text-red-800 rounded text-sm flex items-center justify-between gap-3 flex-wrap">
+							<span>
+								Account is locked{data.authStatus.lockout.lockedUntil ? ` until ${formatDateTime(data.authStatus.lockout.lockedUntil)}` : ''}
+								{data.authStatus.lockout.reason ? ` — ${data.authStatus.lockout.reason}` : ''}.
+							</span>
+							<form method="POST" action="?/unlockPortal" use:enhance>
+								<button type="submit" class="btn btn-secondary text-sm">Unlock now</button>
+							</form>
+						</div>
+					{/if}
 
 					<form method="POST" action="?/resetPortalPassword" use:enhance class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
 						<div class="md:col-span-2">
@@ -409,6 +455,30 @@
 						<span class="text-xs text-gray-500 ml-2">Deactivates the vendor's user account.</span>
 					</form>
 				{:else}
+					<!-- Link an existing user (e.g. a staff member who is also a vendor) -->
+					<form method="POST" action="?/linkUser" use:enhance class="space-y-3">
+						<div>
+							<label class="label" for="linkUserId">Link an existing user account</label>
+							<p class="text-xs text-gray-500 mb-1">For a staff member who is also a vendor — links their existing login, no new password needed.</p>
+							<div class="flex gap-2 items-end flex-wrap">
+								<select id="linkUserId" name="userId" class="input flex-1 min-w-[16rem]" required>
+									<option value="" disabled selected>Select a user…</option>
+									{#each data.linkableUsers as u (u.id)}
+										<option value={u.id} disabled={u.linkedVendorId === data.vendor.id ? false : u.linkedVendorId !== null}>
+											{u.name} — {u.email} ({u.role}){u.linkedVendorId && u.linkedVendorId !== data.vendor.id ? ` · linked to ${u.linkedVendorName}` : ''}
+										</option>
+									{/each}
+								</select>
+								<button type="submit" class="btn btn-primary">Link account</button>
+							</div>
+						</div>
+					</form>
+
+					<div class="relative my-2 text-center">
+						<span class="text-xs text-gray-400 bg-white px-2 relative z-10">or create a new portal login</span>
+						<div class="absolute inset-x-0 top-1/2 border-t border-gray-200"></div>
+					</div>
+
 					<form method="POST" action="?/enablePortal" use:enhance class="space-y-4">
 						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 							<div>

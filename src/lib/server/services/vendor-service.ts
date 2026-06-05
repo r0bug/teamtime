@@ -6,7 +6,7 @@
  * signed agreements, notes) keyed off `nrsVendorId`.
  */
 
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { randomUUID, randomBytes } from 'crypto';
 import { db } from '$lib/server/db';
 import {
@@ -884,6 +884,93 @@ export async function enablePortal(input: {
 	});
 }
 
+export interface LinkableUser {
+	id: string;
+	name: string;
+	email: string;
+	role: string;
+	linkedVendorId: string | null;
+	linkedVendorName: string | null;
+}
+
+/**
+ * Active users an admin can attach to a vendor, with their current vendor link
+ * (if any) surfaced so the picker can warn before re-linking. Ordered by name.
+ */
+export async function listLinkableUsers(): Promise<LinkableUser[]> {
+	const rows = await db
+		.select({
+			id: users.id,
+			name: users.name,
+			email: users.email,
+			role: users.role,
+			linkedVendorId: vendors.id,
+			linkedVendorName: vendors.displayName
+		})
+		.from(users)
+		.leftJoin(vendors, eq(vendors.userId, users.id))
+		.where(eq(users.isActive, true))
+		.orderBy(users.name);
+	return rows;
+}
+
+/**
+ * Attach an EXISTING user account to a vendor — for a staff member who is also
+ * a vendor. Unlike `enablePortal`, this sets no password and doesn't touch the
+ * user's type/name: the link is purely additive (sets `vendors.userId`,
+ * `portalEnabled=true`, and the `vendor` extra-role so isVendor() is true).
+ *
+ * Guards: the user must be active; one user maps to at most one vendor; and if
+ * this vendor was already linked to a different user, that user's `vendor`
+ * extra-role is cleared so it doesn't orphan.
+ */
+export async function linkExistingUserToVendor(input: {
+	vendorId: string;
+	userId: string;
+}): Promise<{ vendor: Vendor }> {
+	return db.transaction(async (tx) => {
+		const [vendor] = await tx.select().from(vendors).where(eq(vendors.id, input.vendorId)).limit(1);
+		if (!vendor) throw new VendorServiceError(`Vendor not found: ${input.vendorId}`);
+
+		const [user] = await tx.select().from(users).where(eq(users.id, input.userId)).limit(1);
+		if (!user) throw new VendorServiceError('User not found');
+		if (!user.isActive) throw new VendorServiceError('Cannot link a deactivated user account');
+
+		// One user ↔ one vendor: block if this user already belongs to another vendor.
+		const [otherVendor] = await tx
+			.select({ id: vendors.id, displayName: vendors.displayName })
+			.from(vendors)
+			.where(and(eq(vendors.userId, input.userId), ne(vendors.id, input.vendorId)))
+			.limit(1);
+		if (otherVendor) {
+			throw new VendorServiceError(
+				`That user is already linked to vendor "${otherVendor.displayName}". Unlink there first.`
+			);
+		}
+
+		// Re-link: drop the previously-linked user's vendor extra-role.
+		if (vendor.userId && vendor.userId !== input.userId) {
+			await tx
+				.delete(userExtraRoles)
+				.where(and(eq(userExtraRoles.userId, vendor.userId), eq(userExtraRoles.role, 'vendor')));
+		}
+
+		await tx
+			.insert(userExtraRoles)
+			.values({ userId: input.userId, role: 'vendor' })
+			.onConflictDoNothing();
+
+		const [updated] = await tx
+			.update(vendors)
+			.set({ userId: input.userId, portalEnabled: true, updatedAt: new Date() })
+			.where(eq(vendors.id, input.vendorId))
+			.returning();
+
+		log.info({ vendorId: input.vendorId, userId: input.userId }, 'Linked existing user to vendor');
+		return { vendor: updated };
+	});
+}
+
 /**
  * Reset the portal password for an already-linked vendor user.
  */
@@ -896,6 +983,75 @@ export async function resetPortalPassword(vendorId: string, password: string): P
 	const passwordHash = await hashPin(password);
 	await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, vendor.userId));
 	log.info({ vendorId, userId: vendor.userId }, 'Reset vendor portal password');
+}
+
+export interface VendorAuthStatus {
+	hasUser: boolean;
+	userId: string | null;
+	email: string | null;
+	isActive: boolean;
+	portalEnabled: boolean;
+	mustChangePassword: boolean;
+	credentialsSentAt: Date | null;
+	credentialsSentVia: string | null;
+	lockout: { isLocked: boolean; lockedUntil: Date | null; reason: string | null };
+}
+
+/**
+ * Consolidated auth snapshot for the staff vendor-management panel: the linked
+ * login's state plus the live account-lockout status (keyed on email, matching
+ * the login rate-limiter). Returns a "no user" shell when the portal is unlinked.
+ */
+export async function getVendorAuthStatus(vendorId: string): Promise<VendorAuthStatus> {
+	const [vendor] = await db.select().from(vendors).where(eq(vendors.id, vendorId)).limit(1);
+	if (!vendor) throw new VendorServiceError(`Vendor not found: ${vendorId}`);
+
+	const empty: VendorAuthStatus = {
+		hasUser: false,
+		userId: null,
+		email: null,
+		isActive: false,
+		portalEnabled: vendor.portalEnabled,
+		mustChangePassword: false,
+		credentialsSentAt: vendor.credentialsSentAt,
+		credentialsSentVia: vendor.credentialsSentVia,
+		lockout: { isLocked: false, lockedUntil: null, reason: null }
+	};
+	if (!vendor.userId) return empty;
+
+	const [user] = await db.select().from(users).where(eq(users.id, vendor.userId)).limit(1);
+	if (!user) return empty;
+
+	const { isAccountLocked } = await import('$lib/server/auth/rate-limiter');
+	const lockout = await isAccountLocked(user.email);
+
+	return {
+		hasUser: true,
+		userId: user.id,
+		email: user.email,
+		isActive: user.isActive,
+		portalEnabled: vendor.portalEnabled,
+		mustChangePassword: user.mustChangePassword,
+		credentialsSentAt: vendor.credentialsSentAt,
+		credentialsSentVia: vendor.credentialsSentVia,
+		lockout
+	};
+}
+
+/**
+ * Clear an active login lockout on the vendor's linked account (staff support
+ * action — e.g. a vendor fat-fingered their password too many times).
+ */
+export async function unlockPortalAccount(vendorId: string, unlockedByUserId: string): Promise<void> {
+	const [vendor] = await db.select().from(vendors).where(eq(vendors.id, vendorId)).limit(1);
+	if (!vendor) throw new VendorServiceError(`Vendor not found: ${vendorId}`);
+	if (!vendor.userId) throw new VendorServiceError('Vendor has no linked user account');
+	const [user] = await db.select().from(users).where(eq(users.id, vendor.userId)).limit(1);
+	if (!user) throw new VendorServiceError('Vendor has no linked user account');
+
+	const { unlockAccount } = await import('$lib/server/auth/rate-limiter');
+	await unlockAccount(user.email, unlockedByUserId);
+	log.info({ vendorId, userId: user.id }, 'Unlocked vendor portal account');
 }
 
 /**

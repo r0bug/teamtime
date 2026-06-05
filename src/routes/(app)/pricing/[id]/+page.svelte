@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { formatCurrency } from '$lib/utils';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
 
 	export let data: PageData;
 
@@ -17,22 +19,6 @@
 			hour: 'numeric',
 			minute: '2-digit'
 		});
-	}
-
-	function formatPrice(price: string | number) {
-		return new Intl.NumberFormat('en-US', {
-			style: 'currency',
-			currency: 'USD'
-		}).format(typeof price === 'string' ? parseFloat(price) : price);
-	}
-
-	function getStatusColor(status: string) {
-		switch (status) {
-			case 'completed': return 'bg-green-100 text-green-800';
-			case 'in_progress': return 'bg-blue-100 text-blue-800';
-			case 'cancelled': return 'bg-gray-100 text-gray-800';
-			default: return 'bg-yellow-100 text-yellow-800';
-		}
 	}
 
 	function getGradeColor(grade: number) {
@@ -143,11 +129,12 @@
 		<div class="card-body">
 			<div class="flex items-start justify-between mb-4">
 				<div>
-					<span class="px-2 py-0.5 text-xs font-medium rounded-full {decision.destination === 'ebay' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}">
-						{decision.destination === 'ebay' ? 'eBay' : 'Store'}
-					</span>
+					<StatusBadge
+						variant={decision.destination === 'ebay' ? 'primary' : 'success'}
+						label={decision.destination === 'ebay' ? 'eBay' : 'Store'}
+					/>
 				</div>
-				<span class="text-2xl font-bold text-primary-600">{formatPrice(decision.price)}</span>
+				<span class="text-2xl font-bold text-primary-600">{formatCurrency(decision.price)}</span>
 			</div>
 
 			<h1 class="text-xl font-bold text-gray-900 mb-4">{decision.itemDescription}</h1>
@@ -180,9 +167,7 @@
 				>
 					<div>
 						<div class="flex items-center gap-2 mb-1">
-							<span class="px-2 py-0.5 text-xs font-medium rounded-full {getStatusColor(decision.ebayTask.status)}">
-								{decision.ebayTask.status.replace('_', ' ')}
-							</span>
+							<StatusBadge status={decision.ebayTask.status} />
 						</div>
 						<p class="font-medium text-gray-900">{decision.ebayTask.title}</p>
 						{#if decision.ebayTask.assigneeName}

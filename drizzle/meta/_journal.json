@@ -232,6 +232,20 @@
       "when": 1779299185580,
       "tag": "0032_seed_label_format_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1780651033305,
+      "tag": "0033_yielding_domino",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1780652405630,
+      "tag": "0034_many_prodigy",
+      "breakpoints": true
     }
   ]
 }

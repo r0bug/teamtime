@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { LayoutData } from './$types';
 	import { page } from '$app/stores';
+	import { enhance } from '$app/forms';
 
 	export let data: LayoutData;
 
@@ -28,7 +29,9 @@
 					<span class="text-xs px-2 py-0.5 rounded font-mono bg-amber-100 text-amber-800">{data.vendor.inventoryCodePrefix}</span>
 				{/if}
 			</div>
-			<a href="/logout" class="text-sm text-gray-600 hover:text-gray-900">Sign out</a>
+			<form method="POST" action="/logout" use:enhance>
+				<button type="submit" class="text-sm text-gray-600 hover:text-gray-900">Sign out</button>
+			</form>
 		</div>
 		<nav class="max-w-5xl mx-auto px-4 lg:px-8 flex gap-1 -mb-px overflow-x-auto">
 			{#each navItems as item (item.href)}

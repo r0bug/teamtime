@@ -307,6 +307,21 @@ CREATE TABLE account_lockouts (
 );
 ```
 
+### Password Reset Tokens Table
+
+Single-use, time-limited tokens for self-service password recovery (vendor portal users). Only the SHA-256 hash of the token is stored — the raw token lives solely in the SMS/email reset link. See `src/lib/server/auth/password-reset.ts`; the flow is `/forgot-password` → `/reset-password`.
+
+```sql
+CREATE TABLE password_reset_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,            -- sha256(raw token)
+  expires_at TIMESTAMPTZ NOT NULL,            -- 30 minutes from issue
+  used_at TIMESTAMPTZ,                        -- set on redemption (single-use)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
 ---
 
 ## Shift Requests Schema
@@ -832,6 +847,30 @@ CREATE TABLE user_extra_roles (
 
 `vendors.nrs_ar_customer_id TEXT` — required for vendors paying booth rent (`monthly_rent_cents > 0`). Scraped from the NRS web UI (`frmHeadArCustomerId` field) by `nrs-web-client` because the NRS REST API doesn't expose it. Populated by the web-scrape pass in `syncFromNrs`; staff fixes missing entries in NRS and re-syncs.
 
+### NRS Inventory API Log Table
+
+Durable audit trail of every NRS inventory write-API call (`invstock/save`). Each auto-apply attempt — success or failure — is recorded here, independent of NRS. Failed attempts leave the originating `pending_inventory_changes` row in `pending` for the staff retry; this table explains why. Foreign keys use `SET NULL` so the journal survives vendor/user/change deletion. Surfaced at `/admin/vendors/inventory-journal`.
+
+```sql
+CREATE TABLE nrs_inventory_api_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  vendor_id UUID REFERENCES vendors(id) ON DELETE SET NULL,
+  pending_change_id UUID REFERENCES pending_inventory_changes(id) ON DELETE SET NULL,
+  triggered_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  action inventory_change_type NOT NULL,       -- create | update | delete
+  endpoint TEXT NOT NULL,                       -- e.g. 'invstock/save'
+  part_number TEXT,
+  nrs_vendor_id INTEGER,                        -- passThroughApVendorId at call time
+  nrs_part_id INTEGER,                          -- resolved/target NRS invStockId
+  request_payload JSONB,                        -- sanitized body (API key is a header, never stored)
+  response_body JSONB,                          -- raw NRS response / captured error
+  http_status INTEGER,
+  success BOOLEAN NOT NULL,
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
 ---
 
-*Last updated: May 2026*
+*Last updated: June 2026*

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { notify } from '$lib/notify';
+	import Spinner from '$lib/components/Spinner.svelte';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
@@ -12,7 +14,6 @@
 	let locationId = '';
 	let photos: Array<{ file: File; preview: string; uploading: boolean; uploaded?: { filePath: string; originalName: string; mimeType: string; sizeBytes: number } }> = [];
 	let submitting = false;
-	let error = '';
 
 	// Geolocation
 	let lat: number | null = null;
@@ -84,9 +85,9 @@
 			photos = photos;
 			// Show more specific error for network issues
 			if (e instanceof TypeError && e.message.includes('fetch')) {
-				error = 'Network error - check your connection';
+				notify.error('Network error - check your connection');
 			} else {
-				error = e instanceof Error ? e.message : 'Failed to upload photo';
+				notify.error(e instanceof Error ? e.message : 'Failed to upload photo');
 			}
 		}
 	}
@@ -103,7 +104,7 @@
 
 	function getLocation() {
 		if (!navigator.geolocation) {
-			error = 'Geolocation is not supported by your browser';
+			notify.error('Geolocation is not supported by your browser');
 			return;
 		}
 
@@ -129,7 +130,7 @@
 			},
 			(err) => {
 				gettingLocation = false;
-				error = 'Unable to get your location';
+				notify.error('Unable to get your location');
 				console.error('Geolocation error:', err);
 			},
 			{ enableHighAccuracy: true }
@@ -137,32 +138,30 @@
 	}
 
 	async function handleSubmit() {
-		error = '';
-
 		// Validation
 		if (photos.length === 0) {
-			error = 'At least one photo is required';
+			notify.error('At least one photo is required');
 			return;
 		}
 
 		if (!itemDescription.trim()) {
-			error = 'Item description is required';
+			notify.error('Item description is required');
 			return;
 		}
 
 		const priceNum = parseFloat(price);
 		if (isNaN(priceNum) || priceNum <= 0) {
-			error = 'Price must be a positive number';
+			notify.error('Price must be a positive number');
 			return;
 		}
 
 		if (priceJustification.trim().length < 10) {
-			error = 'Price justification must be at least 10 characters';
+			notify.error('Price justification must be at least 10 characters');
 			return;
 		}
 
 		if (destination === 'ebay' && !ebayReason.trim()) {
-			error = 'Please explain why this item should be listed on eBay';
+			notify.error('Please explain why this item should be listed on eBay');
 			return;
 		}
 
@@ -175,7 +174,7 @@
 			// Check all photos uploaded successfully
 			const uploadedPhotos = photos.filter(p => p.uploaded).map(p => p.uploaded);
 			if (uploadedPhotos.length === 0) {
-				error = 'Failed to upload photos';
+				notify.error('Failed to upload photos');
 				submitting = false;
 				return;
 			}
@@ -209,7 +208,7 @@
 			goto(`/pricing/${decision.id}`);
 		} catch (e) {
 			console.error('Submit error:', e);
-			error = e instanceof Error ? e.message : 'Failed to submit pricing decision';
+			notify.error(e instanceof Error ? e.message : 'Failed to submit pricing decision');
 			submitting = false;
 		}
 	}
@@ -231,12 +230,6 @@
 		<p class="text-gray-600 mt-1">Document item details, price, and destination</p>
 	</div>
 
-	{#if error}
-		<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-			{error}
-		</div>
-	{/if}
-
 	<form on:submit|preventDefault={handleSubmit} class="space-y-6">
 		<!-- Photos Section -->
 		<div class="card">
@@ -249,8 +242,8 @@
 							<img src={photo.preview} alt="Item photo" class="w-full h-full object-cover" />
 
 							{#if photo.uploading}
-								<div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-									<div class="animate-spin rounded-full h-8 w-8 border-2 border-white border-t-transparent"></div>
+								<div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center text-white">
+									<Spinner size="md" />
 								</div>
 							{:else if photo.uploaded}
 								<div class="absolute top-1 right-1 bg-green-500 text-white rounded-full p-1">
@@ -302,14 +295,14 @@
 				<h2 class="text-lg font-semibold">Item Details</h2>
 
 				<div>
-					<label for="description" class="block text-sm font-medium text-gray-700 mb-1">
+					<label for="description" class="label">
 						Description *
 					</label>
 					<textarea
 						id="description"
 						bind:value={itemDescription}
 						rows="3"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+						class="input"
 						placeholder="Describe the item (brand, model, condition, etc.)"
 						required
 					></textarea>
@@ -317,7 +310,7 @@
 
 				<div class="grid grid-cols-2 gap-4">
 					<div>
-						<label for="price" class="block text-sm font-medium text-gray-700 mb-1">
+						<label for="price" class="label">
 							Price *
 						</label>
 						<div class="relative">
@@ -328,7 +321,7 @@
 								step="0.01"
 								min="0.01"
 								bind:value={price}
-								class="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+								class="input pl-7"
 								placeholder="0.00"
 								required
 							/>
@@ -336,13 +329,13 @@
 					</div>
 
 					<div>
-						<label for="location" class="block text-sm font-medium text-gray-700 mb-1">
+						<label for="location" class="label">
 							Location
 						</label>
 						<select
 							id="location"
 							bind:value={locationId}
-							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+							class="input"
 						>
 							<option value="">Select location...</option>
 							{#each data.locations as location}
@@ -353,14 +346,14 @@
 				</div>
 
 				<div>
-					<label for="justification" class="block text-sm font-medium text-gray-700 mb-1">
+					<label for="justification" class="label">
 						Price Justification *
 					</label>
 					<textarea
 						id="justification"
 						bind:value={priceJustification}
 						rows="2"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+						class="input"
 						placeholder="Explain why you chose this price (eBay comps, condition, rarity, etc.)"
 						required
 					></textarea>
@@ -422,14 +415,14 @@
 
 				{#if destination === 'ebay'}
 					<div>
-						<label for="ebayReason" class="block text-sm font-medium text-gray-700 mb-1">
+						<label for="ebayReason" class="label">
 							Why eBay? *
 						</label>
 						<textarea
 							id="ebayReason"
 							bind:value={ebayReason}
 							rows="2"
-							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+							class="input"
 							placeholder="Explain why this item should be listed on eBay (higher value, niche market, etc.)"
 							required
 						></textarea>
@@ -453,8 +446,8 @@
 						class="btn-secondary text-sm"
 					>
 						{#if gettingLocation}
-							<div class="animate-spin rounded-full h-4 w-4 border-2 border-primary-500 border-t-transparent mr-2"></div>
-							Getting Location...
+							<Spinner size="sm" />
+							<span class="ml-2">Getting Location...</span>
 						{:else if lat && lng}
 							<svg class="w-4 h-4 mr-1 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
@@ -496,8 +489,8 @@
 				class="btn-primary flex-1"
 			>
 				{#if submitting}
-					<div class="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent mr-2"></div>
-					Submitting...
+					<Spinner size="sm" />
+					<span class="ml-2">Submitting...</span>
 				{:else}
 					Submit Pricing Decision
 				{/if}

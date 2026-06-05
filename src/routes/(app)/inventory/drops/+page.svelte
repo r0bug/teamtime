@@ -1,5 +1,8 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { formatDateTime } from '$lib/utils';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	export let data: PageData;
 
@@ -19,36 +22,6 @@
 		: filter === 'reviewed'
 		? data.drops.filter(d => d.reviewedAt !== null)
 		: data.drops.filter(d => d.status === filter);
-
-	function formatDate(date: Date | string) {
-		return new Date(date).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric',
-			hour: 'numeric',
-			minute: '2-digit'
-		});
-	}
-
-	function getStatusColor(status: string) {
-		switch (status) {
-			case 'pending': return 'bg-yellow-100 text-yellow-800';
-			case 'processing': return 'bg-blue-100 text-blue-800';
-			case 'completed': return 'bg-green-100 text-green-800';
-			case 'failed': return 'bg-red-100 text-red-800';
-			default: return 'bg-gray-100 text-gray-800';
-		}
-	}
-
-	function getStatusLabel(status: string) {
-		switch (status) {
-			case 'pending': return 'Pending';
-			case 'processing': return 'Processing';
-			case 'completed': return 'Completed';
-			case 'failed': return 'Failed';
-			default: return status;
-		}
-	}
 </script>
 
 <svelte:head>
@@ -112,13 +85,9 @@
 					<!-- Details -->
 					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-2 mb-1 flex-wrap">
-							<span class="px-2 py-0.5 text-xs font-medium rounded-full {getStatusColor(drop.status)}">
-								{getStatusLabel(drop.status)}
-							</span>
+							<StatusBadge status={drop.status} />
 							{#if drop.reviewedAt}
-								<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
-									Reviewed
-								</span>
+								<StatusBadge variant="primary" label="Reviewed" />
 							{/if}
 							{#if drop.itemCount && drop.itemCount > 0}
 								<span class="text-sm text-gray-600">
@@ -134,7 +103,7 @@
 							{#if data.isManager && drop.userName}
 								<span>By {drop.userName}</span>
 							{/if}
-							<span>{formatDate(drop.createdAt)}</span>
+							<span>{formatDateTime(drop.createdAt)}</span>
 						</div>
 						{#if drop.status === 'failed' && drop.processingError}
 							<p class="text-sm text-red-600 mt-1 truncate">{drop.processingError}</p>
@@ -170,15 +139,9 @@
 				</div>
 			</a>
 		{:else}
-			<div class="text-center py-12">
-				<svg class="mx-auto w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-				</svg>
-				<p class="mt-2 text-gray-600">No inventory drops found</p>
-				<a href="/inventory/drops/new" class="btn-primary inline-flex mt-4">
-					Create Your First Drop
-				</a>
-			</div>
+			<EmptyState title="No inventory drops found">
+				<a href="/inventory/drops/new" class="btn-primary">Create Your First Drop</a>
+			</EmptyState>
 		{/each}
 	</div>
 </div>

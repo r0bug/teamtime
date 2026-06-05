@@ -14,6 +14,10 @@ import {
 	resetPortalPassword,
 	disablePortal,
 	markOnboardingComplete,
+	getVendorAuthStatus,
+	unlockPortalAccount,
+	listLinkableUsers,
+	linkExistingUserToVendor,
 	VendorServiceError
 } from '$lib/server/services/vendor-service';
 import { listTemplates } from '$lib/server/services/agreement-template-service';
@@ -25,11 +29,13 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const vendor = await getVendor(params.id);
 	if (!vendor) throw error(404, 'Vendor not found');
 
-	const [agreements, templates, allGroups, vendorGroupRows] = await Promise.all([
+	const [agreements, templates, allGroups, vendorGroupRows, authStatus, linkableUsers] = await Promise.all([
 		getVendorAgreements(params.id),
 		listTemplates({ includeInactive: false, includeArchived: false }),
 		listGroups({ includeArchived: false }),
-		getVendorGroups(params.id)
+		getVendorGroups(params.id),
+		getVendorAuthStatus(params.id),
+		listLinkableUsers()
 	]);
 
 	const signedTemplateIds = new Set(
@@ -47,7 +53,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		availableTemplates,
 		signedCodes: Array.from(signedCodes),
 		allGroups,
-		vendorGroupIds: vendorGroupRows.map((g) => g.id)
+		vendorGroupIds: vendorGroupRows.map((g) => g.id),
+		authStatus,
+		linkableUsers
 	};
 };
 
@@ -145,6 +153,19 @@ export const actions: Actions = {
 		return { success: 'markOnboardingComplete' };
 	},
 
+	linkUser: async ({ locals, params, request }) => {
+		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		const userId = ((await request.formData()).get('userId') as string) ?? '';
+		if (!userId) return fail(400, { error: 'Pick a user to link' });
+		try {
+			await linkExistingUserToVendor({ vendorId: params.id, userId });
+		} catch (err) {
+			if (err instanceof VendorServiceError) return fail(400, { error: err.message });
+			throw err;
+		}
+		return { success: 'linkUser' };
+	},
+
 	enablePortal: async ({ locals, params, request }) => {
 		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
 		const data = await request.formData();
@@ -213,5 +234,17 @@ export const actions: Actions = {
 			throw err;
 		}
 		return { success: 'disablePortal' };
+	},
+
+	unlockPortal: async ({ locals, params }) => {
+		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(401, { error: 'Not signed in' });
+		try {
+			await unlockPortalAccount(params.id, locals.user.id);
+		} catch (err) {
+			if (err instanceof VendorServiceError) return fail(400, { error: err.message });
+			throw err;
+		}
+		return { success: 'unlockPortal' };
 	}
 };

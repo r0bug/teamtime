@@ -9,6 +9,7 @@
 	import ShortcutHelp from '$lib/components/ShortcutHelp.svelte';
 	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
 	import { registerDefaultShortcuts, handleKeydown as shortcutKeydown } from '$lib/stores/shortcuts';
+	import { enhance } from '$app/forms';
 
 	export let data: LayoutData;
 
@@ -507,17 +508,19 @@
 								</span>
 								Settings
 							</a>
-							<a
-								href="/logout"
-								class="flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors text-red-600 hover:bg-red-50"
-							>
-								<span class="w-5 h-5 mr-3">
-									<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-									</svg>
-								</span>
-								Logout
-							</a>
+							<form method="POST" action="/logout" use:enhance>
+								<button
+									type="submit"
+									class="w-full flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors text-red-600 hover:bg-red-50"
+								>
+									<span class="w-5 h-5 mr-3">
+										<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+										</svg>
+									</span>
+									Logout
+								</button>
+							</form>
 						</div>
 					</nav>
 				</div>

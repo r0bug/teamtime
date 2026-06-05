@@ -1,25 +1,78 @@
 /**
- * Pending inventory changes — vendor proposes, staff applies.
+ * Pending inventory changes — vendor proposes, then we apply to NRS.
  *
  * The vendor portal submits proposed creates/updates/deletes against their
- * NRS inventory. Until we wire NRS write API, every proposal lands here as
- * `status='pending'`; staff reviews `/admin/vendors/inventory-changes`,
- * applies the change manually in NRS, and marks the row `applied`.
+ * NRS inventory. Each proposal lands here as `status='pending'`.
+ *
+ * `create` changes auto-apply to NRS via the live write API (invstock/save) the
+ * moment they're submitted; every API call is journaled to `nrsInventoryApiLog`.
+ * On a successful save the row flips to `applied`; on failure it stays `pending`
+ * so staff can fall back to the CSV/importer path (`/admin/vendors/inventory-changes`)
+ * and the journal explains why.
+ *
+ * `update`/`delete` still land as `pending` for staff (NRS has no confirmed
+ * update endpoint and delete needs an externalCode/externalId mapping we don't
+ * yet set — see nrs-api-client.ts). Ownership of the target NRS item is verified
+ * at submit time so a vendor can never queue a change against another vendor's item.
+ *
+ * The legacy NRS-Importer CSV path has been retired — `invstock/save` is now the
+ * only mechanism for pushing creates to NRS. Staff can bulk-retry any pending
+ * creates via `autoApplyPendingCreatesViaApi` (the apply button on the queue).
  */
 
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
 	pendingInventoryChanges,
+	nrsInventoryApiLog,
 	vendors,
 	users,
-	type PendingInventoryChange
+	type PendingInventoryChange,
+	type NewNrsInventoryApiLog,
+	type NrsInventoryApiLog
 } from '$lib/server/db/schema';
+import {
+	saveInvStock,
+	getAllInvStockForVendor,
+	type SaveInvStockInput
+} from '$lib/server/services/nrs-api-client';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('services:inventory-change');
 
 export class InventoryChangeError extends Error {}
+
+/**
+ * Authoritatively determine whether an NRS item belongs to a vendor, keyed on
+ * NRS `passThroughVendorId === vendors.nrsVendorId`. Uses the server-side
+ * `passThroughApVendorId` filter, which returns ONLY that vendor's items.
+ *
+ *   - `true`  → item is in the vendor's set
+ *   - `false` → item is not the vendor's (or doesn't exist) → caller must block
+ *   - `null`  → NRS unreachable; ownership unknown (caller decides; the
+ *               partNumber-prefix invariant still provides a guard)
+ */
+export async function checkVendorOwnsNrsItem(
+	nrsVendorId: number,
+	nrsPartId: number
+): Promise<boolean | null> {
+	try {
+		const items = await getAllInvStockForVendor(nrsVendorId);
+		return items.some((i) => i.invStockId === nrsPartId);
+	} catch (err) {
+		log.warn({ nrsVendorId, nrsPartId, err: String(err) }, 'Ownership check could not reach NRS');
+		return null;
+	}
+}
+
+async function writeApiLog(entry: NewNrsInventoryApiLog): Promise<void> {
+	try {
+		await db.insert(nrsInventoryApiLog).values(entry);
+	} catch (err) {
+		// Never let an audit-log write failure mask the real apply result.
+		log.error({ err: String(err) }, 'Failed to write NRS inventory API log');
+	}
+}
 
 export interface ChangePayload {
 	partName?: string;
@@ -61,8 +114,25 @@ export async function submitChange(input: SubmitChangeInput): Promise<PendingInv
 		);
 	}
 
-	if ((input.changeType === 'update' || input.changeType === 'delete') && !input.nrsPartId) {
-		throw new InventoryChangeError(`${input.changeType} change requires an nrsPartId`);
+	if (input.changeType === 'update' || input.changeType === 'delete') {
+		if (!input.nrsPartId) {
+			throw new InventoryChangeError(`${input.changeType} change requires an nrsPartId`);
+		}
+		// Ownership guard: the vendor-supplied nrsPartId is the real attack vector
+		// (the prefix check only validates partNumber). Verify the target item is
+		// actually this vendor's before we ever store the change. Fail closed on a
+		// positive non-ownership; allow when NRS is unreachable (prefix invariant
+		// still holds, and the apply path re-checks before mutating).
+		if (vendor.nrsVendorId) {
+			const owned = await checkVendorOwnsNrsItem(vendor.nrsVendorId, input.nrsPartId);
+			if (owned === false) {
+				log.warn(
+					{ vendorId: vendor.id, nrsVendorId: vendor.nrsVendorId, nrsPartId: input.nrsPartId },
+					'Blocked inventory change against item not owned by vendor'
+				);
+				throw new InventoryChangeError('That item does not belong to your vendor account.');
+			}
+		}
 	}
 
 	const [row] = await db
@@ -89,6 +159,128 @@ export async function submitChange(input: SubmitChangeInput): Promise<PendingInv
 		'Submitted inventory change'
 	);
 	return row;
+}
+
+export interface ApplyApiResult {
+	/** The NRS call succeeded and the change is now `applied`. */
+	applied: boolean;
+	nrsPartId: number | null;
+	/** Present when the change was left `pending` for the staff fallback. */
+	error?: string;
+}
+
+/**
+ * Apply a single pending `create` to NRS via the live `invstock/save` API,
+ * attributing it to the vendor via `passThroughApVendorId = vendor.nrsVendorId`.
+ *
+ * Always journals the attempt to `nrsInventoryApiLog`. On success, flips the
+ * pending change to `applied`. On any failure (no NRS vendor id, network error,
+ * NRS didn't confirm) the change is left `pending` so staff can fall back to the
+ * CSV/importer path — this function never throws for an apply failure, it
+ * returns `{ applied: false, error }`.
+ */
+export async function applyCreateViaApi(
+	changeId: string,
+	triggeredByUserId: string
+): Promise<ApplyApiResult> {
+	const [change] = await db
+		.select()
+		.from(pendingInventoryChanges)
+		.where(eq(pendingInventoryChanges.id, changeId))
+		.limit(1);
+	if (!change) throw new InventoryChangeError('Change not found');
+	if (change.changeType !== 'create') {
+		throw new InventoryChangeError('applyCreateViaApi only handles create changes');
+	}
+	if (change.status !== 'pending') {
+		return { applied: false, nrsPartId: change.nrsPartId, error: 'Change is no longer pending' };
+	}
+
+	const [vendor] = await db.select().from(vendors).where(eq(vendors.id, change.vendorId)).limit(1);
+	if (!vendor) throw new InventoryChangeError('Vendor not found');
+
+	const baseLog: NewNrsInventoryApiLog = {
+		vendorId: vendor.id,
+		pendingChangeId: change.id,
+		triggeredByUserId,
+		action: 'create',
+		endpoint: 'invstock/save',
+		partNumber: change.partNumber,
+		nrsVendorId: vendor.nrsVendorId ?? null,
+		nrsPartId: null,
+		requestPayload: null,
+		responseBody: null,
+		httpStatus: null,
+		success: false,
+		errorMessage: null
+	};
+
+	if (!vendor.nrsVendorId) {
+		const error = 'Vendor has no NRS vendor id — cannot auto-apply, left pending for staff';
+		await writeApiLog({ ...baseLog, errorMessage: error });
+		return { applied: false, nrsPartId: null, error };
+	}
+
+	const p = (change.payload ?? {}) as ChangePayload;
+	const saveInput: SaveInvStockInput = {
+		name: (p.partName ?? p.description ?? change.partNumber) as string,
+		partNumber: change.partNumber,
+		description: typeof p.description === 'string' ? p.description : undefined,
+		invType: 'Goods',
+		retailPrice: typeof p.priceCents === 'number' ? p.priceCents / 100 : undefined,
+		printTag: true,
+		passThroughApVendorId: vendor.nrsVendorId,
+		// NRS's documented save params don't include quantityOnHand; send it
+		// best-effort so on-hand carries through when supported and is harmlessly
+		// ignored otherwise. The intended qty is preserved in the journal payload.
+		...(typeof p.quantity === 'number' ? { quantityOnHand: p.quantity } : {})
+	};
+
+	try {
+		const result = await saveInvStock(saveInput);
+		await writeApiLog({
+			...baseLog,
+			nrsPartId: result.invStockId,
+			requestPayload: saveInput as Record<string, unknown>,
+			responseBody: result.raw,
+			httpStatus: 200,
+			success: result.saved,
+			errorMessage: result.saved ? null : 'NRS did not confirm save (no { saved: true })'
+		});
+
+		if (!result.saved) {
+			return { applied: false, nrsPartId: null, error: 'NRS did not confirm the save' };
+		}
+
+		const now = new Date();
+		await db
+			.update(pendingInventoryChanges)
+			.set({
+				status: 'applied',
+				reviewedAt: now,
+				appliedAt: now,
+				reviewedByUserId: triggeredByUserId,
+				appliedByUserId: triggeredByUserId,
+				nrsPartId: result.invStockId ?? change.nrsPartId,
+				nrsApplyNotes: `Auto-applied via NRS API (invstock/save)${result.invStockId ? ` → invStockId ${result.invStockId}` : ''}`
+			})
+			.where(
+				and(eq(pendingInventoryChanges.id, change.id), eq(pendingInventoryChanges.status, 'pending'))
+			);
+
+		log.info({ changeId, vendorId: vendor.id, nrsPartId: result.invStockId }, 'Auto-applied create via NRS API');
+		return { applied: true, nrsPartId: result.invStockId };
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		await writeApiLog({
+			...baseLog,
+			requestPayload: saveInput as Record<string, unknown>,
+			responseBody: { error: msg },
+			errorMessage: msg
+		});
+		log.error({ changeId, err: msg }, 'Auto-apply create via NRS API failed — left pending');
+		return { applied: false, nrsPartId: null, error: msg };
+	}
 }
 
 /**
@@ -313,190 +505,127 @@ export function buildNrsCsvFromChangeRows(
 	return lines.join('\r\n') + '\r\n';
 }
 
-export interface NrsImportCsvOptions {
-	/** Optional: only export rows for one vendor (TT vendorId). */
-	vendorId?: string;
-	/** Optional: only this change type (default: 'create' since NRS Importer is for adding new inventory). */
-	changeType?: 'create' | 'update' | 'delete';
-}
-
-export interface NrsImportCsvResult {
-	csv: string;
-	rowCount: number;
-	changeIds: string[];
-	vendorName: string | null;
-	vendorCode: string | null;
+export interface ApiBulkApplyResult {
+	total: number;
+	applied: number;
+	failed: number;
+	results: {
+		changeId: string;
+		partNumber: string;
+		vendorDisplayName: string;
+		applied: boolean;
+		nrsPartId: number | null;
+		error?: string;
+	}[];
 }
 
 /**
- * Build a CSV that matches the NRS ImportInv template, sourced from pending
- * inventory changes (status='pending'). Only `create` changes by default —
- * NRS's Importer adds new items, it doesn't update existing ones.
- *
- * The result string is RFC 4180-style CSV with CRLF line endings.
+ * Push all pending `create` changes to NRS via the live `invstock/save` API
+ * (the staff "apply" button — a retry path for creates whose at-submit
+ * auto-apply failed). Each call is journaled by `applyCreateViaApi`; a failed
+ * one leaves its change `pending` so it can be retried again. Runs sequentially
+ * to stay gentle on the NRS API.
  */
-export async function buildNrsImportCsv(opts: NrsImportCsvOptions = {}): Promise<NrsImportCsvResult> {
-	const changeType = opts.changeType ?? 'create';
+export async function autoApplyPendingCreatesViaApi(opts: {
+	triggeredByUserId: string;
+	vendorId?: string;
+}): Promise<ApiBulkApplyResult> {
 	const conditions = [
 		eq(pendingInventoryChanges.status, 'pending'),
-		eq(pendingInventoryChanges.changeType, changeType)
+		eq(pendingInventoryChanges.changeType, 'create'),
+		...(opts.vendorId ? [eq(pendingInventoryChanges.vendorId, opts.vendorId)] : [])
 	];
-	if (opts.vendorId) conditions.push(eq(pendingInventoryChanges.vendorId, opts.vendorId));
 
 	const rows = await db
 		.select({
-			change: pendingInventoryChanges,
-			vendorDisplayName: vendors.displayName,
-			vendorCode: vendors.inventoryCodePrefix
+			id: pendingInventoryChanges.id,
+			partNumber: pendingInventoryChanges.partNumber,
+			vendorDisplayName: vendors.displayName
 		})
 		.from(pendingInventoryChanges)
 		.innerJoin(vendors, eq(vendors.id, pendingInventoryChanges.vendorId))
 		.where(and(...conditions))
 		.orderBy(pendingInventoryChanges.submittedAt);
 
-	const lines: string[] = [NRS_HEADER_ROW];
-	const changeIds: string[] = [];
-	let vendorName: string | null = null;
-	let vendorCode: string | null = null;
-
+	const result: ApiBulkApplyResult = { total: rows.length, applied: 0, failed: 0, results: [] };
 	for (const r of rows) {
-		// When the export is scoped to one vendor, surface that vendor's name/code
-		// in the result for the "you're about to import for X" UI banner.
-		if (opts.vendorId) {
-			vendorName = r.vendorDisplayName;
-			vendorCode = r.vendorCode;
+		try {
+			const apply = await applyCreateViaApi(r.id, opts.triggeredByUserId);
+			if (apply.applied) result.applied++;
+			else result.failed++;
+			result.results.push({
+				changeId: r.id,
+				partNumber: r.partNumber,
+				vendorDisplayName: r.vendorDisplayName,
+				applied: apply.applied,
+				nrsPartId: apply.nrsPartId,
+				error: apply.error
+			});
+		} catch (err) {
+			result.failed++;
+			result.results.push({
+				changeId: r.id,
+				partNumber: r.partNumber,
+				vendorDisplayName: r.vendorDisplayName,
+				applied: false,
+				nrsPartId: null,
+				error: err instanceof Error ? err.message : String(err)
+			});
 		}
-		lines.push(renderNrsCsvCells(r.change, r.vendorDisplayName).map(csvEscape).join(','));
-		changeIds.push(r.change.id);
 	}
-
-	return {
-		csv: lines.join('\r\n') + '\r\n',
-		rowCount: rows.length,
-		changeIds,
-		vendorName,
-		vendorCode
-	};
+	return result;
 }
 
-export interface AutoImportResult {
-	vendorId: string;
-	vendorDisplayName: string;
-	vendorNrsId: number | null;
-	rowCount: number;
-	ok: boolean;
-	messages: string[];
-	error?: string;
-	appliedChangeIds: string[];
-	fileId?: number;
+// ── NRS API journal (staff audit view) ────────────────────────────────────────
+
+export interface ApiLogEntry extends NrsInventoryApiLog {
+	vendorDisplayName: string | null;
+	triggeredByName: string | null;
 }
 
 /**
- * Apply all pending `create` changes by feeding them to the NRS Importer
- * web UI (login → upload CSV → submit form). Groups by vendor since the
- * importer scopes to one pass-through vendor per submission.
- *
- * On success, marks the matched changes as `applied` with a notes line
- * referencing the NRS file id.
- *
- * Failures bubble per-vendor — one bad batch doesn't block the others.
+ * List NRS inventory-API journal entries for the staff audit page, newest first.
+ * Joins are LEFT so an entry survives vendor/user deletion.
  */
-export async function autoApplyPendingViaImporter(opts: {
-	appliedByUserId: string;
-	vendorId?: string; // optional: limit to a single vendor
-}): Promise<AutoImportResult[]> {
-	const { buildNrsImportCsv } = await import('./inventory-change-service');
-	const { applyCsvViaNrsImporter } = await import('./nrs-importer-client');
+export async function listApiLog(
+	filter: { vendorId?: string; success?: boolean; limit?: number } = {}
+): Promise<ApiLogEntry[]> {
+	const conditions = [];
+	if (filter.vendorId) conditions.push(eq(nrsInventoryApiLog.vendorId, filter.vendorId));
+	if (filter.success !== undefined) conditions.push(eq(nrsInventoryApiLog.success, filter.success));
 
-	// Find vendors with pending creates (optionally scoped)
-	const pendingByVendor = await db
+	const rows = await db
 		.select({
-			vendorId: pendingInventoryChanges.vendorId,
+			log: nrsInventoryApiLog,
 			vendorDisplayName: vendors.displayName,
-			vendorNrsId: vendors.nrsVendorId,
-			vendorCode: vendors.inventoryCodePrefix,
-			count: sql<number>`count(*)::int`
+			triggeredByName: users.name
 		})
-		.from(pendingInventoryChanges)
-		.innerJoin(vendors, eq(vendors.id, pendingInventoryChanges.vendorId))
-		.where(
-			and(
-				eq(pendingInventoryChanges.status, 'pending'),
-				eq(pendingInventoryChanges.changeType, 'create'),
-				...(opts.vendorId ? [eq(pendingInventoryChanges.vendorId, opts.vendorId)] : [])
-			)
-		)
-		.groupBy(vendors.id, pendingInventoryChanges.vendorId, vendors.displayName, vendors.nrsVendorId, vendors.inventoryCodePrefix);
+		.from(nrsInventoryApiLog)
+		.leftJoin(vendors, eq(vendors.id, nrsInventoryApiLog.vendorId))
+		.leftJoin(users, eq(users.id, nrsInventoryApiLog.triggeredByUserId))
+		.where(conditions.length ? and(...conditions) : undefined)
+		.orderBy(desc(nrsInventoryApiLog.createdAt))
+		.limit(Math.min(filter.limit ?? 200, 500));
 
-	const results: AutoImportResult[] = [];
-	for (const v of pendingByVendor) {
-		const base: AutoImportResult = {
-			vendorId: v.vendorId,
-			vendorDisplayName: v.vendorDisplayName,
-			vendorNrsId: v.vendorNrsId,
-			rowCount: v.count,
-			ok: false,
-			messages: [],
-			appliedChangeIds: []
-		};
-		if (!v.vendorNrsId) {
-			base.error = 'Vendor has no NRS vendor id';
-			results.push(base);
-			continue;
-		}
+	return rows.map((r) => ({
+		...r.log,
+		vendorDisplayName: r.vendorDisplayName,
+		triggeredByName: r.triggeredByName
+	}));
+}
 
-		try {
-			// Build the CSV for just this vendor
-			const csvResult = await buildNrsImportCsv({ vendorId: v.vendorId, changeType: 'create' });
-			if (csvResult.rowCount === 0) {
-				base.error = 'No rows to import';
-				results.push(base);
-				continue;
-			}
-
-			const today = new Date().toISOString().slice(0, 10);
-			const filename = `tt-${v.vendorCode ?? 'vendor'}-${today}.csv`;
-
-			const importResult = await applyCsvViaNrsImporter({
-				csv: csvResult.csv,
-				filename,
-				passThroughApVendorId: v.vendorNrsId,
-				expectedRowCount: csvResult.rowCount
-			});
-
-			base.ok = importResult.ok;
-			base.messages = importResult.messages;
-			base.fileId = importResult.fileId;
-
-			if (importResult.ok && csvResult.changeIds.length > 0) {
-				const appliedAt = new Date();
-				const notes = `Auto-applied via NRS Importer (file #${importResult.fileId})${importResult.messages.length ? ': ' + importResult.messages.join(' / ') : ''}`;
-				await db
-					.update(pendingInventoryChanges)
-					.set({
-						status: 'applied',
-						reviewedAt: appliedAt,
-						appliedAt,
-						reviewedByUserId: opts.appliedByUserId,
-						appliedByUserId: opts.appliedByUserId,
-						nrsApplyNotes: notes
-					})
-					.where(
-						and(
-							inArray(pendingInventoryChanges.id, csvResult.changeIds),
-							eq(pendingInventoryChanges.status, 'pending')
-						)
-					);
-				base.appliedChangeIds = csvResult.changeIds;
-			}
-		} catch (err) {
-			base.error = err instanceof Error ? err.message : String(err);
-			log.error({ vendorId: v.vendorId, err }, 'Auto-import failed for vendor');
-		}
-		results.push(base);
+/** Success/failure counts for the journal header. */
+export async function apiLogCounts(): Promise<{ success: number; failure: number }> {
+	const rows = await db
+		.select({ success: nrsInventoryApiLog.success, count: sql<number>`count(*)::int` })
+		.from(nrsInventoryApiLog)
+		.groupBy(nrsInventoryApiLog.success);
+	const result = { success: 0, failure: 0 };
+	for (const r of rows) {
+		if (r.success) result.success = r.count;
+		else result.failure = r.count;
 	}
-
-	return results;
+	return result;
 }
 
 export async function pendingCountByStatus(): Promise<{ pending: number; applied: number; rejected: number; cancelled: number }> {

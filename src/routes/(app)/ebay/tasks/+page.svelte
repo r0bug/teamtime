@@ -1,5 +1,10 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
+	import { notify } from '$lib/notify';
+	import { formatCurrency, formatDateTime } from '$lib/utils';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Spinner from '$lib/components/Spinner.svelte';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
@@ -7,32 +12,6 @@
 	let showClaimed = data.showClaimed;
 	let showCompleted = data.showCompleted;
 	let claimingTaskId: string | null = null;
-	let error = '';
-
-	function formatDate(date: Date | string) {
-		return new Date(date).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			hour: 'numeric',
-			minute: '2-digit'
-		});
-	}
-
-	function formatPrice(price: string | number) {
-		return new Intl.NumberFormat('en-US', {
-			style: 'currency',
-			currency: 'USD'
-		}).format(typeof price === 'string' ? parseFloat(price) : price);
-	}
-
-	function getStatusColor(status: string) {
-		switch (status) {
-			case 'completed': return 'bg-green-100 text-green-800';
-			case 'in_progress': return 'bg-blue-100 text-blue-800';
-			case 'cancelled': return 'bg-gray-100 text-gray-800';
-			default: return 'bg-yellow-100 text-yellow-800';
-		}
-	}
 
 	function updateFilters() {
 		const params = new URLSearchParams();
@@ -42,7 +21,6 @@
 	}
 
 	async function claimTask(taskId: string) {
-		error = '';
 		claimingTaskId = taskId;
 
 		try {
@@ -62,7 +40,7 @@
 			await invalidateAll();
 		} catch (e) {
 			console.error('Claim error:', e);
-			error = e instanceof Error ? e.message : 'Failed to claim task';
+			notify.error(e instanceof Error ? e.message : 'Failed to claim task');
 		} finally {
 			claimingTaskId = null;
 		}
@@ -78,12 +56,6 @@
 		<h1 class="text-2xl font-bold">eBay Listing Tasks</h1>
 		<p class="text-gray-600 mt-1">Items waiting to be listed on eBay</p>
 	</div>
-
-	{#if error}
-		<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-			{error}
-		</div>
-	{/if}
 
 	<!-- Filters -->
 	<div class="flex flex-wrap gap-4 mb-6">
@@ -134,12 +106,10 @@
 						<!-- Details -->
 						<div class="flex-1 min-w-0">
 							<div class="flex items-center gap-2 mb-1">
-								<span class="px-2 py-0.5 text-xs font-medium rounded-full {getStatusColor(task.status)}">
-									{task.status.replace('_', ' ')}
-								</span>
+								<StatusBadge status={task.status} />
 								{#if task.pricingDecision}
 									<span class="text-lg font-bold text-primary-600">
-										{formatPrice(task.pricingDecision.price)}
+										{formatCurrency(task.pricingDecision.price)}
 									</span>
 								{/if}
 							</div>
@@ -155,7 +125,7 @@
 							{/if}
 
 							<div class="flex items-center gap-4 mt-2 text-sm text-gray-500">
-								<span>{formatDate(task.createdAt)}</span>
+								<span>{formatDateTime(task.createdAt)}</span>
 								{#if task.assigneeName}
 									<span>Claimed by {task.assigneeName}</span>
 								{/if}
@@ -180,8 +150,8 @@
 									class="btn-primary text-sm"
 								>
 									{#if claimingTaskId === task.id}
-										<div class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-1"></div>
-										Claiming...
+										<Spinner size="sm" />
+										<span class="ml-1">Claiming...</span>
 									{:else}
 										Claim Task
 									{/if}
@@ -199,15 +169,10 @@
 				</div>
 			</div>
 		{:else}
-			<div class="text-center py-12">
-				<svg class="mx-auto w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-				</svg>
-				<p class="mt-2 text-gray-600">No eBay listing tasks available</p>
-				<p class="text-sm text-gray-500 mt-1">
-					Tasks are created when items are marked for eBay during pricing.
-				</p>
-			</div>
+			<EmptyState
+				title="No eBay listing tasks available"
+				message="Tasks are created when items are marked for eBay during pricing."
+			/>
 		{/each}
 	</div>
 </div>
