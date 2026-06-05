@@ -127,6 +127,7 @@ export const actions: Actions = {
 		const description = ((form.get('description') as string) ?? '').trim();
 		const priceCents = parsePriceCents(form.get('priceDollars'));
 		const quantity = parseInt10(form.get('quantity'));
+		const sendToPrinter = form.get('sendToPrinter') === 'on' || form.get('sendToPrinter') === 'true';
 
 		if (!description) return fail(400, { error: 'Description is required' });
 		if (priceCents === undefined) return fail(400, { error: 'Price is required' });
@@ -167,7 +168,41 @@ export const actions: Actions = {
 		}
 
 		const apply = await applyCreateViaApi(changeId, locals.user.id);
-		return { success: 'quickTag', partNumber, description, priceCents, applied: apply.applied, applyError: apply.error ?? null };
+
+		// Optionally queue the tag for the standalone desktop label printer.
+		// Non-fatal: the item already exists, so a queue failure is surfaced as a
+		// soft note rather than failing the whole submit.
+		let queuedForPrint = false;
+		let queueError: string | null = null;
+		if (sendToPrinter) {
+			const { enqueuePrintJob } = await import('$lib/server/services/print-queue-service');
+			try {
+				await enqueuePrintJob({
+					vendorId: vendor.id,
+					partNumber,
+					copies: quantity ?? 1,
+					description,
+					priceCents,
+					pendingChangeId: changeId,
+					createdByUserId: locals.user.id,
+					source: 'web_portal'
+				});
+				queuedForPrint = true;
+			} catch (err) {
+				queueError = err instanceof Error ? err.message : 'Could not queue for the label printer';
+			}
+		}
+
+		return {
+			success: 'quickTag',
+			partNumber,
+			description,
+			priceCents,
+			applied: apply.applied,
+			applyError: apply.error ?? null,
+			queuedForPrint,
+			queueError
+		};
 	},
 
 	cancel: async ({ locals, request }) => {

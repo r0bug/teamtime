@@ -90,7 +90,10 @@
 	{/if}
 	{#if form?.success === 'quickTag'}
 		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm flex items-center justify-between gap-2 flex-wrap">
-			<span>{form.applied ? '✓ Tag created in NRS.' : '✓ Tag queued (staff will apply to NRS).'} Code: <code class="font-mono font-semibold">{form.partNumber}</code> — "{form.description}" — ${(Number(form.priceCents) / 100).toFixed(2)}</span>
+			<span>
+				{form.applied ? '✓ Tag created in NRS.' : '✓ Tag queued (staff will apply to NRS).'} Code: <code class="font-mono font-semibold">{form.partNumber}</code> — "{form.description}" — ${(Number(form.priceCents) / 100).toFixed(2)}
+				{#if form.queuedForPrint}<span class="ml-1">· 🖨️ Sent to your label printer's queue.</span>{/if}
+			</span>
 			<button
 				type="button"
 				class="btn btn-secondary text-xs whitespace-nowrap"
@@ -99,6 +102,9 @@
 				{zebraBusyFor === String(form.partNumber) ? 'Sending…' : '🦓 Print on Zebra'}
 			</button>
 		</div>
+		{#if form.queueError}
+			<div class="mt-2 p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded text-sm">Tag created, but couldn't queue it for the label printer: {form.queueError}</div>
+		{/if}
 	{/if}
 
 	{#if zebraStatus}
@@ -140,6 +146,10 @@
 						</div>
 						<div class="md:col-span-2">
 							<button type="submit" class="btn btn-primary w-full">Make Tag</button>
+						</div>
+						<div class="md:col-span-12 flex items-center gap-2">
+							<input id="qt-send-printer" name="sendToPrinter" type="checkbox" class="h-4 w-4" />
+							<label for="qt-send-printer" class="text-sm text-gray-700">Send to my label printer (the desktop printing app will pick it up and print it)</label>
 						</div>
 					</form>
 				</div>

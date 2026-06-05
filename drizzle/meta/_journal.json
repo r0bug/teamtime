@@ -246,6 +246,13 @@
       "when": 1780652405630,
       "tag": "0034_many_prodigy",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "5",
+      "when": 1780688814051,
+      "tag": "0035_red_masked_marvel",
+      "breakpoints": true
     }
   ]
 }

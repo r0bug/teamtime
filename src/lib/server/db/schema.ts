@@ -3301,6 +3301,19 @@ export const inventoryChangeStatusEnum = pgEnum('inventory_change_status', [
 	'cancelled'
 ]);
 
+// Lifecycle of a tag queued for the standalone desktop label printer.
+// 'claimed' is reserved for a future admin/store mode where staff lease a job
+// before printing (queued → claimed → printed) so a vendor's home app and the
+// store don't double-print; v1 never sets it. Reserved now to avoid a second
+// enum migration later (per yakima-label consumer response, 2026-06-05).
+export const printJobStatusEnum = pgEnum('print_job_status', [
+	'queued',
+	'claimed',
+	'printed',
+	'failed',
+	'cancelled'
+]);
+
 // Reporting groups for vendors (e.g. "Antiques", "Crafts", "Books").
 // Many-to-many — a vendor can belong to multiple groups.
 export const vendorGroups = pgTable('vendor_groups', {
@@ -3494,6 +3507,32 @@ export const vendorPartnumberSequences = pgTable('vendor_partnumber_sequences', 
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 }, (table) => ({
 	pk: unique('vendor_partnumber_sequences_pk').on(table.vendorId, table.dateStr)
+}));
+
+// Print jobs queued for the standalone desktop label printer (r0bug/yakima-label).
+// A web-portal "Make a tag" with "send to label printer" checked enqueues one
+// row here; the desktop app polls GET /api/vendor/print-queue, prints over USB,
+// then acks via POST /api/vendor/print-queue/:id/ack. Inventory state lives in
+// pending_inventory_changes — this table only tracks the print lifecycle, so a
+// reprint can be re-queued without touching the item record.
+export const vendorPrintJobs = pgTable('vendor_print_jobs', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	vendorId: uuid('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+	partNumber: text('part_number').notNull(),
+	copies: integer('copies').notNull().default(1),
+	// Denormalized display fields so the desktop list renders without a lookup.
+	description: text('description'),
+	priceCents: integer('price_cents'),
+	source: text('source').notNull().default('web_portal'), // 'web_portal' | 'desktop'
+	status: printJobStatusEnum('status').notNull().default('queued'),
+	// Link back to the item this tag is for, when one exists.
+	pendingChangeId: uuid('pending_change_id').references(() => pendingInventoryChanges.id, { onDelete: 'set null' }),
+	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	printedAt: timestamp('printed_at', { withTimezone: true }),
+	failureReason: text('failure_reason')
+}, (table) => ({
+	idxVendorStatus: index('idx_vendor_print_jobs_vendor_status').on(table.vendorId, table.status)
 }));
 
 // User-defined label sizes (replaces the hardcoded tag_format enum so admins
