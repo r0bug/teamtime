@@ -26,6 +26,13 @@ export interface TagRenderContext {
 	monthCode?: string | null;
 	/** Number of copies to print (^PQ). Clamped to [1, 99]; defaults to 1. */
 	copies?: number;
+	/**
+	 * Optional label-format code override (e.g. a thermal format chosen at print
+	 * time by the desktop label app). When omitted, the vendor's preferred format
+	 * from `settings` is used. Callers that allow overrides must validate the code
+	 * (exists + appropriate category) before passing it.
+	 */
+	formatCode?: string;
 }
 
 export interface TagDimensions {
@@ -130,7 +137,7 @@ export async function renderBarcodeSvg(
  */
 export async function renderTagSvg(ctx: TagRenderContext): Promise<string> {
 	const eff = resolveSettings(ctx.settings);
-	const dims = await getFormatDimensions(eff.preferredFormat);
+	const dims = await getFormatDimensions(ctx.formatCode ?? eff.preferredFormat);
 	const widthPx = Math.round(dims.widthInches * 96); // 96 dpi screen
 	const heightPx = Math.round(dims.heightInches * 96);
 
@@ -376,7 +383,7 @@ function embedSvgFitContent(svg: string): string {
 export async function renderZpl(ctx: TagRenderContext): Promise<string> {
 	const copies = Math.max(1, Math.min(99, Math.floor(ctx.copies ?? 1)));
 	const eff = resolveSettings(ctx.settings);
-	const dims = await getFormatDimensions(eff.preferredFormat);
+	const dims = await getFormatDimensions(ctx.formatCode ?? eff.preferredFormat);
 	const dpi = eff.zebraDpi || 203;
 	const widthDots = Math.round(dims.widthInches * dpi);
 	const heightDots = Math.round(dims.heightInches * dpi);

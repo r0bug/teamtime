@@ -5,7 +5,8 @@ import {
 	db,
 	vendorTagSettings,
 	pendingInventoryChanges,
-	salesTransactions
+	salesTransactions,
+	labelFormats
 } from '$lib/server/db';
 import { getVendorForUser } from '$lib/server/services/vendor-service';
 import { renderZpl } from '$lib/server/services/tag-render-service';
@@ -32,6 +33,27 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			return json({ error: 'copies must be a positive integer' }, { status: 400 });
 		}
 		copies = parseInt(copiesRaw, 10);
+	}
+
+	// Optional label-format override (desktop app picks a thermal format at print
+	// time). Omitted → the vendor's preferred format. A sheet/Avery format can't
+	// render as one thermal ZPL label, so reject it loudly rather than print garbage.
+	const formatCode = url.searchParams.get('format')?.trim() || undefined;
+	if (formatCode) {
+		const [fmt] = await db
+			.select({ category: labelFormats.category, isActive: labelFormats.isActive })
+			.from(labelFormats)
+			.where(eq(labelFormats.code, formatCode))
+			.limit(1);
+		if (!fmt || !fmt.isActive) {
+			return json({ error: `Unknown label format: ${formatCode}` }, { status: 400 });
+		}
+		if (fmt.category !== 'thermal') {
+			return json(
+				{ error: `Format ${formatCode} is a sheet format; the ZPL endpoint needs a thermal format` },
+				{ status: 400 }
+			);
+		}
 	}
 
 	const vendor = await getVendorForUser(locals.user.id);
@@ -95,7 +117,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		vendorDisplayName: vendor.displayName,
 		settings: settings ?? null,
 		item: { partNumber, name, description, priceCents },
-		copies
+		copies,
+		formatCode
 	});
 
 	return new Response(zpl, {
