@@ -12,7 +12,7 @@
 	export let data: PageData;
 	export let form: ActionData;
 
-	type Mode = 'create' | 'update' | 'delete';
+	type Mode = 'create' | 'delete';
 
 	let zebraReady: 'unknown' | 'yes' | 'no' = 'unknown';
 	let zebraBusyFor: string | null = null;
@@ -51,6 +51,7 @@
 	let description = '';
 	let priceDollars = '';
 	let quantity = '';
+	let reason = '';
 
 	function openCreate() {
 		mode = 'create';
@@ -61,22 +62,7 @@
 		description = '';
 		priceDollars = '';
 		quantity = '';
-		modalOpen = true;
-	}
-
-	function openUpdate(item: typeof data.soldItems[0]) {
-		mode = 'update';
-		editingNrsPartId = item.nrsPartId;
-		editingPreviousPayload = {
-			partName: item.partName,
-			lastPrice: item.lastPrice,
-			unitsSold: item.unitsSold
-		};
-		partNumber = item.partNumber;
-		partName = item.partName ?? '';
-		description = '';
-		priceDollars = item.lastPrice ? item.lastPrice.toFixed(2) : '';
-		quantity = '';
+		reason = '';
 		modalOpen = true;
 	}
 
@@ -89,6 +75,7 @@
 		description = '';
 		priceDollars = '';
 		quantity = '';
+		reason = '';
 		modalOpen = true;
 	}
 
@@ -129,6 +116,8 @@
 			<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">✓ New item created in NRS.</div>
 		{:else if form.applyError}
 			<div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded text-sm">Item saved and queued — staff will apply it to NRS shortly.</div>
+		{:else if form.changeType === 'delete'}
+			<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">Removal requested. Staff will confirm the item isn't still on the sales floor before removing it from NRS.</div>
 		{:else}
 			<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">Change submitted. Staff will review and apply it to NRS.</div>
 		{/if}
@@ -259,7 +248,7 @@
 	<!-- Items I've sold -->
 	<section class="mt-6">
 		<h2 class="font-semibold text-gray-900 mb-2">Items I've sold</h2>
-		<p class="text-xs text-gray-500 mb-2">Derived from your NRS sales history. Use these as a starting point to propose updates.</p>
+		<p class="text-xs text-gray-500 mb-2">Derived from your NRS sales history. Request removal of an item here if you've taken it off the floor.</p>
 		{#if !data.vendor.nrsVendorId}
 			<div class="card"><div class="card-body text-sm text-gray-500">Not linked to NRS yet — staff needs to set your NRS vendor ID.</div></div>
 		{:else if data.soldItems.length === 0}
@@ -294,7 +283,6 @@
 											disabled={zebraBusyFor === item.partNumber}>
 											{zebraBusyFor === item.partNumber ? 'Sending…' : '🦓 Zebra'}
 										</button>
-										<button type="button" class="text-primary-600 hover:underline mr-3 text-sm" on:click={() => openUpdate(item)}>Propose update</button>
 										<button type="button" class="text-red-600 hover:underline text-sm" on:click={() => openDelete(item)}>Remove</button>
 									</td>
 								</tr>
@@ -312,7 +300,7 @@
 		<div class="bg-white rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
 			<div class="p-4 border-b border-gray-200 flex items-center justify-between">
 				<h2 class="text-lg font-semibold text-gray-900">
-					{#if mode === 'create'}Add new item{:else if mode === 'update'}Propose update{:else}Remove item{/if}
+					{#if mode === 'create'}Add new item{:else}Remove item{/if}
 				</h2>
 				<button class="text-gray-400 hover:text-gray-600 text-2xl leading-none" on:click={closeModal}>×</button>
 			</div>
@@ -333,10 +321,10 @@
 					{/if}
 				</div>
 
-				{#if mode !== 'delete'}
+				{#if mode === 'create'}
 					<div>
 						<label class="label" for="partName">Item name</label>
-						<input id="partName" name="partName" type="text" class="input" bind:value={partName} required={mode === 'create'} />
+						<input id="partName" name="partName" type="text" class="input" bind:value={partName} required />
 					</div>
 
 					<div>
@@ -355,12 +343,16 @@
 						</div>
 					</div>
 				{:else}
-					<p class="text-sm text-gray-700">This will request that staff remove <strong class="font-mono">{partNumber}</strong> from NRS.</p>
+					<p class="text-sm text-gray-700">This requests that staff remove <strong class="font-mono">{partNumber}</strong> from NRS. Staff will confirm it's off the sales floor first.</p>
+					<div>
+						<label class="label" for="reason">Reason for removal <span class="text-red-600">*</span></label>
+						<textarea id="reason" name="reason" rows="2" class="input" required bind:value={reason} placeholder="e.g. Took it home, donated, no longer for sale"></textarea>
+					</div>
 				{/if}
 
 				<div class="flex justify-end gap-2 pt-2 border-t border-gray-200">
 					<button type="button" class="btn btn-secondary" on:click={closeModal}>Cancel</button>
-					<button type="submit" class="btn btn-primary">Submit for review</button>
+					<button type="submit" class="btn {mode === 'delete' ? 'btn-danger' : 'btn-primary'}">{mode === 'delete' ? 'Request removal' : 'Submit'}</button>
 				</div>
 			</form>
 		</div>

@@ -71,25 +71,35 @@ export const actions: Actions = {
 		if (!locals.user) return fail(401, { error: 'Not signed in' });
 
 		const form = await request.formData();
-		const changeType = form.get('changeType') as 'create' | 'update' | 'delete';
+		// Vendors can only add or request removal — editing existing items is
+		// disabled (NRS has no safe update path; see inventory-change-service).
+		const changeType = form.get('changeType') as 'create' | 'delete';
 		const partNumber = ((form.get('partNumber') as string) ?? '').trim();
 		const partName = ((form.get('partName') as string) ?? '').trim();
 		const description = ((form.get('description') as string) ?? '').trim();
 		const priceCents = parsePriceCents(form.get('priceDollars'));
 		const quantity = parseInt10(form.get('quantity'));
 		const nrsPartId = parseInt10(form.get('nrsPartId'));
+		const reason = ((form.get('reason') as string) ?? '').trim();
 		const previousPayloadRaw = form.get('previousPayload');
 
-		if (!changeType || !['create', 'update', 'delete'].includes(changeType)) {
-			return fail(400, { error: 'Invalid change type' });
+		if (changeType !== 'create' && changeType !== 'delete') {
+			return fail(400, { error: 'Editing items is not available. You can add a new item or request a removal.' });
 		}
 		if (!partNumber) return fail(400, { error: 'Part number is required' });
+		if (changeType === 'delete' && !reason) {
+			return fail(400, { error: 'Please give a reason for the removal.' });
+		}
 
 		const payload: ChangePayload = {};
-		if (partName) payload.partName = partName;
-		if (description) payload.description = description;
-		if (priceCents !== undefined) payload.priceCents = priceCents;
-		if (quantity !== undefined) payload.quantity = quantity;
+		if (changeType === 'delete') {
+			payload.reason = reason;
+		} else {
+			if (partName) payload.partName = partName;
+			if (description) payload.description = description;
+			if (priceCents !== undefined) payload.priceCents = priceCents;
+			if (quantity !== undefined) payload.quantity = quantity;
+		}
 
 		let previousPayload: Record<string, unknown> | null = null;
 		if (previousPayloadRaw && typeof previousPayloadRaw === 'string') {
@@ -123,9 +133,9 @@ export const actions: Actions = {
 		// is queued for the staff fallback and the journal records why.
 		if (changeType === 'create') {
 			const apply = await applyCreateViaApi(changeId, locals.user.id);
-			return { success: 'submit', applied: apply.applied, applyError: apply.error ?? null };
+			return { success: 'submit', changeType, applied: apply.applied, applyError: apply.error ?? null };
 		}
-		return { success: 'submit', applied: false, applyError: null };
+		return { success: 'submit', changeType, applied: false, applyError: null };
 	},
 
 	/**

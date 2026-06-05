@@ -91,6 +91,19 @@
 								<span class="text-gray-500 mx-2">·</span>
 								<a href={`/admin/vendors/${row.vendorId}`} class="text-primary-600 hover:underline">{row.vendorDisplayName}</a>
 							</div>
+							{#if row.changeType === 'delete'}
+								{#if row.payload?.reason}
+									<div class="text-sm text-gray-700 mt-1">Vendor's reason: <span class="italic">{row.payload.reason}</span></div>
+								{/if}
+								{@const onHand = Number(row.previousPayload?.nrsQuantityOnHand ?? NaN)}
+								{#if Number.isFinite(onHand) && onHand > 0}
+									<div class="mt-2 p-2 rounded bg-red-50 border border-red-200 text-red-800 text-xs font-medium">
+										⚠ NRS shows <strong>{onHand}</strong> on hand — this item may still be on the sales floor. Deleting it will make its printed barcode <strong>fail to scan</strong>. Deactivate in NRS (or zero the stock) instead of deleting unless you've confirmed it's off the floor.
+									</div>
+								{:else if Number.isFinite(onHand)}
+									<div class="mt-2 text-xs text-gray-500">NRS on-hand at request: {onHand} — safe to remove.</div>
+								{/if}
+							{/if}
 							<div class="text-xs text-gray-500 mt-1">
 								Submitted by {row.submittedByName} · {new Date(row.submittedAt).toLocaleString()}
 							</div>

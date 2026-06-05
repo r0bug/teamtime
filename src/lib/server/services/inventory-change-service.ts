@@ -34,7 +34,8 @@ import {
 import {
 	saveInvStock,
 	getAllInvStockForVendor,
-	type SaveInvStockInput
+	type SaveInvStockInput,
+	type NrsInvStockDetail
 } from '$lib/server/services/nrs-api-client';
 import { createLogger } from '$lib/server/logger';
 
@@ -79,6 +80,8 @@ export interface ChangePayload {
 	description?: string;
 	priceCents?: number;
 	quantity?: number;
+	/** Vendor-supplied reason, required on delete requests. */
+	reason?: string;
 	[key: string]: unknown;
 }
 
@@ -114,23 +117,44 @@ export async function submitChange(input: SubmitChangeInput): Promise<PendingInv
 		);
 	}
 
+	let previousPayload = input.previousPayload ?? null;
+
 	if (input.changeType === 'update' || input.changeType === 'delete') {
 		if (!input.nrsPartId) {
 			throw new InventoryChangeError(`${input.changeType} change requires an nrsPartId`);
 		}
-		// Ownership guard: the vendor-supplied nrsPartId is the real attack vector
-		// (the prefix check only validates partNumber). Verify the target item is
-		// actually this vendor's before we ever store the change. Fail closed on a
-		// positive non-ownership; allow when NRS is unreachable (prefix invariant
-		// still holds, and the apply path re-checks before mutating).
+		// Ownership guard + delete-safety snapshot. The vendor-supplied nrsPartId is
+		// the real attack vector (the prefix check only validates partNumber), so we
+		// confirm the target item is actually this vendor's. The same NRS fetch also
+		// captures on-hand quantity for deletes — staff must NOT remove an item that
+		// may still be on the sales floor (its barcode would fail to scan). Fail
+		// closed on positive non-ownership; allow when NRS is unreachable (prefix
+		// invariant still holds, and the apply path re-checks before mutating).
 		if (vendor.nrsVendorId) {
-			const owned = await checkVendorOwnsNrsItem(vendor.nrsVendorId, input.nrsPartId);
-			if (owned === false) {
-				log.warn(
-					{ vendorId: vendor.id, nrsVendorId: vendor.nrsVendorId, nrsPartId: input.nrsPartId },
-					'Blocked inventory change against item not owned by vendor'
-				);
-				throw new InventoryChangeError('That item does not belong to your vendor account.');
+			let item: NrsInvStockDetail | undefined;
+			try {
+				const items = await getAllInvStockForVendor(vendor.nrsVendorId);
+				item = items.find((i) => i.invStockId === input.nrsPartId);
+				if (!item) {
+					log.warn(
+						{ vendorId: vendor.id, nrsVendorId: vendor.nrsVendorId, nrsPartId: input.nrsPartId },
+						'Blocked inventory change against item not owned by vendor'
+					);
+					throw new InventoryChangeError('That item does not belong to your vendor account.');
+				}
+			} catch (err) {
+				if (err instanceof InventoryChangeError) throw err;
+				// NRS unreachable — allow submission (prefix invariant holds); no snapshot.
+				log.warn({ nrsPartId: input.nrsPartId, err: String(err) }, 'Ownership/on-hand check could not reach NRS');
+			}
+
+			// Snapshot NRS state on deletes so the staff reviewer can see floor risk.
+			if (input.changeType === 'delete' && item) {
+				previousPayload = {
+					...(previousPayload ?? {}),
+					nrsQuantityOnHand: item.quantityOnHand,
+					nrsActive: item.active
+				};
 			}
 		}
 	}
@@ -144,7 +168,7 @@ export async function submitChange(input: SubmitChangeInput): Promise<PendingInv
 			nrsPartId: input.nrsPartId ?? null,
 			partNumber,
 			payload: input.payload,
-			previousPayload: input.previousPayload ?? null,
+			previousPayload,
 			status: 'pending'
 		})
 		.returning();
