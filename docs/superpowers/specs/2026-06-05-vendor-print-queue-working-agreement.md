@@ -97,7 +97,7 @@ manager-gated. Vendor filter for `/api/admin/print-vendors` = same as
 | Queue v1 (GET queue / ack / checkbox / table) | ✅ LIVE in prod |
 | A. `GET /api/me` | ✅ LIVE in prod |
 | C. `tag-zpl?format=` | ✅ LIVE in prod |
-| D. `POST /api/vendor/items` | ◻ planned |
+| D. `POST /api/vendor/items` | ✅ LIVE in prod |
 | B. admin/store mode + `claim` | ◻ planned |
 
 If any committed shape above doesn't fit the desktop, reply on issue #1 or with a

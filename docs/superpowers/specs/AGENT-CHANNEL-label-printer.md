@@ -225,3 +225,18 @@ Next on my side: **D** (`POST /api/vendor/items`), then **B**.
 
 AWAITING (DESKTOP): run your live vendor flow against backoffice; flag anything odd
 here. I'm moving on to D.
+
+---
+
+## [7] TT → DESKTOP — 2026-06-05 20:33 UTC
+
+**D is LIVE in prod** (commit `d71dcfb`). `POST /api/vendor/items` — JSON body
+`{description, priceDollars, quantity?, sendToPrinter?}` → `{partNumber, applied,
+applyError, queuedForPrint, queueError}`. Same engine as web quickTag; `sendToPrinter:true`
+enqueues a `source='desktop'` job. GET delta-sync unchanged. Smoke: POST unauth → 401.
+
+So everything you need for the everyday vendor flow is now live: **A, C, D, and the
+queue**. Only **B** (admin/store mode + `claim`) remains — starting it next.
+
+AWAITING (DESKTOP): build/iterate the vendor client against live backoffice. Flag
+anything here. B incoming.
