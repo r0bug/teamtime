@@ -12,8 +12,6 @@
 	export let data: PageData;
 	export let form: ActionData;
 
-	type Mode = 'create' | 'delete';
-
 	let zebraReady: 'unknown' | 'yes' | 'no' = 'unknown';
 	let zebraBusyFor: string | null = null;
 	let zebraStatus: { partNumber: string; ok: boolean; message: string } | null = null;
@@ -41,40 +39,18 @@
 		}
 	}
 
+	// Removal-request modal only. Adding items is done exclusively via the
+	// "Make a tag" card, which always auto-generates the part number.
 	let modalOpen = false;
-	let mode: Mode = 'create';
 	let editingNrsPartId: number | null = null;
 	let editingPreviousPayload: Record<string, unknown> | null = null;
-
 	let partNumber = '';
-	let partName = '';
-	let description = '';
-	let priceDollars = '';
-	let quantity = '';
 	let reason = '';
 
-	function openCreate() {
-		mode = 'create';
-		editingNrsPartId = null;
-		editingPreviousPayload = null;
-		partNumber = data.vendor.inventoryCodePrefix ?? '';
-		partName = '';
-		description = '';
-		priceDollars = '';
-		quantity = '';
-		reason = '';
-		modalOpen = true;
-	}
-
 	function openDelete(item: typeof data.soldItems[0]) {
-		mode = 'delete';
 		editingNrsPartId = item.nrsPartId;
 		editingPreviousPayload = { partName: item.partName, lastPrice: item.lastPrice };
 		partNumber = item.partNumber;
-		partName = item.partName ?? '';
-		description = '';
-		priceDollars = '';
-		quantity = '';
 		reason = '';
 		modalOpen = true;
 	}
@@ -92,35 +68,22 @@
 <svelte:head><title>Inventory — Vendor Portal</title></svelte:head>
 
 <div class="p-4 lg:p-8 max-w-5xl mx-auto">
-	<div class="flex items-center justify-between flex-wrap gap-2">
-		<div>
-			<h1 class="text-2xl font-bold text-gray-900">My Inventory</h1>
-			<p class="text-sm text-gray-600 mt-1">
-				{#if data.vendor.inventoryCodePrefix}
-					All your item codes start with <code class="font-mono font-semibold">{data.vendor.inventoryCodePrefix}</code>.
-				{:else}
-					Your inventory prefix isn't set. Ask the shop to configure it before submitting changes.
-				{/if}
-			</p>
-		</div>
-		<button class="btn btn-primary" on:click={openCreate} disabled={!data.vendor.inventoryCodePrefix}>
-			+ Add new item
-		</button>
+	<div>
+		<h1 class="text-2xl font-bold text-gray-900">My Inventory</h1>
+		<p class="text-sm text-gray-600 mt-1">
+			{#if data.vendor.inventoryCodePrefix}
+				All your item codes start with <code class="font-mono font-semibold">{data.vendor.inventoryCodePrefix}</code> and the rest is generated automatically.
+			{:else}
+				Your inventory prefix isn't set. Ask the shop to configure it before adding items.
+			{/if}
+		</p>
 	</div>
 
 	{#if form?.error}
 		<div class="mt-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{form.error}</div>
 	{/if}
 	{#if form?.success === 'submit'}
-		{#if form.applied}
-			<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">✓ New item created in NRS.</div>
-		{:else if form.applyError}
-			<div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded text-sm">Item saved and queued — staff will apply it to NRS shortly.</div>
-		{:else if form.changeType === 'delete'}
-			<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">Removal requested. Staff will confirm the item isn't still on the sales floor before removing it from NRS.</div>
-		{:else}
-			<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">Change submitted. Staff will review and apply it to NRS.</div>
-		{/if}
+		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">Removal requested. Staff will confirm the item isn't still on the sales floor before removing it from NRS.</div>
 	{/if}
 	{#if form?.success === 'cancel'}
 		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">Change cancelled.</div>
@@ -162,7 +125,7 @@
 				<div class="card-header">
 					<h2 class="font-semibold text-gray-900">Make a tag</h2>
 					<p class="text-xs text-gray-500 mt-1">
-						Type the description and price. We'll generate a barcode like <code class="font-mono">{data.vendor.inventoryCodePrefix}YYYYMMDD0001</code> and queue it for the shop to add to NRS.
+						Type the description and price. We'll generate a unique barcode automatically — your <code class="font-mono">{data.vendor.inventoryCodePrefix}</code> code, then the date and a counter (e.g. <code class="font-mono">{data.vendor.inventoryCodePrefix}60526001</code>) — and queue it for the shop to add to NRS.
 					</p>
 				</div>
 				<div class="card-body">
@@ -299,13 +262,12 @@
 	<div class="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" role="dialog" aria-modal="true">
 		<div class="bg-white rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
 			<div class="p-4 border-b border-gray-200 flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-gray-900">
-					{#if mode === 'create'}Add new item{:else}Remove item{/if}
-				</h2>
+				<h2 class="text-lg font-semibold text-gray-900">Remove item</h2>
 				<button class="text-gray-400 hover:text-gray-600 text-2xl leading-none" on:click={closeModal}>×</button>
 			</div>
 			<form method="POST" action="?/submit" use:enhance={() => () => { closeModal(); }} class="p-4 space-y-3">
-				<input type="hidden" name="changeType" value={mode} />
+				<input type="hidden" name="changeType" value="delete" />
+				<input type="hidden" name="partNumber" value={partNumber} />
 				{#if editingNrsPartId !== null}
 					<input type="hidden" name="nrsPartId" value={editingNrsPartId} />
 				{/if}
@@ -313,46 +275,15 @@
 					<input type="hidden" name="previousPayload" value={JSON.stringify(editingPreviousPayload)} />
 				{/if}
 
+				<p class="text-sm text-gray-700">This requests that staff remove <strong class="font-mono">{partNumber}</strong> from NRS. Staff will confirm it's off the sales floor first.</p>
 				<div>
-					<label class="label" for="partNumber">Part number</label>
-					<input id="partNumber" name="partNumber" type="text" class="input font-mono uppercase" required bind:value={partNumber} readonly={mode !== 'create'} />
-					{#if mode === 'create' && data.vendor.inventoryCodePrefix}
-						<p class="text-xs text-gray-500 mt-1">Must start with <code>{data.vendor.inventoryCodePrefix}</code>.</p>
-					{/if}
+					<label class="label" for="reason">Reason for removal <span class="text-red-600">*</span></label>
+					<textarea id="reason" name="reason" rows="2" class="input" required bind:value={reason} placeholder="e.g. Took it home, donated, no longer for sale"></textarea>
 				</div>
-
-				{#if mode === 'create'}
-					<div>
-						<label class="label" for="partName">Item name</label>
-						<input id="partName" name="partName" type="text" class="input" bind:value={partName} required />
-					</div>
-
-					<div>
-						<label class="label" for="description">Description</label>
-						<textarea id="description" name="description" rows="2" class="input" bind:value={description}></textarea>
-					</div>
-
-					<div class="grid grid-cols-2 gap-3">
-						<div>
-							<label class="label" for="priceDollars">Price ($)</label>
-							<input id="priceDollars" name="priceDollars" type="number" step="0.01" class="input" bind:value={priceDollars} />
-						</div>
-						<div>
-							<label class="label" for="quantity">Quantity</label>
-							<input id="quantity" name="quantity" type="number" class="input" bind:value={quantity} />
-						</div>
-					</div>
-				{:else}
-					<p class="text-sm text-gray-700">This requests that staff remove <strong class="font-mono">{partNumber}</strong> from NRS. Staff will confirm it's off the sales floor first.</p>
-					<div>
-						<label class="label" for="reason">Reason for removal <span class="text-red-600">*</span></label>
-						<textarea id="reason" name="reason" rows="2" class="input" required bind:value={reason} placeholder="e.g. Took it home, donated, no longer for sale"></textarea>
-					</div>
-				{/if}
 
 				<div class="flex justify-end gap-2 pt-2 border-t border-gray-200">
 					<button type="button" class="btn btn-secondary" on:click={closeModal}>Cancel</button>
-					<button type="submit" class="btn {mode === 'delete' ? 'btn-danger' : 'btn-primary'}">{mode === 'delete' ? 'Request removal' : 'Submit'}</button>
+					<button type="submit" class="btn btn-danger">Request removal</button>
 				</div>
 			</form>
 		</div>

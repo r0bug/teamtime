@@ -7,8 +7,7 @@ import {
 	submitChange,
 	applyCreateViaApi,
 	cancelChange,
-	InventoryChangeError,
-	type ChangePayload
+	InventoryChangeError
 } from '$lib/server/services/inventory-change-service';
 
 export const load: PageServerLoad = async ({ parent }) => {
@@ -67,81 +66,59 @@ function parseInt10(raw: unknown): number | undefined {
 }
 
 export const actions: Actions = {
+	// Removal requests only. New items are added exclusively through the
+	// "Make a tag" flow (quickTag), which always auto-generates the part number
+	// after the vendor code — manual part-number entry is gone because it let
+	// vendors save bare prefixes (e.g. "SR"), which collide into duplicates.
 	submit: async ({ locals, request }) => {
 		if (!locals.user) return fail(401, { error: 'Not signed in' });
 
 		const form = await request.formData();
-		// Vendors can only add or request removal — editing existing items is
-		// disabled (NRS has no safe update path; see inventory-change-service).
-		const changeType = form.get('changeType') as 'create' | 'delete';
+		const changeType = form.get('changeType') as string;
+		if (changeType !== 'delete') {
+			return fail(400, { error: 'Editing and manual adds are disabled. Use “Make a tag” to add an item, or request a removal.' });
+		}
+
 		const partNumber = ((form.get('partNumber') as string) ?? '').trim();
-		const partName = ((form.get('partName') as string) ?? '').trim();
-		const description = ((form.get('description') as string) ?? '').trim();
-		const priceCents = parsePriceCents(form.get('priceDollars'));
-		const quantity = parseInt10(form.get('quantity'));
 		const nrsPartId = parseInt10(form.get('nrsPartId'));
 		const reason = ((form.get('reason') as string) ?? '').trim();
 		const previousPayloadRaw = form.get('previousPayload');
 
-		if (changeType !== 'create' && changeType !== 'delete') {
-			return fail(400, { error: 'Editing items is not available. You can add a new item or request a removal.' });
-		}
 		if (!partNumber) return fail(400, { error: 'Part number is required' });
-		if (changeType === 'delete' && !reason) {
-			return fail(400, { error: 'Please give a reason for the removal.' });
-		}
-
-		const payload: ChangePayload = {};
-		if (changeType === 'delete') {
-			payload.reason = reason;
-		} else {
-			if (partName) payload.partName = partName;
-			if (description) payload.description = description;
-			if (priceCents !== undefined) payload.priceCents = priceCents;
-			if (quantity !== undefined) payload.quantity = quantity;
-		}
+		if (!reason) return fail(400, { error: 'Please give a reason for the removal.' });
 
 		let previousPayload: Record<string, unknown> | null = null;
 		if (previousPayloadRaw && typeof previousPayloadRaw === 'string') {
 			try { previousPayload = JSON.parse(previousPayloadRaw); } catch { previousPayload = null; }
 		}
 
-		// Resolve vendor through the parent layout's data via DB lookup
 		const { getVendorForUser } = await import('$lib/server/services/vendor-service');
 		const vendor = await getVendorForUser(locals.user.id);
 		if (!vendor) return fail(403, { error: 'Vendor portal access not enabled' });
 
-		let changeId: string;
 		try {
-			const row = await submitChange({
+			await submitChange({
 				vendorId: vendor.id,
 				submittedByUserId: locals.user.id,
-				changeType,
+				changeType: 'delete',
 				nrsPartId: nrsPartId ?? null,
 				partNumber,
-				payload,
+				payload: { reason },
 				previousPayload
 			});
-			changeId = row.id;
 		} catch (err) {
 			if (err instanceof InventoryChangeError) return fail(400, { error: err.message });
 			throw err;
 		}
 
-		// New items auto-apply straight to NRS via invstock/save. Updates/deletes
-		// stay pending for staff. A failed auto-apply isn't an error — the change
-		// is queued for the staff fallback and the journal records why.
-		if (changeType === 'create') {
-			const apply = await applyCreateViaApi(changeId, locals.user.id);
-			return { success: 'submit', changeType, applied: apply.applied, applyError: apply.error ?? null };
-		}
-		return { success: 'submit', changeType, applied: false, applyError: null };
+		return { success: 'submit', changeType: 'delete', applied: false, applyError: null };
 	},
 
 	/**
-	 * Streamlined "Make a tag" flow. Vendor enters description + price; we
-	 * auto-generate a part number `{prefix}{YYYYMMDD}{NNNN}` and queue the
-	 * change. The barcode on the printed tag will encode this part number.
+	 * The only "add an item" path. Vendor enters description + price; we always
+	 * auto-generate the part number `{prefix}{MDDYY}{NNN}` after the vendor code
+	 * (atomic per-vendor/day sequence — no duplicates) and queue the change.
+	 * The barcode on the printed tag encodes this part number.
 	 */
 	quickTag: async ({ locals, request }) => {
 		if (!locals.user) return fail(401, { error: 'Not signed in' });
