@@ -2855,6 +2855,22 @@ Touch-friendly swipeable card component for mobile interactions, used in task li
 
 TeamTime tracks the booth vendors who consign items at the shop. NRS POS is the source of truth for vendor identity, sales, commissions, and inventory; TeamTime stores TT-specific fields (contract terms, contact info, signed agreements, internal notes, link to a TT user) and joins back to NRS by `nrsVendorId`.
 
+### Vendor onboarding wizard (manager+)
+
+A guided flow at `/admin/vendors/onboard` ("+ Onboard vendor" on the vendor list) that turns the consignment contract into a form:
+
+- **Step 1 — Vendor & contact**: name, contact, email, phone, address.
+- **Step 2 — Booth & terms**: booth number/size, monthly rent, custom cabinet rent, standard discount, max discount, preferred payout method, start date. Commission is fixed by the contract (13% booth / 25% individual).
+- **Step 3 — Review** the completed terms, then create.
+
+On create it does three things in one transaction (`vendor-onboarding-service.ts`): creates the vendor (`inactive`, no `nrsVendorId` yet), records a **Consignment Agreement** against the standard template with those terms (`paperOriginalOnFile`), and opens a **high-priority NRS data-entry task** assigned to the manager — pre-filled with the vendor's values mapped to the live NRS `frmHead*` form fields (name, address, contact, booth rent, pass-through %, vendor payment %, A/R customer, portal access) and asking them to record the assigned NRS Vendor ID back in TeamTime.
+
+The vendor page then shows a "next steps" banner:
+
+- **Print the contract** — `/admin/vendors/[id]/agreements/[agreementId]/print` renders the frozen agreement body (markdown) plus a Completed Terms table, with print CSS and an auto-print dialog. Reusable for any agreement.
+- **Upload the signed copy** — the Agreements tab accepts an image or PDF scan of the wet-signed contract (`/api/uploads` now accepts PDFs) and stores it on the agreement (`signed_document_*` columns); a "View signed copy" link appears once attached.
+- **Complete the NRS task** to add the vendor in NRS.
+
 ### Stage 1 — Vendor records, agreements, performance
 
 #### Vendor admin (`/admin/vendors`)

@@ -18,8 +18,10 @@ import {
 	unlockPortalAccount,
 	listLinkableUsers,
 	linkExistingUserToVendor,
+	setAgreementSignedDocument,
 	VendorServiceError
 } from '$lib/server/services/vendor-service';
+import { isUploadPath } from '$lib/uploads';
 import { listTemplates } from '$lib/server/services/agreement-template-service';
 import { listGroups } from '$lib/server/services/vendor-group-service';
 
@@ -128,6 +130,37 @@ export const actions: Actions = {
 		});
 
 		return { success: 'signAgreement' };
+	},
+
+	uploadSignedDocument: async ({ locals, params, request }) => {
+		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+
+		const data = await request.formData();
+		const agreementId = (data.get('agreementId') as string) ?? '';
+		const filePath = (data.get('filePath') as string) ?? '';
+		const originalName = ((data.get('originalName') as string) ?? 'signed-contract').trim();
+		const mimeType = (data.get('mimeType') as string) ?? 'application/octet-stream';
+		const sizeBytes = Number(data.get('sizeBytes')) || 0;
+
+		if (!agreementId) return fail(400, { error: 'agreementId required' });
+		// filePath comes from POST /api/uploads — confine it to /uploads/ (no traversal).
+		if (!isUploadPath(filePath)) return fail(400, { error: 'Invalid file path' });
+
+		try {
+			await setAgreementSignedDocument({
+				vendorId: params.id,
+				agreementId,
+				filePath,
+				originalName,
+				mimeType,
+				sizeBytes,
+				uploadedByUserId: locals.user!.id
+			});
+		} catch (e) {
+			return fail(400, { error: e instanceof Error ? e.message : 'Failed to attach document' });
+		}
+
+		return { success: 'uploadSignedDocument' };
 	},
 
 	updateOnboarding: async ({ locals, params, request }) => {

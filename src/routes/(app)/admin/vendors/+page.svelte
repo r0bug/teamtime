@@ -34,6 +34,7 @@
 			<p class="text-gray-600 mt-1">{data.vendors.length} vendor{data.vendors.length === 1 ? '' : 's'}</p>
 		</div>
 		<div class="flex gap-2 flex-wrap">
+			<a href="/admin/vendors/onboard" class="btn btn-primary">+ Onboard vendor</a>
 			<a href="/admin/vendors/leaderboard" class="btn btn-secondary">📊 Performance</a>
 			<a href="/admin/vendors/inventory-changes" class="btn btn-secondary">Changes Queue</a>
 			<a href="/admin/vendors/inventory-journal" class="btn btn-secondary">NRS Journal</a>

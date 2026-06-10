@@ -751,6 +751,16 @@ CREATE TABLE vendor_agreements (
   voided_at TIMESTAMPTZ,
   voided_reason TEXT,                            -- 'superseded' | 'withdrawn' | 'terminated' | …
 
+  -- Uploaded scan of the wet-signed contract (image or PDF in /uploads/...).
+  -- Distinct from signature_data_url (in-app signature) and paper_original_on_file.
+  -- Added by scripts/vendor-agreement-signed-doc-migration.sql.
+  signed_document_path TEXT,
+  signed_document_original_name TEXT,
+  signed_document_mime_type TEXT,
+  signed_document_size_bytes INTEGER,
+  signed_document_uploaded_at TIMESTAMPTZ,
+  signed_document_uploaded_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

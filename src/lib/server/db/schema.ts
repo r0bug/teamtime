@@ -3300,6 +3300,15 @@ export const vendorAgreements = pgTable('vendor_agreements', {
 	signatureDataUrl: text('signature_data_url'),
 	paperOriginalOnFile: boolean('paper_original_on_file').notNull().default(false),
 
+	// Uploaded scan of the wet-signed contract (image or PDF in /uploads/...).
+	// Distinct from signatureDataUrl: this is the photographed/scanned paper.
+	signedDocumentPath: text('signed_document_path'),
+	signedDocumentOriginalName: text('signed_document_original_name'),
+	signedDocumentMimeType: text('signed_document_mime_type'),
+	signedDocumentSizeBytes: integer('signed_document_size_bytes'),
+	signedDocumentUploadedAt: timestamp('signed_document_uploaded_at', { withTimezone: true }),
+	signedDocumentUploadedByUserId: uuid('signed_document_uploaded_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+
 	// Frozen snapshots so future template/vendor edits don't rewrite history
 	bodySnapshot: text('body_snapshot').notNull(),
 	templateVersion: integer('template_version').notNull(),

@@ -224,6 +224,42 @@ export async function signAgreement(input: {
 	});
 }
 
+/**
+ * Attach (or replace) the uploaded scan of a wet-signed contract on an agreement.
+ * The file path must already be a stored /uploads/... path from POST /api/uploads.
+ * Scoped to a vendor so a manager can't attach across vendors by guessing ids.
+ */
+export async function setAgreementSignedDocument(input: {
+	vendorId: string;
+	agreementId: string;
+	filePath: string;
+	originalName: string;
+	mimeType: string;
+	sizeBytes: number;
+	uploadedByUserId: string;
+}): Promise<VendorAgreement> {
+	const [row] = await db
+		.update(vendorAgreements)
+		.set({
+			signedDocumentPath: input.filePath,
+			signedDocumentOriginalName: input.originalName,
+			signedDocumentMimeType: input.mimeType,
+			signedDocumentSizeBytes: input.sizeBytes,
+			signedDocumentUploadedAt: new Date(),
+			signedDocumentUploadedByUserId: input.uploadedByUserId
+		})
+		.where(
+			and(eq(vendorAgreements.id, input.agreementId), eq(vendorAgreements.vendorId, input.vendorId))
+		)
+		.returning();
+	if (!row) throw new Error(`Agreement not found for vendor: ${input.agreementId}`);
+	log.info(
+		{ vendorId: input.vendorId, agreementId: input.agreementId, filePath: input.filePath },
+		'Attached signed document to agreement'
+	);
+	return row;
+}
+
 // Identity fields where NRS is the source of truth. If NRS has a non-null
 // value, it always wins — admin should edit these in NRS, not TT.
 // (Empty NRS values do not wipe TT — protects against accidental clears in NRS.)

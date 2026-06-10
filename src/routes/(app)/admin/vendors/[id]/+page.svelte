@@ -2,13 +2,47 @@
 	import type { PageData, ActionData } from './$types';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { enhance } from '$app/forms';
+	import { page } from '$app/stores';
 	import SignatureCapture from '$lib/components/SignatureCapture.svelte';
 	import SalesOverTimeChart from '$lib/components/SalesOverTimeChart.svelte';
 	import TopItemsBarChart from '$lib/components/TopItemsBarChart.svelte';
 	import { formatDate, formatDateTime } from '$lib/utils';
+	import { notify } from '$lib/notify';
 
 	export let data: PageData;
 	export let form: ActionData;
+
+	// Banner shown right after the onboarding wizard creates this vendor.
+	$: justOnboarded = $page.url.searchParams.get('onboarded');
+	$: onboardingTaskId = $page.url.searchParams.get('task');
+
+	// Per-agreement signed-scan upload (file → /api/uploads → form action).
+	let uploadingAgreementId: string | null = null;
+	async function handleSignedUpload(agreementId: string, input: HTMLInputElement, formEl: HTMLFormElement | null) {
+		const file = input.files?.[0];
+		if (!file || !formEl) return;
+		uploadingAgreementId = agreementId;
+		try {
+			const fd = new FormData();
+			fd.append('file', file);
+			const resp = await fetch('/api/uploads', { method: 'POST', body: fd });
+			const result = await resp.json();
+			if (!resp.ok || !result?.file?.filePath) {
+				notify.error(result?.error ?? 'Upload failed');
+				return;
+			}
+			(formEl.elements.namedItem('filePath') as HTMLInputElement).value = result.file.filePath;
+			(formEl.elements.namedItem('originalName') as HTMLInputElement).value = result.file.originalName ?? file.name;
+			(formEl.elements.namedItem('mimeType') as HTMLInputElement).value = result.file.mimeType ?? file.type;
+			(formEl.elements.namedItem('sizeBytes') as HTMLInputElement).value = String(result.file.sizeBytes ?? file.size);
+			formEl.requestSubmit();
+		} catch (e) {
+			notify.error('Upload failed');
+		} finally {
+			uploadingAgreementId = null;
+			input.value = '';
+		}
+	}
 
 	type Tab = 'overview' | 'agreements' | 'sales' | 'notes';
 	let tab: Tab = 'overview';
@@ -209,8 +243,29 @@
 		</div>
 	</div>
 
+	{#if justOnboarded}
+		<div class="mt-4 p-4 bg-primary-50 border border-primary-200 rounded">
+			<h2 class="font-semibold text-primary-900">Vendor onboarded — next steps</h2>
+			<ol class="mt-2 text-sm text-primary-800 list-decimal list-inside space-y-1">
+				<li>
+					<a href="/admin/vendors/{data.vendor.id}/agreements/{justOnboarded}/print" target="_blank" rel="noopener" class="font-medium underline">Print the consignment contract</a>
+					and have the vendor sign it.
+				</li>
+				<li>Upload the signed copy in the <button type="button" class="underline font-medium" on:click={() => (tab = 'agreements')}>Agreements tab</button> below.</li>
+				<li>
+					Complete the
+					{#if onboardingTaskId}<a href="/tasks/{onboardingTaskId}" class="underline font-medium">NRS data-entry task</a>{:else}NRS data-entry task{/if}
+					to add this vendor in NRS, then record the NRS Vendor ID here.
+				</li>
+			</ol>
+		</div>
+	{/if}
+
 	{#if form?.error}
 		<div class="mt-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{form.error}</div>
+	{/if}
+	{#if form && 'success' in form && form.success === 'uploadSignedDocument'}
+		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded text-sm">Signed copy uploaded.</div>
 	{/if}
 	{#if form && 'success' in form && form.success === 'updateTerms'}
 		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded text-sm">Vendor updated.</div>
@@ -534,6 +589,51 @@
 						{#if a.signatureDataUrl}
 							<img src={a.signatureDataUrl} alt="Signature" class="border rounded bg-white max-h-32" />
 						{/if}
+
+						<!-- Print + signed-copy -->
+						<div class="flex flex-wrap items-center gap-2">
+							<a
+								href="/admin/vendors/{data.vendor.id}/agreements/{a.id}/print"
+								target="_blank"
+								rel="noopener"
+								class="btn-secondary btn-sm"
+							>
+								Print contract
+							</a>
+
+							{#if a.signedDocumentPath}
+								<a href={a.signedDocumentPath} target="_blank" rel="noopener" class="btn-secondary btn-sm">
+									View signed copy
+								</a>
+								<span class="text-xs text-gray-500">
+									{a.signedDocumentOriginalName ?? 'signed'} · uploaded {a.signedDocumentUploadedAt ? new Date(a.signedDocumentUploadedAt).toLocaleDateString() : ''}
+								</span>
+							{/if}
+
+							<form
+								method="POST"
+								action="?/uploadSignedDocument"
+								use:enhance={() => async ({ update }) => { await update(); }}
+								class="inline-flex items-center"
+							>
+								<input type="hidden" name="agreementId" value={a.id} />
+								<input type="hidden" name="filePath" />
+								<input type="hidden" name="originalName" />
+								<input type="hidden" name="mimeType" />
+								<input type="hidden" name="sizeBytes" />
+								<label class="btn-ghost btn-sm cursor-pointer">
+									{uploadingAgreementId === a.id ? 'Uploading…' : a.signedDocumentPath ? 'Replace signed copy' : 'Upload signed copy'}
+									<input
+										type="file"
+										accept="image/*,application/pdf"
+										class="hidden"
+										disabled={uploadingAgreementId === a.id}
+										on:change={(e) => handleSignedUpload(a.id, e.currentTarget, e.currentTarget.form)}
+									/>
+								</label>
+							</form>
+						</div>
+
 						<details class="mt-3">
 							<summary class="text-sm text-primary-600 cursor-pointer">View body & terms snapshot</summary>
 							<div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">

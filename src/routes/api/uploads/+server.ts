@@ -27,6 +27,10 @@ const ALLOWED_TYPES = [
 
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif'];
 
+// PDFs are accepted too (e.g. scanned signed contracts), but never image-processed.
+const DOCUMENT_TYPES = ['application/pdf'];
+const DOCUMENT_EXTENSIONS = ['.pdf'];
+
 function isValidImageFile(file: File): boolean {
 	// Check MIME type first
 	if (file.type && ALLOWED_TYPES.includes(file.type.toLowerCase())) {
@@ -42,6 +46,11 @@ function isValidImageFile(file: File): boolean {
 		return true;
 	}
 	return false;
+}
+
+function isValidPdfFile(file: File): boolean {
+	if (file.type && DOCUMENT_TYPES.includes(file.type.toLowerCase())) return true;
+	return DOCUMENT_EXTENSIONS.includes(path.extname(file.name).toLowerCase());
 }
 
 export const POST: RequestHandler = async ({ locals, request }) => {
@@ -61,10 +70,12 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		// Log file details for debugging
 		log.info({ fileName: file.name, fileType: file.type, fileSize: file.size }, 'Upload attempt');
 
-		// Validate file type (more permissive for mobile)
-		if (!isValidImageFile(file)) {
+		// Validate file type (more permissive for mobile). Images and PDFs only.
+		const isImage = isValidImageFile(file);
+		const isPdf = !isImage && isValidPdfFile(file);
+		if (!isImage && !isPdf) {
 			log.warn({ fileType: file.type, fileName: file.name }, 'Invalid file type rejected');
-			return json({ error: `Invalid file type: ${file.type || 'unknown'}. Only images are allowed.` }, { status: 400 });
+			return json({ error: `Invalid file type: ${file.type || 'unknown'}. Only images and PDFs are allowed.` }, { status: 400 });
 		}
 
 		// Validate file size
@@ -81,14 +92,14 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		}
 
 		// Generate unique filename
-		let ext = path.extname(file.name).toLowerCase() || '.jpg';
+		let ext = path.extname(file.name).toLowerCase() || (isPdf ? '.pdf' : '.jpg');
 		let buffer: Buffer = Buffer.from(await file.arrayBuffer()) as Buffer;
 		let mimeType = file.type;
 		let sizeBytes = file.size;
 
-		// Convert HEIC/HEIF to JPEG for browser compatibility
-		const needsConversion = NEEDS_CONVERSION.includes(file.type.toLowerCase()) ||
-			HEIC_EXTENSIONS.includes(ext);
+		// Convert HEIC/HEIF to JPEG for browser compatibility (images only — never PDFs)
+		const needsConversion = !isPdf && (NEEDS_CONVERSION.includes(file.type.toLowerCase()) ||
+			HEIC_EXTENSIONS.includes(ext));
 
 		if (needsConversion) {
 			try {
