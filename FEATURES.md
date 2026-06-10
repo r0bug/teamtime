@@ -2863,7 +2863,9 @@ A guided flow at `/admin/vendors/onboard` ("+ Onboard vendor" on the vendor list
 - **Step 2 — Booth & terms**: booth number/size, monthly rent, custom cabinet rent, standard discount, max discount, preferred payout method, start date. Commission is fixed by the contract (13% booth / 25% individual).
 - **Step 3 — Review** the completed terms, then create.
 
-On create it does three things in one transaction (`vendor-onboarding-service.ts`): creates the vendor (`inactive`, no `nrsVendorId` yet), records a **Consignment Agreement** against the standard template with those terms (`paperOriginalOnFile`), and opens a **high-priority NRS data-entry task** assigned to the manager — pre-filled with the vendor's values mapped to the live NRS `frmHead*` form fields (name, address, contact, booth rent, pass-through %, vendor payment %, A/R customer, portal access) and asking them to record the assigned NRS Vendor ID back in TeamTime.
+On create it does three things in one transaction (`vendor-onboarding-service.ts`): creates the vendor (`inactive`, no `nrsVendorId` yet), records a **Consignment Agreement** against the standard template with those terms (`paperOriginalOnFile`), and opens a **high-priority NRS data-entry task** assigned to the manager — pre-filled with the vendor's values mapped to the live NRS `frmHead*` form fields (name, address, contact, booth rent, pass-through, vendor payment %, A/R customer, portal access) and asking them to record the assigned NRS Vendor ID back in TeamTime.
+
+> **NRS rule:** every Yakima Finds vendor must be a **pass-through vendor** in NRS (`frmHeadIsPassThrough` checked) — the task states this as a hard requirement, not a per-vendor choice. Vendor Payment % follows the contract commission split: 87% on booth rentals (13% commission), 75% on individual-item consignment (25%).
 
 The vendor page then shows a "next steps" banner:
 
