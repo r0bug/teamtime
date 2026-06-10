@@ -88,6 +88,15 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - Photo attachments for "where is this item?" scenarios
 - Conversation history retained for accountability
 
+### Customer Holds & Staff Notes
+- **Holds area** (`/holds`) — park items awaiting a price, vendor acceptance of an offer, or customer pickup; a photo of the item is required
+- **Urgency clock** — hold cards turn red 24h past their anchor (end of the promised pickup day for customer pickups, creation time for everything else) and flash after 48h
+- **Clear with reason** (sold / price received / returned to shelf / cancelled) with full audit history at `/holds/history`
+- **Staff notes board** (`/notes`) — shared post-it corkboard with text and/or photo notes (e.g. a photo of a hand-written note)
+- **Directed notes** — target all staff, all vendors, or one specific person; recipients see their notes on the dashboard, vendors on the vendor portal (`/vendor/notes`)
+- **Soft delete with attribution** — removed notes are kept in history with who removed them and when
+- Staff-only: vendor-portal users cannot access holds and only see notes addressed to them
+
 ### Gamification System
 - **Points economy** for attendance, tasks, pricing quality, and sales performance
 - **10-level progression** from Newcomer to Champion
@@ -253,6 +262,8 @@ TeamTime exposes **100+ REST endpoints** organized by domain:
 - `/api/inventory-drops`, `/api/inventory-drops/[id]/process` — AI inventory
 - `/api/atm-withdrawals`, `/api/purchase-requests` — Expense tracking
 - `/api/conversations`, `/api/messages` — Team messaging
+- `/api/holds`, `/api/holds/[id]` — Customer holds (create, list, clear with reason)
+- `/api/notes`, `/api/notes/[id]` — Staff notes board (create, list, soft delete)
 - `/api/ai/cron` — AI agent triggers
 - `/api/architect/chats` — Architecture advisor
 - `/api/sales/import-nrs` — NRS REST API sales import (replaces scraper)
@@ -273,7 +284,7 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-112 tables organized across domains:
+115 tables organized across domains:
 
 - **Core**: users, sessions, locations, shifts, time_entries, break_entries
 - **Scheduling**: schedule_templates, schedule_template_shifts (referenced by `shifts.template_id` / `template_shift_id`)
@@ -284,7 +295,8 @@ All endpoints require authentication except static files. Role-based authorizati
 - **Messaging**: conversations, messages, message_photos, groups, group_members, thread_participants
 - **Gamification**: point_transactions, user_stats, achievements, user_achievements, leaderboard_snapshots, team_goals, shoutouts, award_types, demerits, clock_out_warnings, late_arrival_warnings
 - **Metrics & Analytics**: sales_snapshots, sales_transactions, vendor_employee_correlations, metric_definitions, metrics, metric_data_sources, metric_import_history, worker_pair_performance, worker_impact_metrics, staffing_level_metrics, day_of_week_metrics
-- **Vendor Management**: vendors, agreement_templates, vendor_agreements, vendor_groups, vendor_group_members, pending_inventory_changes, nrs_inventory_api_log
+- **Vendor Management**: vendors, agreement_templates, vendor_agreements, vendor_groups, vendor_group_members, pending_inventory_changes, nrs_inventory_api_log, vendor_tag_settings, vendor_partnumber_sequences, vendor_print_jobs, label_formats
+- **Holds & Notes**: customer_holds, staff_notes
 - **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes, ai_tool_config, ai_tool_keywords, ai_context_config, ai_context_keywords
 - **Shift Requests**: shift_requests, shift_request_responses
 - **Security**: login_attempts, account_lockouts, password_reset_tokens

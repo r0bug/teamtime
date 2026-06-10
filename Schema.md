@@ -871,6 +871,82 @@ CREATE TABLE nrs_inventory_api_log (
 );
 ```
 
+## Customer Holds & Staff Notes Schema
+
+Two physical-operations tables (holds shelf + post-it board). Created by the
+idempotent `scripts/holds-migration.sql` and `scripts/notes-migration.sql`
+(plus `scripts/notes-recipient-group-migration.sql`, which added
+`recipient_group` and backfilled legacy NULL/NULL rows to `'all_staff'`).
+
+### Hold Reason Enums
+
+```sql
+CREATE TYPE hold_reason AS ENUM (
+  'awaiting_price', 'awaiting_vendor_acceptance', 'customer_pickup', 'other'
+);
+CREATE TYPE hold_cleared_reason AS ENUM (
+  'price_received', 'sold', 'returned_to_shelf', 'cancelled'
+);
+```
+
+### Customer Holds Table
+
+An item parked in the holds area. Active until cleared; cleared holds remain
+as history. `pickup_date` (Drizzle mode `'string'`, kept as `YYYY-MM-DD`
+end-to-end) drives the urgency clock for customer pickups.
+
+```sql
+CREATE TABLE customer_holds (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  reason hold_reason NOT NULL,
+  missing_price BOOLEAN NOT NULL DEFAULT false,  -- no customer needed; cleared when a price comes back
+  customer_name TEXT,                            -- required unless missing_price
+  customer_phone TEXT,                           -- required unless missing_price
+  item_description TEXT,
+  pickup_date DATE,                              -- required when reason='customer_pickup'
+  notes TEXT,
+  photo_path TEXT NOT NULL,                      -- /uploads/... from POST /api/uploads
+  photo_original_name TEXT NOT NULL,
+  photo_mime_type TEXT NOT NULL,
+  photo_size_bytes INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',         -- 'active' | 'cleared'
+  cleared_reason hold_cleared_reason,
+  cleared_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  cleared_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX customer_holds_status_idx ON customer_holds (status);
+```
+
+### Staff Notes Table
+
+A shared corkboard note, optionally directed at a group or one person.
+"Delete" is a soft delete so the note survives in history with attribution.
+
+```sql
+CREATE TABLE staff_notes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  recipient_group TEXT,                          -- 'all_staff' | 'all_vendors' (exactly one of group/user)
+  recipient_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  body TEXT,                                     -- body and/or photo required
+  photo_path TEXT,
+  photo_original_name TEXT,
+  photo_mime_type TEXT,
+  photo_size_bytes INTEGER,
+  status TEXT NOT NULL DEFAULT 'active',         -- 'active' | 'deleted'
+  deleted_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX staff_notes_status_idx ON staff_notes (status);
+CREATE INDEX staff_notes_recipient_idx ON staff_notes (recipient_user_id);
+CREATE INDEX staff_notes_recipient_group_idx ON staff_notes (recipient_group);
+```
+
 ---
 
 *Last updated: June 2026*

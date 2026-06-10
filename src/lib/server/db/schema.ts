@@ -34,6 +34,8 @@ export const inventoryDropStatusEnum = pgEnum('inventory_drop_status', ['pending
 export const inventoryDropUploadStatusEnum = pgEnum('inventory_drop_upload_status', ['pending', 'uploading', 'completed', 'failed']);
 export const jobStatusEnum = pgEnum('job_status', ['pending', 'running', 'completed', 'failed', 'cancelled']);
 export const pricingDestinationEnum = pgEnum('pricing_destination', ['store', 'ebay']);
+export const holdReasonEnum = pgEnum('hold_reason', ['awaiting_price', 'awaiting_vendor_acceptance', 'customer_pickup', 'other']);
+export const holdClearedReasonEnum = pgEnum('hold_cleared_reason', ['price_received', 'sold', 'returned_to_shelf', 'cancelled']);
 export const triggerEventEnum = pgEnum('trigger_event', ['clock_in', 'clock_out', 'first_clock_in', 'last_clock_out']);
 export const ruleTriggerTypeEnum = pgEnum('rule_trigger_type', [
 	'clock_in',
@@ -754,6 +756,67 @@ export const pricingDecisionPhotos = pgTable('pricing_decision_photos', {
 	lng: decimal('lng', { precision: 10, scale: 7 }),
 	capturedAt: timestamp('captured_at', { withTimezone: true }),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// ============================================
+// CUSTOMER HOLDS (Hold-for-customer area + awaiting-price parking)
+// ============================================
+
+// Customer holds table - items parked in the holds area, either held for a
+// named customer or waiting on a vendor price. Active until cleared; cleared
+// holds remain as history.
+export const customerHolds = pgTable('customer_holds', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }), // Staff who placed the hold (nullable to preserve history)
+	reason: holdReasonEnum('reason').notNull(),
+	missingPrice: boolean('missing_price').notNull().default(false), // No customer needed; cleared when a price comes back
+	customerName: text('customer_name'), // Required unless missingPrice
+	customerPhone: text('customer_phone'), // Required unless missingPrice
+	itemDescription: text('item_description'), // Optional free-text item note
+	// Required when reason='customer_pickup'; drives the urgency clock.
+	// mode 'string' keeps it 'YYYY-MM-DD' end-to-end — postgres-js would
+	// otherwise return a UTC-midnight Date that shifts back a day in Pacific.
+	pickupDate: date('pickup_date', { mode: 'string' }),
+	notes: text('notes'),
+	photoPath: text('photo_path').notNull(), // /uploads/... from POST /api/uploads
+	photoOriginalName: text('photo_original_name').notNull(),
+	photoMimeType: text('photo_mime_type').notNull(),
+	photoSizeBytes: integer('photo_size_bytes').notNull(),
+	status: text('status').notNull().default('active'), // 'active' | 'cleared'
+	clearedReason: holdClearedReasonEnum('cleared_reason'), // Why it left the queue
+	clearedByUserId: uuid('cleared_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	clearedAt: timestamp('cleared_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// ============================================
+// STAFF NOTES (Post-it notes — shared board, optionally directed at a person)
+// ============================================
+
+// Staff notes — a shared corkboard all staff can read. A note may be directed
+// at one staff member or left general. It carries text and/or a photo of a
+// hand-written post-it. "Delete" is a soft delete (status='deleted') so the
+// note is preserved in history with who removed it and when.
+export const staffNotes = pgTable('staff_notes', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	// Target is exactly one of: recipientGroup ('all_staff' | 'all_vendors') OR
+	// recipientUserId (one specific staff or vendor user). New rows always get a
+	// group when no user is set; legacy NULL/NULL rows are backfilled to
+	// 'all_staff' by scripts/notes-recipient-group-migration.sql.
+	recipientGroup: text('recipient_group'), // 'all_staff' | 'all_vendors'
+	recipientUserId: uuid('recipient_user_id').references(() => users.id, { onDelete: 'set null' }), // One specific staff or vendor user
+	body: text('body'), // Text note — body and/or photo required
+	photoPath: text('photo_path'), // /uploads/... from POST /api/uploads (optional)
+	photoOriginalName: text('photo_original_name'),
+	photoMimeType: text('photo_mime_type'),
+	photoSizeBytes: integer('photo_size_bytes'),
+	status: text('status').notNull().default('active'), // 'active' | 'deleted'
+	deletedByUserId: uuid('deleted_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	deletedAt: timestamp('deleted_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
 
 // ============================================

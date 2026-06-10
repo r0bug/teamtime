@@ -34,6 +34,7 @@ This document provides detailed information about TeamTime features, their imple
 28. [AI Token Usage Dashboard](#ai-token-usage-dashboard)
 29. [Gamification Admin Config](#gamification-admin-config)
 30. [Dashboard Enhancements](#dashboard-enhancements)
+31. [Customer Holds & Staff Notes](#customer-holds--staff-notes)
 
 ---
 
@@ -3117,6 +3118,50 @@ Vendor portal users can recover their own login:
 - Vendor messaging integrated with TeamTime messaging (groups, threads, direct messages)
 - In-portal performance dashboard beyond the simple sales view
 - Public vendor self-signup flow
+
+---
+
+## Customer Holds & Staff Notes
+
+### Overview
+
+Two physical-operations features for the shop floor: a **holds area** that mirrors the real shelf where items wait (for a price, a vendor's acceptance of an offer, or a customer pickup), and a **staff notes board** that replaces paper post-its at the register. Both are staff-only — vendor-portal users cannot reach holds at all and only see notes addressed to them.
+
+### Customer Holds (`/holds`)
+
+- **Create** (`/holds/new`) — a photo of the held item is **required** (taken with the phone camera; uploaded via `/api/uploads`). Reasons: `awaiting_price`, `awaiting_vendor_acceptance`, `customer_pickup`, `other`.
+- **Missing price mode** — skips customer name/phone (the item is parked, not promised); otherwise both are required. Customer pickups also require a pickup date.
+- **Urgency clock** — every hold has an *urgency anchor*: end of the promised pickup day (Pacific) for customer pickups, creation time for everything else. Cards turn **red 24h** past the anchor and **flash after 48h** (`holdUrgency` in `$lib/holds`). The queue sorts most-overdue first.
+- **Clear with reason** — `price_received`, `sold`, `returned_to_shelf`, or `cancelled`. Clears are atomic (a concurrent clear can't overwrite who cleared it) and keep the hold in history at `/holds/history`.
+- **Dashboard card** — every staff dashboard shows the total active count and the four most-urgent holds with a "New Hold" shortcut.
+
+### Staff Notes (`/notes`)
+
+- **Post-it board** — yellow sticky-note cards with text and/or a photo (e.g. a snapshot of a hand-written note). Created at `/notes/new`.
+- **Directed notes** — target **all staff** (default), **all vendors**, or **one specific person** (staff or vendor). The board shows everything to staff; the dashboard "Notes for You" card shows only notes addressed to you personally or to all staff.
+- **Vendor visibility** — vendors see their notes on the vendor home card and at `/vendor/notes` (personally-addressed + all-vendors only). Vendors are read-only — they cannot post or delete.
+- **Soft delete** — staff can take a note down; it's kept at `/notes/history` with who removed it and when. Deletes are atomic like hold clears.
+
+### API
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/holds` | GET / POST | List active or cleared holds / create a hold |
+| `/api/holds/[id]` | GET / PATCH | Single hold / clear with reason (409 if already cleared) |
+| `/api/notes` | GET / POST | List active notes (vendor-scoped for vendors) / create (staff only) |
+| `/api/notes/[id]` | DELETE | Soft delete (staff only, 409 if already deleted) |
+
+All four endpoints re-check vendor-portal status server-side (shared `isVendorPortalUser` in `src/lib/server/auth/vendor-portal.ts`) since API routes don't sit under the `(app)` layout's vendor redirect. Photo paths are validated against `isUploadPath` (`$lib/uploads`) — local `/uploads/` only, no `..` traversal — before being stored or rendered.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/lib/holds.ts` | Client-safe urgency calculation, reason labels |
+| `src/lib/server/services/holds-service.ts` | `urgencyAnchor` (Pacific end-of-day handling) |
+| `src/lib/components/HoldCard.svelte` | Hold card with urgency ring/flash |
+| `src/lib/components/NoteCard.svelte` | Sticky-note card with recipient badge |
+| `scripts/holds-migration.sql`, `scripts/notes-migration.sql` | Idempotent prod migrations |
 
 ---
 

@@ -1,0 +1,3445 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Strict//EN">
+<html>
+<!--
+                                             ,:
+                                           ,' |
+                                          /   :
+                                       --'   /
+                                       \/ />/
+                                       / <//_\
+                                    __/   /
+                                    )'-. /
+                                    ./  :\
+                                     /.' '
+                                   '/'
+                                   +
+                                  '
+                                `.
+                            .-"-
+                           (    |
+                        . .-'  '.
+                       ( (.   )8:
+                   .'    / (_  )
+                    _. :(.   )8P  `
+                .  (  `-' (  `.   .
+                 .  :  (   .a8a)
+                /_`( "a `a. )"'
+            (  (/  .  ' )=='
+           (   (    )  .8"   +
+             (`'8a.( _(   (
+          ..-. `8P    ) `  )  +
+        -'   (      -ab:  )
+      '    _  `    (8P"Ya
+    _(    (    )b  -`.  ) +
+   ( 8)  ( _.aP" _a   \( \   *
+ +  )/    (8P   (88    )  )
+    (a:f   "     `"       `
+//--><head>
+	<title>API Documentation - Yakima Networking LLC</title>
+	<link rel="shortcut icon" href="/resources/layout/default/images/favicon.ico" />
+	<link rel="icon" sizes="16x16 32x32" href="/resources/layout/default/images/favicon.ico">
+	<link rel="icon" sizes="32x32" type="image/png" href="/resources/layout/default/images/favicon-32.png" >
+	<link rel="icon" sizes="16x16" type="image/png" href="/resources/layout/default/images/favicon.png">
+
+
+		<link rel="preload" href="/resources/layout/default/fonts/InterVariable.ttf" as="font" type="font/ttf" crossorigin>
+			<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/base.css?t=1780347140" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/layout.css?t=1778628259" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/tables.css?t=1780347140" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/pagination.css?t=1778628259" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/forms.css?t=1780604616" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/components/alerts.css?t=1780604616" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/components/icons.css?t=1778628259" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/components/menus.css?t=1780136733" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/components/jquery-ui.css?t=1778628259" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/components/widgets.css?t=1780604616" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/components/dashboard.css?t=1778628259" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/utilities.css?t=1779227948" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/responsive.css?t=1748083598" />
+	<link rel="stylesheet" type="text/css" media="all" href="/resources/layout/default/styles/company.css.php?c=102&amp;t=1771970650" />
+		<link rel="stylesheet" type="text/css" media="print" href="/resources/layout/default/styles/print.css?t=1780050435" />
+	<script type="text/javascript" src="/resources/javascript/jquery/jquery-1.11.2.min.js"></script>
+	<script type="text/javascript" src="/resources/javascript/jquery/jquery-ui-1.10.4.min.js"></script>
+	<script type="text/javascript" src="/resources/javascript/jquery/jquery-ui-timepicker-addon.js"></script>
+	<style type="text/css" media="all">@import url("/resources/javascript/jquery/jquery-ui-1.10.4.min.css");</style>
+	<style type="text/css" media="all">@import url("/resources/javascript/jquery/jquery-extra.css");</style>
+	<script type="text/javascript" src="/resources/javascript/jquery/jquery.maskedinput-1.4.1.js"></script>
+	<script type="text/javascript" src="/resources/javascript/jquery/jquery.tipsy.js"></script>
+	<script type="text/javascript" src="/resources/javascript/jquery/jquery.sparkline.min.js"></script>
+	<script type="text/javascript" src="/resources/javascript/jquery/jquery.autosize.min.js"></script>
+	<script type="text/javascript" src="/resources/javascript/jquery.float.js?t=1764674766"></script>
+	<script type="text/javascript" src="/resources/javascript/jquery.validation.js?t=1727865708"></script>
+	<script type="text/javascript" src="/resources/javascript/jquery.dirty.js?t=1492858058"></script>
+	<script type="text/javascript" src="/resources/javascript/plupload/plupload.full.min.js"></script>
+	<script type="text/javascript" src="/resources/javascript/jquery.uploader.js?t=1683665628"></script>
+	<script type="text/javascript" src="/resources/javascript/stagedAttachments.js?t=1780604616"></script>
+	<script type="text/javascript" src="/resources/javascript/jquery.keymenu.js?t=1690221821"></script>
+	<script type="text/javascript" src="/resources/javascript/jquery.searchmenu.js?t=1754391074"></script>
+	<script type="text/javascript" src="/resources/javascript/jquery.combo.js?t=1778755799"></script>
+	<script type="text/javascript" src="/resources/javascript/common.js.php?t=1780604616"></script>
+	<script type="text/javascript" src="/resources/layout/default/layout.js"></script>
+	<script type="text/javascript" src="/resources/javascript/company.js.php?c=102&ct=1771970650&t=1755792147"></script>
+		<script type="text/javascript" src="/resources/javascript/member.js.php?t=1755792147"></script>
+		<meta name="viewport" content="width=device-width, minimum-scale=1.0, maximum-scale=1.0" />
+		<meta name="google" content="notranslate" />
+	<meta http-equiv="Content-Language" content="en_US" />
+	</head>
+
+<body class="theme-light">
+<div id="IdleMessage"></div>
+<div class="container">
+	<div id="navCollapse" title="Collapse Navigation"></div>
+	<div class="navigation">
+		<div class="logo" id="pageTitle"></div>
+		<div class="navigationButton" id="pageNavButton"></div>
+		<div id="pageNav">
+				<ul>
+				<li><a class="bold" href="/account/company" /><div class="icon"></div>Yakima Networking LLC</a></li>
+				</ul>
+		<br />
+		
+	<ul>
+			<li><a class="icon home" href="/" /><div class="icon"></div>Home</a></li>
+		<br>		<li><a class="icon gl" href="/gl/" /><div class="icon"></div>General Ledger</a></li>
+				<li><a class="icon ap" href="/ap/" /><div class="icon"></div>Accts Payable</a></li>
+				<li><a class="icon ar" href="/ar/" /><div class="icon"></div>Accts Receivable</a></li>
+				<li><a class="icon inv" href="/inventory/" /><div class="icon"></div>Inventory</a></li>
+				<li><a class="icon check" href="/payroll/" /><div class="icon"></div>Payroll</a></li>
+				<li><a class="icon people" href="/hr/" /><div class="icon"></div>H.R.</a></li>
+		<br>		<li><a class="icon admin" href="/admin/" /><div class="icon"></div>Admin</a></li>
+		
+	</ul>
+	<br />
+
+	<ul>
+			<li><a class="icon user" href="/account/" /><div class="icon"></div>My Account</a></li>
+				<li><a class="icon people selected" href="/support/" /><div class="icon"></div>Support</a></li>
+				<li><a class="icon logout" href="/?applicationAction=logout" /><div class="icon"></div>Log Out</a></li>
+			</ul>
+			<div class="rocket"></div>
+		</div>
+		<br style="clear: both;" />
+	</div>
+		<noscript><div class="noscript">This website requires JavaScript to be enabled in your browser. <a href="http://www.enable-javascript.com/" target="_blank">Click Here for some directions</a>.</div></noscript>
+		<div class="content" id="content">
+
+<style>
+.apidocs-wrap { display: flex; align-items: flex-start; }
+
+.apidocs-toc {
+	width: 220px;
+	flex-shrink: 0;
+	position: sticky;
+	top: 10px;
+	max-height: calc(100vh - 20px);
+	display: flex;
+	flex-direction: column;
+	border-right: 1px solid var(--color-border-soft, #ccc);
+	padding-right: 10px;
+	margin-right: 20px;
+}
+.apidocs-search {
+	flex-shrink: 0;
+	width: 100%;
+	box-sizing: border-box;
+	padding: 4px 7px;
+	font-size: 0.8rem;
+	border: 1px solid var(--color-border-soft, #ccc);
+	border-radius: 3px;
+	background: var(--input-bg, #fff);
+	color: var(--color-text, #333);
+	margin-bottom: 6px;
+}
+.apidocs-search:focus { outline: none; border-color: var(--color-accent, #69c); }
+.apidocs-toc-links {
+	overflow-y: auto;
+	flex: 1;
+}
+.apidocs-toc h4 {
+	font-size: 0.7rem;
+	text-transform: uppercase;
+	letter-spacing: .05em;
+	color: var(--color-muted, #666);
+	margin: 12px 0 2px;
+	padding: 0;
+}
+.apidocs-toc a {
+	display: block;
+	padding: 3px 6px;
+	font-size: 0.875rem;
+	color: var(--color-text, #333);
+	text-decoration: none;
+	border-radius: 3px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.apidocs-toc a:hover, .apidocs-toc a.active {
+	background: var(--color-accent, #69c);
+	color: var(--color-accent-text, #fff);
+}
+
+.apidocs-main { flex: 1; min-width: 0; }
+.apidocs-section { margin-bottom: 4px; }
+
+.apidocs-header {
+	cursor: pointer;
+	margin: 0;
+	padding: 10px 12px 10px 30px;
+	font-size: 0.95rem;
+	font-weight: bold;
+	background: var(--color-heading-bg, #f1f3f6) url('../resources/layout/default/images/control_down.png') 10px center no-repeat;
+	border: 1px solid var(--color-border-soft, #ccc);
+	border-radius: 3px;
+	color: var(--color-heading-text, #333);
+	user-select: none;
+}
+.apidocs-header.closed {
+	background-image: url('../resources/layout/default/images/control_right.png');
+}
+.apidocs-body {
+	border: 1px solid var(--color-border-soft, #ccc);
+	border-top: none;
+	padding: 14px 16px;
+	border-radius: 0 0 3px 3px;
+}
+.apidocs-body.hidden { display: none; }
+
+.apidocs-url {
+	font-family: monospace;
+	font-size: 0.8rem;
+	background: var(--color-heading-bg, #f1f3f6);
+	border: 1px solid var(--color-border-soft, #ccc);
+	padding: 5px 10px;
+	border-radius: 3px;
+	display: inline-block;
+	margin-bottom: 10px;
+	color: var(--color-accent, #369);
+}
+
+.apidocs-body p { margin: 6px 0; font-size: 0.875rem; }
+.apidocs-body ul { padding-left: 20px; margin: 4px 0 8px; }
+.apidocs-body li { margin-bottom: 3px; font-size: 0.875rem; }
+
+.apidocs-label {
+	font-size: 0.75rem;
+	font-weight: bold;
+	color: var(--color-muted, #666);
+	text-transform: uppercase;
+	letter-spacing: .04em;
+	margin: 12px 0 4px;
+}
+.apidocs-code {
+	font-family: monospace;
+	font-size: 0.8rem;
+	background: var(--color-heading-bg, #f9f9f9);
+	border: 1px solid var(--color-border-soft, #ccc);
+	color: var(--color-text, #333);
+	display: block;
+	padding: 10px 12px;
+	white-space: pre;
+	overflow-x: auto;
+	border-radius: 3px;
+	margin-bottom: 8px;
+}
+</style>
+
+<div class="apidocs-wrap">
+
+	<div class="apidocs-toc">
+		<input type="text" id="apidocs-search" class="apidocs-search" placeholder="Search endpoints...">
+		<div class="apidocs-toc-links">
+								<a href="#authentication" class="toc-link">Authentication</a>
+									<h4>General</h4>
+									<a href="#company" class="toc-link">/company</a>
+									<a href="#division-list" class="toc-link">/division/list</a>
+									<h4>Accounts Payable</h4>
+									<a href="#vendor-list" class="toc-link">/vendor/list</a>
+									<a href="#vendor-getvendor" class="toc-link">/vendor/getvendor</a>
+									<a href="#vendor-save" class="toc-link">/vendor/save</a>
+									<a href="#apinvoice-getinvoice" class="toc-link">/apinvoice/getinvoice</a>
+									<a href="#apinvoice-save" class="toc-link">/apinvoice/save</a>
+									<a href="#apinvoice-delete" class="toc-link">/apinvoice/delete</a>
+									<a href="#apinvoicehist-list" class="toc-link">/apinvoicehist/list</a>
+									<a href="#apinvoicehist-getinvoice" class="toc-link">/apinvoicehist/getinvoice</a>
+									<a href="#apinvoicehist-setexternalinfo" class="toc-link">/apinvoicehist/setexternalinfo</a>
+									<a href="#apexpenseaccount-list" class="toc-link">/apexpenseaccount/list</a>
+									<a href="#appaymenthist-get" class="toc-link">/appaymenthist/get</a>
+									<a href="#appaymenthist-getpayment" class="toc-link">/appaymenthist/getpayment</a>
+									<h4>Accounts Receivable</h4>
+									<a href="#arsalestaxtype-list" class="toc-link">/arsalestaxtype/list</a>
+									<a href="#customer-list" class="toc-link">/customer/list</a>
+									<a href="#customer-save" class="toc-link">/customer/save</a>
+									<a href="#arcashreg-save" class="toc-link">/arcashreg/save</a>
+									<a href="#arinvoice-getinvoice" class="toc-link">/arinvoice/getinvoice</a>
+									<a href="#arinvoice-save" class="toc-link">/arinvoice/save</a>
+									<a href="#arinvoice-delete" class="toc-link">/arinvoice/delete</a>
+									<a href="#arinvoicehist-list" class="toc-link">/arinvoicehist/list</a>
+									<a href="#arinvoicehist-getinvoice" class="toc-link">/arinvoicehist/getinvoice</a>
+									<a href="#arinvoicehist-setexternalinfo" class="toc-link">/arinvoicehist/setexternalinfo</a>
+									<a href="#arinvoicehistdetail-getall" class="toc-link">/arinvoicehistdetail/getall</a>
+									<a href="#arpaymenthist-get" class="toc-link">/arpaymenthist/get</a>
+									<a href="#arpaymenthist-getpayment" class="toc-link">/arpaymenthist/getpayment</a>
+									<a href="#arcashreg-delete" class="toc-link">/arcashreg/delete</a>
+									<a href="#arinvoice-getnextnumber" class="toc-link">/arinvoice/getnextnumber</a>
+									<h4>General Ledger</h4>
+									<a href="#glaccount-list" class="toc-link">/glaccount/list</a>
+									<a href="#glpost-getnextnumber" class="toc-link">/glpost/getnextnumber</a>
+									<a href="#glpost-save" class="toc-link">/glpost/save</a>
+									<a href="#glpost-delete" class="toc-link">/glpost/delete</a>
+									<h4>Point of Sale</h4>
+									<a href="#cashdrawer-list" class="toc-link">/cashdrawer/list</a>
+									<a href="#posstore-list" class="toc-link">/posstore/list</a>
+									<a href="#poscashdrawer-list" class="toc-link">/poscashdrawer/list</a>
+									<a href="#poscashier-list" class="toc-link">/poscashier/list</a>
+									<a href="#possales-getall" class="toc-link">/possales/getall</a>
+									<h4>Inventory</h4>
+									<a href="#invstock-list" class="toc-link">/invstock/list</a>
+									<a href="#invstock-getall" class="toc-link">/invstock/getall</a>
+									<a href="#invstock-get" class="toc-link">/invstock/get</a>
+									<a href="#invstock-save" class="toc-link">/invstock/save</a>
+									<a href="#invstock-delete" class="toc-link">/invstock/delete</a>
+									<a href="#invcategory-list" class="toc-link">/invcategory/list</a>
+									<a href="#invunitofmeasure-list" class="toc-link">/invunitofmeasure/list</a>
+									<h4>Nursery</h4>
+									<a href="#nurinventory-getall" class="toc-link">/nurinventory/getall</a>
+									<a href="#nurinventory-simple" class="toc-link">/nurinventory/simple</a>
+									<a href="#nurinventory-save" class="toc-link">/nurinventory/save</a>
+									<a href="#nurinventory-type-getall" class="toc-link">/nurinventory/type/getall</a>
+									<a href="#nurvariety-getall" class="toc-link">/nurvariety/getall</a>
+									<a href="#nurvariety-get" class="toc-link">/nurvariety/get</a>
+									<a href="#nurorder-getall" class="toc-link">/nurorder/getall</a>
+									<a href="#nurorder-get" class="toc-link">/nurorder/get</a>
+									<a href="#nurorder-getdeleted" class="toc-link">/nurorder/getdeleted</a>
+									<a href="#nurorderdetail-getall" class="toc-link">/nurorderdetail/getall</a>
+									<a href="#nurorderdetail-get" class="toc-link">/nurorderdetail/get</a>
+									<a href="#nursize-getall" class="toc-link">/nursize/getall</a>
+									<a href="#nursource-getall" class="toc-link">/nursource/getall</a>
+									<a href="#nurboxpickup-scan" class="toc-link">/nurboxpickup/scan</a>
+									<a href="#nurboxpickup-remove" class="toc-link">/nurboxpickup/remove</a>
+									<a href="#nurboxpickup-complete" class="toc-link">/nurboxpickup/complete</a>
+									<h4>Payroll</h4>
+									<a href="#department-list" class="toc-link">/department/list</a>
+									<a href="#employee-list" class="toc-link">/employee/list</a>
+									<h4>Job Cost</h4>
+									<a href="#job-start" class="toc-link">/job/start</a>
+									<a href="#job-bidtypes" class="toc-link">/job/bidtypes</a>
+									<a href="#job-lookup" class="toc-link">/job/lookup</a>
+									<a href="#job-search" class="toc-link">/job/search</a>
+									<a href="#job-info" class="toc-link">/job/info</a>
+									<a href="#jccostcode-list" class="toc-link">/jccostcode/list</a>
+									<a href="#jccostsubcode-list" class="toc-link">/jccostsubcode/list</a>
+									<h4>Attachments</h4>
+									<a href="#attachment-locations" class="toc-link">/attachment/locations</a>
+									<a href="#attachment-list" class="toc-link">/attachment/list</a>
+									<a href="#attachment-generate" class="toc-link">/attachment/generate</a>
+									<a href="#attachment-upload" class="toc-link">/attachment/upload</a>
+									<h4>Utility Billing</h4>
+									<a href="#client-save" class="toc-link">/client/save</a>
+									<a href="#client-billPdf" class="toc-link">/client/billPdf</a>
+									<a href="#util-get" class="toc-link">/util/get</a>
+									<a href="#util-set" class="toc-link">/util/set</a>
+									<h4>Expense</h4>
+									<a href="#expense-save" class="toc-link">/expense/save</a>
+									<h4>Scanner</h4>
+									<a href="#scanner-info" class="toc-link">/scanner/info</a>
+									<a href="#scanner-categories" class="toc-link">/scanner/categories</a>
+									<a href="#scanner-form-setup" class="toc-link">/scanner/form/setup</a>
+									<a href="#scanner-form-submit" class="toc-link">/scanner/form/submit</a>
+									<a href="#scanner-attachment-categories" class="toc-link">/scanner/attachment/categories</a>
+									<a href="#scanner-attachment-info" class="toc-link">/scanner/attachment/info</a>
+									<a href="#scanner-attachment-update" class="toc-link">/scanner/attachment/update</a>
+									<a href="#scanner-attachment-move" class="toc-link">/scanner/attachment/move</a>
+									<a href="#upload" class="toc-link">/upload</a>
+									<h4>Devices</h4>
+									<a href="#device-locations" class="toc-link">/device/locations</a>
+									<a href="#device-list" class="toc-link">/device/list</a>
+									<h4>Display</h4>
+									<a href="#display-show-url" class="toc-link">/display/show/url</a>
+									<a href="#display-sound-list" class="toc-link">/display/sound/list</a>
+									<a href="#errors" class="toc-link">API Errors</a>
+						</div>
+	</div>
+
+	<div class="apidocs-main">
+					<div class="apidocs-section" id="authentication">
+
+				<div class="apidocs-header">Authentication</div>
+				<div class="apidocs-body">
+
+					
+					<p>Every request needs a <code>Company</code> HTTP header containing your API key. Find it under <a href="/admin/companyManagement">Admin &rarr; Company Management</a>. POST data goes as JSON in the request body. All responses are JSON.</p>
+					
+					
+					
+					
+											<p class="apidocs-label">Basic request</p>
+						<code class="apidocs-code">curl -X POST https://www.nrsaccounting.com/api/company \
+     -H &quot;Company: YOUR_API_KEY&quot; \
+     -H &quot;Content-Type: application/json&quot;</code>
+											<p class="apidocs-label">With POST body</p>
+						<code class="apidocs-code">curl -X POST https://www.nrsaccounting.com/api/customer/list \
+     -H &quot;Company: YOUR_API_KEY&quot; \
+     -H &quot;Content-Type: application/json&quot; \
+     -d '{&quot;customerId&quot;: 1}'</code>
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="company">
+
+				<div class="apidocs-header">/company</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/company</div>
+					
+					<p>Returns basic company information.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;companyId&quot;:   1,
+    &quot;companyName&quot;: &quot;Test Company&quot;
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="division-list">
+
+				<div class="apidocs-header">/division/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/division/list</div>
+					
+					<p>Returns all divisions.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;divisionId&quot;: 1, &quot;name&quot;: &quot;First Division&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="vendor-list">
+
+				<div class="apidocs-header">/vendor/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/vendor/list</div>
+					
+					<p>Returns all AP vendors. Lightweight — id and name only.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;vendorId&quot;: 1, &quot;name&quot;: &quot;ACME Supplies&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="vendor-getvendor">
+
+				<div class="apidocs-header">/vendor/getvendor</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/vendor/getvendor</div>
+					
+					<p>Returns full detail for a single vendor including address, contact info, and a contacts array. Also returns vendorCode if the company has vendor codes enabled.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>vendorId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;vendorId&quot;: 1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;getvendor&quot;: {
+        &quot;vendorId&quot;:          1,
+        &quot;companyId&quot;:         1,
+        &quot;vendorCode&quot;:        &quot;ACM&quot;,
+        &quot;address&quot;:           &quot;123 Main St&quot;,
+        &quot;address2&quot;:          &quot;&quot;,
+        &quot;address3&quot;:          &quot;&quot;,
+        &quot;city&quot;:              &quot;Spokane&quot;,
+        &quot;state&quot;:             &quot;WA&quot;,
+        &quot;zipCode&quot;:           &quot;99201&quot;,
+        &quot;country&quot;:           &quot;United States&quot;,
+        &quot;countryCode&quot;:       &quot;US&quot;,
+        &quot;countryCode3&quot;:      &quot;USA&quot;,
+        &quot;contact&quot;:           &quot;Jane Smith&quot;,
+        &quot;email&quot;:             &quot;jane@acme.com&quot;,
+        &quot;phone&quot;:             &quot;509-555-1234&quot;,
+        &quot;fax&quot;:               &quot;&quot;,
+        &quot;fedid&quot;:             &quot;12-3456789&quot;,
+        &quot;require1099&quot;:       false,
+        &quot;nameFor1099&quot;:       &quot;&quot;,
+        &quot;ourAccountNumber&quot;:  &quot;ACCT-001&quot;,
+        &quot;minimumOrderValue&quot;: 50.00,
+        &quot;notes&quot;:             &quot;&quot;,
+        &quot;vendorNumber&quot;:      &quot;001&quot;,
+        &quot;portalAccess&quot;:      false,
+        &quot;name&quot;:              [&quot;Jane Smith&quot;, &quot;Bob Jones&quot;],
+        &quot;title&quot;:             [&quot;Owner&quot;, &quot;Manager&quot;],
+        &quot;phone&quot;:             [&quot;509-555-1234&quot;, &quot;509-555-5678&quot;],
+        &quot;fax&quot;:               [&quot;&quot;, &quot;&quot;],
+        &quot;email&quot;:             [&quot;jane@acme.com&quot;, &quot;bob@acme.com&quot;],
+        &quot;notes&quot;:             [&quot;Primary contact&quot;, &quot;&quot;]
+    }
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="vendor-save">
+
+				<div class="apidocs-header">/vendor/save</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/vendor/save</div>
+					
+					<p>Creates or updates a vendor. Returns the vendorId of the saved record.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>name</li></ul>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>address1</li><li>address2</li><li>address3</li><li>city</li><li>state</li><li>zipCode</li><li>country</li><li>contact</li><li>email</li><li>phone</li><li>fax</li><li>fedid</li><li>require1099</li><li>nameFor1099</li><li>ourAccountNumber</li><li>minimumOrderValue</li><li>notes</li><li>vendorNumber</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;name&quot;:     &quot;ACME Supplies&quot;,
+    &quot;address1&quot;: &quot;123 Main St&quot;,
+    &quot;city&quot;:     &quot;Spokane&quot;,
+    &quot;state&quot;:    &quot;WA&quot;,
+    &quot;zipCode&quot;:  &quot;99201&quot;,
+    &quot;email&quot;:    &quot;jane@acme.com&quot;,
+    &quot;phone&quot;:    &quot;509-555-1234&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: 1
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="apinvoice-getinvoice">
+
+				<div class="apidocs-header">/apinvoice/getinvoice</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/apinvoice/getinvoice</div>
+					
+					<p>Returns an AP invoice header (batch or posted history) matched by externalCode + externalId. Returns header fields only — no line items.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>externalCode</li><li>externalId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;externalCode&quot;: &quot;MySystem&quot;,
+    &quot;externalId&quot;:   &quot;INV-001&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;getinvoice&quot;: {
+        &quot;apVendorId&quot;:                   1,
+        &quot;name&quot;:                         &quot;ACME Supplies&quot;,
+        &quot;address&quot;:                      &quot;123 Main St&quot;,
+        &quot;address2&quot;:                     &quot;&quot;,
+        &quot;city&quot;:                         &quot;Spokane&quot;,
+        &quot;state&quot;:                        &quot;WA&quot;,
+        &quot;zipCode&quot;:                      &quot;99201&quot;,
+        &quot;sysCountry&quot;:                   &quot;United States&quot;,
+        &quot;invoiceDate&quot;:                  &quot;06/01/2024&quot;,
+        &quot;periodDate&quot;:                   &quot;06/01/2024&quot;,
+        &quot;dueDate&quot;:                      &quot;07/01/2024&quot;,
+        &quot;poNumber&quot;:                     &quot;&quot;,
+        &quot;discountDate&quot;:                 &quot;&quot;,
+        &quot;discountAmount&quot;:               0,
+        &quot;shipVia&quot;:                      &quot;&quot;,
+        &quot;term&quot;:                         1,
+        &quot;fob&quot;:                          &quot;&quot;,
+        &quot;dateOrdered&quot;:                  &quot;&quot;,
+        &quot;dateWanted&quot;:                   &quot;&quot;,
+        &quot;vendorPO&quot;:                     &quot;&quot;,
+        &quot;invoiceTotal&quot;:                 500.00,
+        &quot;vendorInvoice&quot;:                &quot;VI-123&quot;,
+        &quot;description&quot;:                  &quot;June supplies&quot;,
+        &quot;expectedDeliveryDate&quot;:         &quot;&quot;,
+        &quot;glAccountTax&quot;:                 &quot;&quot;,
+        &quot;glAccountTaxDescription&quot;:      &quot;&quot;,
+        &quot;taxAmount&quot;:                    0,
+        &quot;glAccountShipping&quot;:            &quot;&quot;,
+        &quot;glAccountShippingDescription&quot;: &quot;&quot;,
+        &quot;shippingAmount&quot;:               0,
+        &quot;glAccountMisc1&quot;:               &quot;&quot;,
+        &quot;glAccountMisc1Description&quot;:    &quot;&quot;,
+        &quot;misc1Amount&quot;:                  0,
+        &quot;glAccountMisc2&quot;:               &quot;&quot;,
+        &quot;glAccountMisc2Description&quot;:    &quot;&quot;,
+        &quot;misc2Amount&quot;:                  0,
+        &quot;latestChangeDateTime&quot;:         &quot;2024-06-01 10:00:00&quot;,
+        &quot;totalPayments&quot;:                500.00,
+        &quot;totalDiscounts&quot;:               0,
+        &quot;totalPaymentsAndDiscounts&quot;:    500.00,
+        &quot;checkNumber&quot;:                  &quot;1042&quot;,
+        &quot;isPaid&quot;:                       true
+    }
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="apinvoice-save">
+
+				<div class="apidocs-header">/apinvoice/save</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/apinvoice/save</div>
+					
+					<p>Creates a new AP invoice batch. Matches vendor by apVendorId or by name. Each detail line requires either glAccount or invStockId.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>name: vendor name (looked up by name if apVendorId not given)</li><li>externalCode</li><li>externalId</li><li>invoiceDate</li><li>details</li></ul>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>apVendorId: vendor ID (preferred over name lookup)</li><li>invoiceNumber: vendor's invoice number</li><li>note: invoice description/memo</li><li>dueDate</li><li>divisionId</li><li>jcJobId</li><li>taxAmount, taxAccountId</li><li>shippingAmount, shippingAccountId</li><li>details[].glAccount (or invStockId)</li><li>details[].note: line description</li><li>details[].quantity (default 1)</li><li>details[].unitCost or totalCost</li><li>details[].vendorPart: vendor part number</li><li>details[].jcJobId</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;externalCode&quot;:  &quot;MySystem&quot;,
+    &quot;externalId&quot;:    &quot;INV-001&quot;,
+    &quot;apVendorId&quot;:    1,
+    &quot;invoiceDate&quot;:   &quot;06/01/2024&quot;,
+    &quot;invoiceNumber&quot;: &quot;VI-123&quot;,
+    &quot;note&quot;:          &quot;June supplies&quot;,
+    &quot;taxAmount&quot;:     0,
+    &quot;shippingAmount&quot;: 0,
+    &quot;details&quot;: [
+        {
+            &quot;glAccount&quot;:  &quot;1-500-00&quot;,
+            &quot;note&quot;:       &quot;Supplies&quot;,
+            &quot;quantity&quot;:   2,
+            &quot;totalCost&quot;:  500.00
+        }
+    ]
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="apinvoice-delete">
+
+				<div class="apidocs-header">/apinvoice/delete</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/apinvoice/delete</div>
+					
+					<p>Deletes an unposted AP invoice by externalCode + externalId. Cannot delete posted invoices.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>externalCode</li><li>externalId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;externalCode&quot;: &quot;MySystem&quot;,
+    &quot;externalId&quot;:   &quot;INV-001&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;deleted&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="apinvoicehist-list">
+
+				<div class="apidocs-header">/apinvoicehist/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/apinvoicehist/list</div>
+					
+					<p>Returns a paginated list of posted AP invoice history records. Use sinceDateTime for incremental sync.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>sinceDateTime: return records changed after this datetime</li><li>vendorId: filter to a single vendor</li><li>page: page number (default 1)</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;sinceDateTime&quot;: &quot;2024-01-01 00:00:00&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;apInvHistHeaderId&quot;:          100,
+            &quot;vendorId&quot;:                   1,
+            &quot;vendorName&quot;:                 &quot;ACME Supplies&quot;,
+            &quot;invoiceDate&quot;:                &quot;06/01/2024&quot;,
+            &quot;dueDate&quot;:                    &quot;07/01/2024&quot;,
+            &quot;invoiceTotal&quot;:               500.00,
+            &quot;vendorInvoice&quot;:              &quot;VI-123&quot;,
+            &quot;totalPayments&quot;:              500.00,
+            &quot;isPaid&quot;:                     true,
+            &quot;checkNumber&quot;:                &quot;1042&quot;,
+            &quot;externalCode&quot;:               &quot;MySystem&quot;,
+            &quot;externalId&quot;:                 &quot;INV-001&quot;,
+            &quot;latestChangeDateTime&quot;:       &quot;2024-06-01 10:00:00&quot;
+        }
+    ],
+    &quot;nextPage&quot;: 2
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="apinvoicehist-getinvoice">
+
+				<div class="apidocs-header">/apinvoicehist/getinvoice</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/apinvoicehist/getinvoice</div>
+					
+					<p>Returns full header detail for a single posted AP invoice history record. Returns header fields only — no line items.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>externalCode</li><li>externalId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;externalCode&quot;: &quot;MySystem&quot;,
+    &quot;externalId&quot;:   &quot;INV-001&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;getinvoice&quot;: {
+        &quot;apVendorId&quot;:                   1,
+        &quot;name&quot;:                         &quot;ACME Supplies&quot;,
+        &quot;invoiceDate&quot;:                  &quot;06/01/2024&quot;,
+        &quot;periodDate&quot;:                   &quot;06/01/2024&quot;,
+        &quot;dueDate&quot;:                      &quot;07/01/2024&quot;,
+        &quot;invoiceTotal&quot;:                 500.00,
+        &quot;vendorInvoice&quot;:                &quot;VI-123&quot;,
+        &quot;description&quot;:                  &quot;June supplies&quot;,
+        &quot;taxAmount&quot;:                    0,
+        &quot;shippingAmount&quot;:               0,
+        &quot;totalPayments&quot;:                500.00,
+        &quot;totalDiscounts&quot;:               0,
+        &quot;totalPaymentsAndDiscounts&quot;:    500.00,
+        &quot;checkNumber&quot;:                  &quot;1042&quot;,
+        &quot;isPaid&quot;:                       true,
+        &quot;latestChangeDateTime&quot;:         &quot;2024-06-01 10:00:00&quot;
+    }
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="apinvoicehist-setexternalinfo">
+
+				<div class="apidocs-header">/apinvoicehist/setexternalinfo</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/apinvoicehist/setexternalinfo</div>
+					
+					<p>Updates the externalCode and externalId on a posted AP invoice history record.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>apInvHistHeaderId</li><li>externalCode</li><li>externalId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;apInvHistHeaderId&quot;: 100,
+    &quot;externalCode&quot;:      &quot;MySystem&quot;,
+    &quot;externalId&quot;:        &quot;INV-001&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="apexpenseaccount-list">
+
+				<div class="apidocs-header">/apexpenseaccount/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/apexpenseaccount/list</div>
+					
+					<p>Returns all AP expense accounts. Used to populate expense category selection in mobile expense submission.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;expenseAccounts&quot;: [
+        {
+            &quot;apExpenseAccountId&quot;: 1,
+            &quot;accountId&quot;:          10,
+            &quot;glAccountId&quot;:        5,
+            &quot;name&quot;:               &quot;Travel&quot;
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="appaymenthist-get">
+
+				<div class="apidocs-header">/appaymenthist/get</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/appaymenthist/get</div>
+					
+					<p>Returns all payment history records for a posted AP invoice. Each entry is one payment application detail.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>invoiceId: apInvHistHeaderId of the posted invoice</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;invoiceId&quot;: 100
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;get&quot;: [
+        {
+            &quot;companyId&quot;:             1,
+            &quot;paymentId&quot;:             200,
+            &quot;headerId&quot;:              50,
+            &quot;paymentMethod&quot;:         &quot;Check&quot;,
+            &quot;checkNumber&quot;:           &quot;1042&quot;,
+            &quot;description&quot;:           &quot;Payment for INV-001&quot;,
+            &quot;description1&quot;:          &quot;&quot;,
+            &quot;description2&quot;:          &quot;&quot;,
+            &quot;name&quot;:                  &quot;ACME Supplies&quot;,
+            &quot;address&quot;:               &quot;123 Main St&quot;,
+            &quot;city&quot;:                  &quot;Spokane&quot;,
+            &quot;state&quot;:                 &quot;WA&quot;,
+            &quot;zipCode&quot;:               &quot;99201&quot;,
+            &quot;countryName&quot;:           &quot;United States&quot;,
+            &quot;countryCode&quot;:           &quot;US&quot;,
+            &quot;countryCode2&quot;:          &quot;US&quot;,
+            &quot;countryCode3&quot;:          &quot;USA&quot;,
+            &quot;paymentDate&quot;:           &quot;06/15/2024&quot;,
+            &quot;paymentAmount&quot;:         500.00,
+            &quot;discountAmount&quot;:        0,
+            &quot;void&quot;:                  false,
+            &quot;createDateTime&quot;:        &quot;2024-06-15 10:00:00&quot;,
+            &quot;latestChangeDateTime&quot;:  &quot;2024-06-15 10:00:00&quot;
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="appaymenthist-getpayment">
+
+				<div class="apidocs-header">/appaymenthist/getpayment</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/appaymenthist/getpayment</div>
+					
+					<p>Returns a single AP payment history detail record by its paymentId.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>paymentId: apPaymentHistDetailId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;paymentId&quot;: 200
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;getpayment&quot;: {
+        &quot;companyId&quot;:             1,
+        &quot;paymentId&quot;:             200,
+        &quot;checkNumber&quot;:           &quot;1042&quot;,
+        &quot;description&quot;:           &quot;Payment for INV-001&quot;,
+        &quot;description1&quot;:          &quot;&quot;,
+        &quot;description2&quot;:          &quot;&quot;,
+        &quot;name&quot;:                  &quot;ACME Supplies&quot;,
+        &quot;address&quot;:               &quot;123 Main St&quot;,
+        &quot;city&quot;:                  &quot;Spokane&quot;,
+        &quot;state&quot;:                 &quot;WA&quot;,
+        &quot;zipCode&quot;:               &quot;99201&quot;,
+        &quot;countryName&quot;:           &quot;United States&quot;,
+        &quot;countryCode&quot;:           &quot;US&quot;,
+        &quot;paymentDate&quot;:           &quot;06/15/2024&quot;,
+        &quot;paymentAmount&quot;:         500.00,
+        &quot;discountAmount&quot;:        0,
+        &quot;void&quot;:                  false,
+        &quot;createDateTime&quot;:        &quot;2024-06-15 10:00:00&quot;,
+        &quot;latestChangeDateTime&quot;:  &quot;2024-06-15 10:00:00&quot;
+    }
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arsalestaxtype-list">
+
+				<div class="apidocs-header">/arsalestaxtype/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arsalestaxtype/list</div>
+					
+					<p>Returns all AR sales tax types.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;arSalesTaxTypeId&quot;: 1, &quot;name&quot;: &quot;WA State Tax&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="customer-list">
+
+				<div class="apidocs-header">/customer/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/customer/list</div>
+					
+					<p>Returns all customers with balance and credit information.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;customerId&quot;:  1,
+            &quot;name&quot;:        &quot;Tester McTesterson&quot;,
+            &quot;terms&quot;:       &quot;Net 30&quot;,
+            &quot;creditLimit&quot;: 1000.00,
+            &quot;creditHold&quot;:  false,
+            &quot;balance&quot;:     500.00
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="customer-save">
+
+				<div class="apidocs-header">/customer/save</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/customer/save</div>
+					
+					<p>Creates or updates a customer. Returns the customerId of the saved record.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>name</li></ul>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>customerId: include to update an existing customer</li><li>address1</li><li>address2</li><li>address3</li><li>city</li><li>state</li><li>zipCode</li><li>country</li><li>email</li><li>phoneNumber</li><li>fax</li><li>company: business/company name</li><li>terms: payment terms (e.g. Net 30)</li><li>creditLimit</li><li>internalReference: your system's reference ID</li><li>divisionId</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;name&quot;:            &quot;Tester McTesterson&quot;,
+    &quot;company&quot;:         &quot;Tester Inc.&quot;,
+    &quot;address1&quot;:        &quot;456 Elm St&quot;,
+    &quot;city&quot;:            &quot;Yakima&quot;,
+    &quot;state&quot;:           &quot;WA&quot;,
+    &quot;zipCode&quot;:         &quot;98901&quot;,
+    &quot;email&quot;:           &quot;tester@example.com&quot;,
+    &quot;creditLimit&quot;:     5000.00,
+    &quot;internalReference&quot;: &quot;EXT-CUST-42&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: 42
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arcashreg-save">
+
+				<div class="apidocs-header">/arcashreg/save</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arcashreg/save</div>
+					
+					<p>Creates an AR cash receipt (point-of-sale sale). Each detail line requires glAccount. Use invStock (ID or part number) to link to an inventory item.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>name: customer name or lookup key</li><li>externalCode</li><li>externalId</li><li>invoiceDate</li><li>details</li></ul>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>arCustomerId: customer ID (preferred over name lookup)</li><li>divisionId</li><li>note: invoice description</li><li>taxAmount, glAccountIdTax</li><li>shippingAmount</li><li>details[].glAccount</li><li>details[].invStock: invStockId or part number to link inventory item</li><li>details[].description</li><li>details[].quantityOrdered (default 1)</li><li>details[].price: unit price</li><li>details[].totalPrice</li><li>details[].arSalesTaxTypeId</li><li>details[].hideFromInvoice: true/false</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;arCustomerId&quot;:  1,
+    &quot;externalCode&quot;:  &quot;POS&quot;,
+    &quot;externalId&quot;:    &quot;SALE-001&quot;,
+    &quot;invoiceDate&quot;:   &quot;06/01/2024&quot;,
+    &quot;details&quot;: [
+        {
+            &quot;glAccount&quot;:      &quot;4-100-00&quot;,
+            &quot;invStock&quot;:       &quot;WGT-001&quot;,
+            &quot;description&quot;:    &quot;Widget A&quot;,
+            &quot;quantityOrdered&quot;: 2,
+            &quot;price&quot;:          12.50,
+            &quot;totalPrice&quot;:     25.00
+        }
+    ]
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arinvoice-getinvoice">
+
+				<div class="apidocs-header">/arinvoice/getinvoice</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arinvoice/getinvoice</div>
+					
+					<p>Returns an AR invoice header (batch or posted history) matched by externalCode + externalId. Returns header fields only — no line items.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>externalCode</li><li>externalId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;externalCode&quot;: &quot;MySystem&quot;,
+    &quot;externalId&quot;:   &quot;INV-2024-001&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;getinvoice&quot;: {
+        &quot;invoiceId&quot;:                    200,
+        &quot;invoiceNumber&quot;:                &quot;2024-001&quot;,
+        &quot;soNumber&quot;:                     &quot;&quot;,
+        &quot;billToName&quot;:                   &quot;Tester McTesterson&quot;,
+        &quot;company&quot;:                      &quot;Tester Inc.&quot;,
+        &quot;address1&quot;:                     &quot;456 Elm St&quot;,
+        &quot;city&quot;:                         &quot;Yakima&quot;,
+        &quot;state&quot;:                        &quot;WA&quot;,
+        &quot;zipCode&quot;:                      &quot;98901&quot;,
+        &quot;sysCountry&quot;:                   &quot;United States&quot;,
+        &quot;shipName&quot;:                     &quot;&quot;,
+        &quot;shipAddress1&quot;:                 &quot;&quot;,
+        &quot;shipCity&quot;:                     &quot;&quot;,
+        &quot;shipState&quot;:                    &quot;&quot;,
+        &quot;shipZipCode&quot;:                  &quot;&quot;,
+        &quot;invoiceDate&quot;:                  &quot;06/01/2024&quot;,
+        &quot;periodDate&quot;:                   &quot;06/01/2024&quot;,
+        &quot;dueDate&quot;:                      &quot;07/01/2024&quot;,
+        &quot;discountAvailableDate&quot;:        &quot;&quot;,
+        &quot;discountAvailableAmount&quot;:      0,
+        &quot;shipVia&quot;:                      &quot;&quot;,
+        &quot;shipDate&quot;:                     &quot;&quot;,
+        &quot;trackingNumber&quot;:               &quot;&quot;,
+        &quot;internalReference&quot;:            &quot;EXT-CUST-42&quot;,
+        &quot;term&quot;:                         &quot;Net 30&quot;,
+        &quot;customerPO&quot;:                   &quot;&quot;,
+        &quot;invoiceTotal&quot;:                 250.00,
+        &quot;lineItemTotal&quot;:                250.00,
+        &quot;taxableTotal&quot;:                 250.00,
+        &quot;nonTaxableTotal&quot;:              0,
+        &quot;taxRate&quot;:                      0.088,
+        &quot;taxAmount&quot;:                    22.00,
+        &quot;shippingAmount&quot;:               0,
+        &quot;misc1Amount&quot;:                  0,
+        &quot;misc2Amount&quot;:                  0,
+        &quot;retainageAmount&quot;:              0,
+        &quot;invoiceType&quot;:                  &quot;Invoice&quot;,
+        &quot;description&quot;:                  &quot;Services&quot;,
+        &quot;locationCode&quot;:                 &quot;&quot;,
+        &quot;jobRelease&quot;:                   0,
+        &quot;latestChangeDateTime&quot;:         &quot;2024-06-01 10:00:00&quot;
+    }
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arinvoice-save">
+
+				<div class="apidocs-header">/arinvoice/save</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arinvoice/save</div>
+					
+					<p>Creates a new AR invoice batch. Matches customer by arCustomerId or by name. Each detail line requires glAccount.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>name: customer name (or arCustomerId)</li><li>externalCode</li><li>externalId</li><li>invoiceDate</li><li>details</li></ul>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>arCustomerId: customer ID (preferred over name lookup)</li><li>divisionId</li><li>invoiceDate</li><li>dueDate</li><li>internalReference</li><li>note: invoice description</li><li>taxAmount, glAccountIdTax</li><li>shippingAmount</li><li>details[].glAccount</li><li>details[].invStock: invStockId or part number</li><li>details[].description</li><li>details[].quantityOrdered (default 1)</li><li>details[].price: unit price</li><li>details[].totalPrice</li><li>details[].arSalesTaxTypeId</li><li>details[].hideFromInvoice: true/false</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;arCustomerId&quot;:  1,
+    &quot;externalCode&quot;:  &quot;MySystem&quot;,
+    &quot;externalId&quot;:    &quot;INV-2024-001&quot;,
+    &quot;invoiceDate&quot;:   &quot;06/01/2024&quot;,
+    &quot;note&quot;:          &quot;Professional services&quot;,
+    &quot;details&quot;: [
+        {
+            &quot;glAccount&quot;:      &quot;4-100-00&quot;,
+            &quot;description&quot;:    &quot;Consulting&quot;,
+            &quot;quantityOrdered&quot;: 1,
+            &quot;price&quot;:          250.00,
+            &quot;totalPrice&quot;:     250.00
+        }
+    ]
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arinvoice-delete">
+
+				<div class="apidocs-header">/arinvoice/delete</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arinvoice/delete</div>
+					
+					<p>Deletes an unposted AR invoice by externalCode + externalId. Cannot delete posted invoices.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>externalCode</li><li>externalId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;externalCode&quot;: &quot;MySystem&quot;,
+    &quot;externalId&quot;:   &quot;INV-2024-001&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;deleted&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arinvoicehist-list">
+
+				<div class="apidocs-header">/arinvoicehist/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arinvoicehist/list</div>
+					
+					<p>Returns a paginated list of posted AR invoice history records. Use sinceDateTime for incremental sync.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>sinceDateTime: return records changed after this datetime</li><li>customerId: filter to a single customer</li><li>page: page number (default 1)</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;sinceDateTime&quot;: &quot;2024-01-01 00:00:00&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;arInvHistHeaderId&quot;:      200,
+            &quot;customerId&quot;:             1,
+            &quot;customerName&quot;:           &quot;Tester McTesterson&quot;,
+            &quot;invoiceNumber&quot;:          &quot;2024-001&quot;,
+            &quot;invoiceDate&quot;:            &quot;06/01/2024&quot;,
+            &quot;dueDate&quot;:                &quot;07/01/2024&quot;,
+            &quot;invoiceTotal&quot;:           250.00,
+            &quot;taxAmount&quot;:              22.00,
+            &quot;externalCode&quot;:           &quot;MySystem&quot;,
+            &quot;externalId&quot;:             &quot;INV-2024-001&quot;,
+            &quot;latestChangeDateTime&quot;:   &quot;2024-06-01 10:00:00&quot;
+        }
+    ],
+    &quot;nextPage&quot;: 2
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arinvoicehist-getinvoice">
+
+				<div class="apidocs-header">/arinvoicehist/getinvoice</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arinvoicehist/getinvoice</div>
+					
+					<p>Returns full header detail for a single posted AR invoice history record. Returns header fields only — no line items.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>externalCode</li><li>externalId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;externalCode&quot;: &quot;MySystem&quot;,
+    &quot;externalId&quot;:   &quot;INV-2024-001&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;getinvoice&quot;: {
+        &quot;invoiceId&quot;:             200,
+        &quot;invoiceNumber&quot;:         &quot;2024-001&quot;,
+        &quot;billToName&quot;:            &quot;Tester McTesterson&quot;,
+        &quot;company&quot;:               &quot;Tester Inc.&quot;,
+        &quot;address1&quot;:              &quot;456 Elm St&quot;,
+        &quot;city&quot;:                  &quot;Yakima&quot;,
+        &quot;state&quot;:                 &quot;WA&quot;,
+        &quot;zipCode&quot;:               &quot;98901&quot;,
+        &quot;invoiceDate&quot;:           &quot;06/01/2024&quot;,
+        &quot;periodDate&quot;:            &quot;06/01/2024&quot;,
+        &quot;dueDate&quot;:               &quot;07/01/2024&quot;,
+        &quot;invoiceTotal&quot;:          250.00,
+        &quot;lineItemTotal&quot;:         250.00,
+        &quot;taxAmount&quot;:             22.00,
+        &quot;shippingAmount&quot;:        0,
+        &quot;invoiceType&quot;:           &quot;Invoice&quot;,
+        &quot;description&quot;:           &quot;Professional services&quot;,
+        &quot;latestChangeDateTime&quot;:  &quot;2024-06-01 10:00:00&quot;
+    }
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arinvoicehist-setexternalinfo">
+
+				<div class="apidocs-header">/arinvoicehist/setexternalinfo</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arinvoicehist/setexternalinfo</div>
+					
+					<p>Updates the externalCode and externalId on a posted AR invoice history record.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>arInvHistHeaderId</li><li>externalCode</li><li>externalId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;arInvHistHeaderId&quot;: 200,
+    &quot;externalCode&quot;:      &quot;MySystem&quot;,
+    &quot;externalId&quot;:        &quot;INV-2024-001&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arinvoicehistdetail-getall">
+
+				<div class="apidocs-header">/arinvoicehistdetail/getall</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arinvoicehistdetail/getall</div>
+					
+					<p>Returns paginated posted AR invoice detail records — one row per line item. Same rich structure as possales/getall but for posted invoices. Supports incremental sync.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>sinceDateTime: return records changed after this datetime</li><li>arInvHistHeaderId: filter to a single invoice</li><li>customerId: filter to a single customer</li><li>page: page number (default 1)</li><li>pageSize: max 2000 (default 2000)</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;sinceDateTime&quot;:    &quot;2024-01-01 00:00:00&quot;,
+    &quot;page&quot;:             1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;arInvHistHeaderId&quot;:      200,
+            &quot;arInvHistDetailId&quot;:      500,
+            &quot;posted&quot;:                 true,
+            &quot;source&quot;:                 &quot;Invoice&quot;,
+            &quot;invoiceDate&quot;:            &quot;2024-06-01&quot;,
+            &quot;invoiceMonth&quot;:           6,
+            &quot;invoiceMonthName&quot;:       &quot;June&quot;,
+            &quot;invoiceQuarter&quot;:         2,
+            &quot;invoiceYear&quot;:            2024,
+            &quot;periodDate&quot;:             &quot;2024-06-01&quot;,
+            &quot;customerId&quot;:             1,
+            &quot;customerName&quot;:           &quot;Tester McTesterson&quot;,
+            &quot;companyName&quot;:            &quot;Tester Inc.&quot;,
+            &quot;customerBillingAddress1&quot;: &quot;456 Elm St&quot;,
+            &quot;customerBillingCity&quot;:    &quot;Yakima&quot;,
+            &quot;customerBillingState&quot;:   &quot;WA&quot;,
+            &quot;customerBillingZipCode&quot;: &quot;98901&quot;,
+            &quot;vendorId&quot;:               0,
+            &quot;vendorName&quot;:             null,
+            &quot;jobId&quot;:                  0,
+            &quot;jobNumber&quot;:              null,
+            &quot;divisionId&quot;:             1,
+            &quot;divisionName&quot;:           &quot;Main&quot;,
+            &quot;paidStatus&quot;:             &quot;Paid&quot;,
+            &quot;partId&quot;:                 1,
+            &quot;partNumber&quot;:             &quot;WGT-001&quot;,
+            &quot;partName&quot;:               &quot;Widget A&quot;,
+            &quot;partDescription&quot;:        &quot;A great widget&quot;,
+            &quot;partType&quot;:               &quot;Goods&quot;,
+            &quot;itemDescription&quot;:        &quot;Consulting&quot;,
+            &quot;quantity&quot;:               1,
+            &quot;price&quot;:                  250.00,
+            &quot;totalPrice&quot;:             250.00,
+            &quot;tax&quot;:                    22.00,
+            &quot;shipping&quot;:               0.00,
+            &quot;lineItemTotalPrice&quot;:     272.00,
+            &quot;originalUnitPrice&quot;:      250.00,
+            &quot;originalTotalPrice&quot;:     250.00,
+            &quot;discountPercent&quot;:        null,
+            &quot;discountAmount&quot;:         0.00,
+            &quot;couponCode&quot;:             null,
+            &quot;discountPercentApplied&quot;: false,
+            &quot;discountAmountApplied&quot;:  false,
+            &quot;couponCodeApplied&quot;:      false,
+            &quot;salesTaxDescription&quot;:    &quot;WA State Tax&quot;,
+            &quot;taxableNonTaxable&quot;:      &quot;Taxable&quot;,
+            &quot;createDateTime&quot;:         &quot;2024-06-01 10:00:00&quot;,
+            &quot;latestChangeDateTime&quot;:   &quot;2024-06-01 10:00:00&quot;
+        }
+    ],
+    &quot;nextPage&quot;: 2
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arpaymenthist-get">
+
+				<div class="apidocs-header">/arpaymenthist/get</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arpaymenthist/get</div>
+					
+					<p>Returns all payment history records applied to a posted AR invoice.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>invoiceId: arInvHistHeaderId of the posted invoice</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;invoiceId&quot;: 200
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;get&quot;: [
+        {
+            &quot;companyId&quot;:             1,
+            &quot;paymentId&quot;:             300,
+            &quot;checkNumber&quot;:           &quot;CHK-001&quot;,
+            &quot;paymentMethod&quot;:         &quot;Check&quot;,
+            &quot;note&quot;:                  &quot;Payment received&quot;,
+            &quot;name&quot;:                  &quot;Tester McTesterson&quot;,
+            &quot;address&quot;:               &quot;456 Elm St&quot;,
+            &quot;city&quot;:                  &quot;Yakima&quot;,
+            &quot;state&quot;:                 &quot;WA&quot;,
+            &quot;zipCode&quot;:               &quot;98901&quot;,
+            &quot;countryName&quot;:           &quot;United States&quot;,
+            &quot;countryCode&quot;:           &quot;US&quot;,
+            &quot;countryCode2&quot;:          &quot;US&quot;,
+            &quot;countryCode3&quot;:          &quot;USA&quot;,
+            &quot;paymentDate&quot;:           &quot;06/20/2024&quot;,
+            &quot;paymentAmount&quot;:         250.00,
+            &quot;discountAmount&quot;:        0,
+            &quot;createDateTime&quot;:        &quot;2024-06-20 14:00:00&quot;,
+            &quot;latestChangeDateTime&quot;:  &quot;2024-06-20 14:00:00&quot;
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arpaymenthist-getpayment">
+
+				<div class="apidocs-header">/arpaymenthist/getpayment</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arpaymenthist/getpayment</div>
+					
+					<p>Returns a single AR payment history detail record by its paymentId.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>paymentId: arPaymentHistDetailId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;paymentId&quot;: 300
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;getpayment&quot;: {
+        &quot;companyId&quot;:             1,
+        &quot;paymentId&quot;:             300,
+        &quot;checkNumber&quot;:           &quot;CHK-001&quot;,
+        &quot;paymentMethod&quot;:         &quot;Check&quot;,
+        &quot;note&quot;:                  &quot;Payment received&quot;,
+        &quot;name&quot;:                  &quot;Tester McTesterson&quot;,
+        &quot;address&quot;:               &quot;456 Elm St&quot;,
+        &quot;city&quot;:                  &quot;Yakima&quot;,
+        &quot;state&quot;:                 &quot;WA&quot;,
+        &quot;zipCode&quot;:               &quot;98901&quot;,
+        &quot;countryName&quot;:           &quot;United States&quot;,
+        &quot;paymentDate&quot;:           &quot;06/20/2024&quot;,
+        &quot;paymentAmount&quot;:         250.00,
+        &quot;discountAmount&quot;:        0,
+        &quot;createDateTime&quot;:        &quot;2024-06-20 14:00:00&quot;,
+        &quot;latestChangeDateTime&quot;:  &quot;2024-06-20 14:00:00&quot;
+    }
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arcashreg-delete">
+
+				<div class="apidocs-header">/arcashreg/delete</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arcashreg/delete</div>
+					
+					<p>Deletes an AR cash receipt (sales receipt) by externalCode + externalId.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>externalCode</li><li>externalId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;externalCode&quot;: &quot;POS&quot;,
+    &quot;externalId&quot;:   &quot;SALE-001&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;deleted&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="arinvoice-getnextnumber">
+
+				<div class="apidocs-header">/arinvoice/getnextnumber</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/arinvoice/getnextnumber</div>
+					
+					<p>Reserves and returns the next AR invoice number. Increments the company's invoice number sequence.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>divisionId: use division-specific sequence if configured</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;divisionId&quot;: 1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;getnextnumber&quot;: &quot;2024-0042&quot;
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="glaccount-list">
+
+				<div class="apidocs-header">/glaccount/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/glaccount/list</div>
+					
+					<p>Returns all GL accounts.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;glAccountId&quot;:   1,
+            &quot;accountNumber&quot;: &quot;1-100-00&quot;,
+            &quot;description&quot;:   &quot;Cash - Checking&quot;
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="glpost-getnextnumber">
+
+				<div class="apidocs-header">/glpost/getnextnumber</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/glpost/getnextnumber</div>
+					
+					<p>Returns the next available GL transaction number.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;getnextnumber&quot;: &quot;2024-0042&quot;
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="glpost-save">
+
+				<div class="apidocs-header">/glpost/save</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/glpost/save</div>
+					
+					<p>Creates or updates a GL journal entry batch.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>transactionNumber</li><li>transactionDate</li><li>entries</li></ul>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>description</li><li>externalCode</li><li>externalId</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;transactionNumber&quot;: &quot;2024-0042&quot;,
+    &quot;transactionDate&quot;:   &quot;06/01/2024&quot;,
+    &quot;description&quot;:       &quot;June adjustment&quot;,
+    &quot;entries&quot;: [
+        { &quot;glAccount&quot;: &quot;1-100-00&quot;, &quot;debit&quot;: 500.00, &quot;credit&quot;: 0,      &quot;description&quot;: &quot;Cash in&quot; },
+        { &quot;glAccount&quot;: &quot;4-100-00&quot;, &quot;debit&quot;: 0,      &quot;credit&quot;: 500.00, &quot;description&quot;: &quot;Revenue&quot; }
+    ]
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="glpost-delete">
+
+				<div class="apidocs-header">/glpost/delete</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/glpost/delete</div>
+					
+					<p>Deletes an unposted GL batch by transactionNumber.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>transactionNumber</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;transactionNumber&quot;: &quot;2024-0042&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;deleted&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="cashdrawer-list">
+
+				<div class="apidocs-header">/cashdrawer/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/cashdrawer/list</div>
+					
+					<p>Returns available cash drawers for the current company. If only one store and drawer exist, returns that single entry directly. Used by non-POS modules (e.g. Checkbook) to select a register.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;storeId&quot;:          1,
+            &quot;posStoreId&quot;:       1,
+            &quot;drawerId&quot;:         2,
+            &quot;arCashRegDrawerId&quot;: 2,
+            &quot;description&quot;:      &quot;Main Store / Register 1&quot;
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="posstore-list">
+
+				<div class="apidocs-header">/posstore/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/posstore/list</div>
+					
+					<p>Returns all POS stores.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;storeId&quot;:  1,
+            &quot;name&quot;:     &quot;Main Store&quot;,
+            &quot;location&quot;: &quot;Front&quot;,
+            &quot;address1&quot;: &quot;123 Main St&quot;,
+            &quot;city&quot;:     &quot;Spokane&quot;,
+            &quot;state&quot;:    &quot;WA&quot;,
+            &quot;taxCode&quot;:  &quot;WA&quot;,
+            &quot;taxRate&quot;:  0.088
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="poscashdrawer-list">
+
+				<div class="apidocs-header">/poscashdrawer/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/poscashdrawer/list</div>
+					
+					<p>Returns all cash drawers for a given store.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>storeId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;storeId&quot;: 1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;cashDrawerId&quot;: 1, &quot;name&quot;: &quot;Register 1&quot;, &quot;storeId&quot;: 1 }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="poscashier-list">
+
+				<div class="apidocs-header">/poscashier/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/poscashier/list</div>
+					
+					<p>Returns all cashiers for a given store.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>storeId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;storeId&quot;: 1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;cashierId&quot;: 1, &quot;name&quot;: &quot;Jane Smith&quot;, &quot;storeId&quot;: 1 }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="possales-getall">
+
+				<div class="apidocs-header">/possales/getall</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/possales/getall</div>
+					
+					<p>Returns POS sales detail records — one row per line item. Supports incremental sync and rich filtering. Includes discount, pass-through vendor, and remittance fields.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>storeId</li><li>cashDrawerId: arCashRegDrawerId</li><li>cashierId: posCashierId</li><li>customerId: arCustomerId</li><li>billingCustomerId</li><li>vendorId: apVendorId</li><li>divisionId</li><li>invoiceDate: exact date filter</li><li>startInvoiceDate: start of date range</li><li>sinceDateTime: records changed after this datetime (for sync)</li><li>sinceDateTimeOrder: order records changed after this datetime</li><li>includeUnposted: true to include unposted sales</li><li>page: page number (default 1)</li><li>pageSize: max 2000 (default 2000)</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;storeId&quot;:       1,
+    &quot;sinceDateTime&quot;: &quot;2024-06-01 00:00:00&quot;,
+    &quot;page&quot;:          1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;arCashRegId&quot;:                  1001,
+            &quot;arCashRegDetailId&quot;:            5001,
+            &quot;posted&quot;:                       true,
+            &quot;storeId&quot;:                      1,
+            &quot;storeName&quot;:                    &quot;Main Store&quot;,
+            &quot;userName&quot;:                     &quot;Jane Smith&quot;,
+            &quot;invoiceDate&quot;:                  &quot;2024-06-01&quot;,
+            &quot;invoiceMonth&quot;:                 6,
+            &quot;invoiceMonthName&quot;:             &quot;June&quot;,
+            &quot;invoiceQuarter&quot;:               2,
+            &quot;invoiceQuarterName&quot;:           &quot;Quarter 2&quot;,
+            &quot;invoiceYear&quot;:                  2024,
+            &quot;periodDate&quot;:                   &quot;2024-06-01&quot;,
+            &quot;customerId&quot;:                   1,
+            &quot;customerName&quot;:                 &quot;Tester McTesterson&quot;,
+            &quot;companyName&quot;:                  &quot;Tester Inc.&quot;,
+            &quot;customerBillingAddress1&quot;:      &quot;456 Elm St&quot;,
+            &quot;customerBillingCity&quot;:          &quot;Yakima&quot;,
+            &quot;customerBillingState&quot;:         &quot;WA&quot;,
+            &quot;customerBillingZipCode&quot;:       &quot;98901&quot;,
+            &quot;customerEmailAddress&quot;:         &quot;tester@example.com&quot;,
+            &quot;customerPhoneNumber&quot;:          &quot;509-555-9999&quot;,
+            &quot;vendorId&quot;:                     0,
+            &quot;vendorName&quot;:                   null,
+            &quot;jobId&quot;:                        0,
+            &quot;jobNumber&quot;:                    null,
+            &quot;jobName&quot;:                      null,
+            &quot;divisionId&quot;:                   1,
+            &quot;divisionName&quot;:                 &quot;Main&quot;,
+            &quot;partId&quot;:                       1,
+            &quot;partNumber&quot;:                   &quot;WGT-001&quot;,
+            &quot;partName&quot;:                     &quot;Widget A&quot;,
+            &quot;partDescription&quot;:              &quot;A great widget&quot;,
+            &quot;partType&quot;:                     &quot;Goods&quot;,
+            &quot;itemDescription&quot;:              &quot;Widget A&quot;,
+            &quot;quantity&quot;:                     2.0,
+            &quot;price&quot;:                        12.50,
+            &quot;totalPrice&quot;:                   25.00,
+            &quot;tax&quot;:                          2.20,
+            &quot;shipping&quot;:                     0.00,
+            &quot;lineItemTotalPrice&quot;:           27.20,
+            &quot;originalUnitPrice&quot;:            12.50,
+            &quot;originalTotalPrice&quot;:           25.00,
+            &quot;discountPercent&quot;:              null,
+            &quot;discountAmount&quot;:               0.00,
+            &quot;couponCode&quot;:                   null,
+            &quot;discountPercentApplied&quot;:       false,
+            &quot;discountAmountApplied&quot;:        false,
+            &quot;couponCodeApplied&quot;:            false,
+            &quot;salesTaxDescription&quot;:          &quot;WA State Tax&quot;,
+            &quot;taxableNonTaxable&quot;:            &quot;Taxable&quot;,
+            &quot;vendorPortionOfTotalPrice&quot;:    0.00,
+            &quot;retainedAmountFromVendor&quot;:     25.00,
+            &quot;existingPaymentsToVendor&quot;:     0.00,
+            &quot;totalRemittanceDueVendor&quot;:     0.00,
+            &quot;createDateTime&quot;:               &quot;2024-06-01 10:32:00&quot;,
+            &quot;latestChangeDateTime&quot;:         &quot;2024-06-01 10:32:00&quot;
+        }
+    ],
+    &quot;nextPage&quot;: 2
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="invstock-list">
+
+				<div class="apidocs-header">/invstock/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/invstock/list</div>
+					
+					<p>Returns a simplified list of all active inventory stock items. Lightweight — no cost or quantity data.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;invStockId&quot;:  1,
+            &quot;displayName&quot;: &quot;Widget A&quot;,
+            &quot;partNumber&quot;:  &quot;WGT-001&quot;,
+            &quot;partSort&quot;:    &quot;WGT-001&quot;,
+            &quot;name&quot;:        &quot;Widget A&quot;,
+            &quot;description&quot;: &quot;A great widget&quot;
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="invstock-getall">
+
+				<div class="apidocs-header">/invstock/getall</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/invstock/getall</div>
+					
+					<p>Returns paginated inventory stock with full detail. Supports incremental sync via sinceDateTime. Pagination via nextPage / noMorePages.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>sinceDateTime: return only records changed after this datetime (ISO format)</li><li>passThroughApVendorId: filter to pass-through items for this vendor ID</li><li>active: true to return only active items, false for inactive only</li><li>page: page number (default 1)</li><li>pageSize: results per page (default 2000, max 2000)</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;sinceDateTime&quot;: &quot;2024-01-01 00:00:00&quot;,
+    &quot;active&quot;:        true,
+    &quot;page&quot;:          1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;getall&quot;: [
+        {
+            &quot;invStockId&quot;:                    1,
+            &quot;displayName&quot;:                   &quot;Widget A&quot;,
+            &quot;partNumber&quot;:                    &quot;WGT-001&quot;,
+            &quot;partSort&quot;:                      &quot;WGT-001&quot;,
+            &quot;name&quot;:                          &quot;Widget A&quot;,
+            &quot;description&quot;:                   &quot;A great widget&quot;,
+            &quot;invType&quot;:                       &quot;Goods&quot;,
+            &quot;classification&quot;:                &quot;&quot;,
+            &quot;jcCostCode&quot;:                    &quot;&quot;,
+            &quot;jcCostSubCode&quot;:                 &quot;&quot;,
+            &quot;active&quot;:                        true,
+            &quot;arSalesTaxType&quot;:                &quot;WA State Tax&quot;,
+            &quot;nonTaxable&quot;:                    false,
+            &quot;quantityOnHand&quot;:                50,
+            &quot;valueOnHand&quot;:                   625.00,
+            &quot;currentCost&quot;:                   12.50,
+            &quot;lastCost&quot;:                      11.00,
+            &quot;totalCost&quot;:                     625.00,
+            &quot;retailPrice&quot;:                   24.99,
+            &quot;minQuantity&quot;:                   5,
+            &quot;maxQuantity&quot;:                   100,
+            &quot;allocated&quot;:                     2,
+            &quot;invWarehouse&quot;:                  &quot;Main&quot;,
+            &quot;printTag&quot;:                      false,
+            &quot;quantityOnOrder&quot;:               10,
+            &quot;valueOnOrder&quot;:                  125.00,
+            &quot;notes&quot;:                         &quot;&quot;,
+            &quot;leadDays&quot;:                      7,
+            &quot;leadDaysAverage&quot;:               6,
+            &quot;leadDaysLast&quot;:                  5,
+            &quot;lastOrderDate&quot;:                 &quot;2024-05-01&quot;,
+            &quot;lastCostDate&quot;:                  &quot;2024-05-01&quot;,
+            &quot;glAccountIdBilling&quot;:            &quot;4-100-00&quot;,
+            &quot;glAccountIdBillingNonTaxable&quot;:  &quot;4-110-00&quot;,
+            &quot;glAccountIdReceiving&quot;:          &quot;1-200-00&quot;,
+            &quot;invCategory&quot;:                   &quot;Hardware&quot;,
+            &quot;averageCost&quot;:                   12.00,
+            &quot;passThroughVendorName&quot;:         &quot;&quot;,
+            &quot;latestChangeDateTime&quot;:          &quot;2024-06-01 10:30:00&quot;
+        }
+    ],
+    &quot;nextPage&quot;: 2
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="invstock-get">
+
+				<div class="apidocs-header">/invstock/get</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/invstock/get</div>
+					
+					<p>Returns full detail for a single inventory stock item. Accepts either invStockId or stockId.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>invStockId (or stockId)</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;invStockId&quot;: 1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;get&quot;: {
+        &quot;invStockId&quot;:                    1,
+        &quot;partNumber&quot;:                    &quot;WGT-001&quot;,
+        &quot;partSort&quot;:                      &quot;WGT-001&quot;,
+        &quot;name&quot;:                          &quot;Widget A&quot;,
+        &quot;description&quot;:                   &quot;A great widget&quot;,
+        &quot;invType&quot;:                       &quot;Goods&quot;,
+        &quot;classification&quot;:                &quot;&quot;,
+        &quot;jcCostCode&quot;:                    &quot;&quot;,
+        &quot;jcCostSubCode&quot;:                 &quot;&quot;,
+        &quot;active&quot;:                        true,
+        &quot;arSalesTaxType&quot;:                &quot;WA State Tax&quot;,
+        &quot;nonTaxable&quot;:                    false,
+        &quot;quantityOnHand&quot;:                50,
+        &quot;valueOnHand&quot;:                   625.00,
+        &quot;currentCost&quot;:                   12.50,
+        &quot;lastCost&quot;:                      11.00,
+        &quot;totalCost&quot;:                     625.00,
+        &quot;retailPrice&quot;:                   24.99,
+        &quot;minQuantity&quot;:                   5,
+        &quot;maxQuantity&quot;:                   100,
+        &quot;allocated&quot;:                     2,
+        &quot;invWarehouse&quot;:                  &quot;Main&quot;,
+        &quot;printTag&quot;:                      false,
+        &quot;quantityOnOrder&quot;:               10,
+        &quot;valueOnOrder&quot;:                  125.00,
+        &quot;notes&quot;:                         &quot;&quot;,
+        &quot;leadDays&quot;:                      7,
+        &quot;leadDaysAverage&quot;:               6,
+        &quot;leadDaysLast&quot;:                  5,
+        &quot;lastOrderDate&quot;:                 &quot;2024-05-01&quot;,
+        &quot;lastCostDate&quot;:                  &quot;2024-05-01&quot;,
+        &quot;glAccountIdBilling&quot;:            &quot;4-100-00&quot;,
+        &quot;glAccountIdBillingNonTaxable&quot;:  &quot;4-110-00&quot;,
+        &quot;glAccountIdReceiving&quot;:          &quot;1-200-00&quot;,
+        &quot;invCategory&quot;:                   &quot;Hardware&quot;,
+        &quot;averageCost&quot;:                   12.00,
+        &quot;passThroughVendorName&quot;:         &quot;&quot;
+    }
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="invstock-save">
+
+				<div class="apidocs-header">/invstock/save</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/invstock/save</div>
+					
+					<p>Creates a new inventory stock item. partNumber is auto-generated from the company's next-number sequence if not supplied (and one is configured). GL accounts and sales tax type fall back to company defaults if omitted. Category and unit of measure can be resolved by ID, name, or code.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>name</li></ul>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>partNumber: auto-generated if blank and a next-number sequence is configured</li><li>partSort: sort key (defaults to partNumber)</li><li>description</li><li>invType: Goods (default), Service, or Assembly</li><li>currentCost</li><li>retailPrice</li><li>totalCost</li><li>minQuantity</li><li>maxQuantity</li><li>reorderQuantity</li><li>quantityPerCarton</li><li>notes</li><li>leadDays</li><li>altPartNumber</li><li>altDescription</li><li>putAwayLocation</li><li>printTag: true/false</li><li>doNotTrackCost: true/false</li><li>currentCostDate</li><li>invWarehouseId</li><li>invCategoryId — or categoryName or categoryCode to resolve by name/code</li><li>invUnitOfMeasureId — or unitOfMeasureDescription or unitOfMeasureAbbreviation</li><li>arSalesTaxTypeId — defaults to company setting</li><li>glAccountIdBilling — defaults to company setting</li><li>glAccountIdBillingNonTaxable — defaults to company setting</li><li>glAccountIdReceiving — defaults to company setting</li><li>jcCostSubCodeId</li><li>passThroughApVendorId — or vendorName or vendorCode; sets item as pass-through</li><li>buyInvUnitOfMeasureId, buyUnitMultiplier, buyCurrentCost</li><li>sellInvUnitOfMeasureId, sellUnitMultiplier</li><li>hideGroupParts: true/false</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;name&quot;:              &quot;Widget A&quot;,
+    &quot;partNumber&quot;:        &quot;WGT-001&quot;,
+    &quot;description&quot;:       &quot;A great widget&quot;,
+    &quot;invType&quot;:           &quot;Goods&quot;,
+    &quot;currentCost&quot;:       12.50,
+    &quot;retailPrice&quot;:       24.99,
+    &quot;minQuantity&quot;:       5,
+    &quot;maxQuantity&quot;:       100,
+    &quot;reorderQuantity&quot;:   10,
+    &quot;invCategoryId&quot;:     3,
+    &quot;arSalesTaxTypeId&quot;:  1,
+    &quot;glAccountIdBilling&quot;: &quot;4-100-00&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="invstock-delete">
+
+				<div class="apidocs-header">/invstock/delete</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/invstock/delete</div>
+					
+					<p>Deletes an inventory stock item by its externalCode + externalId.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>externalCode</li><li>externalId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;externalCode&quot;: &quot;MySystem&quot;,
+    &quot;externalId&quot;:   &quot;WGT-001&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;deleted&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="invcategory-list">
+
+				<div class="apidocs-header">/invcategory/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/invcategory/list</div>
+					
+					<p>Returns all inventory categories.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;invCategoryId&quot;: 1,
+            &quot;code&quot;:          &quot;HW&quot;,
+            &quot;description&quot;:   &quot;Hardware&quot;
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="invunitofmeasure-list">
+
+				<div class="apidocs-header">/invunitofmeasure/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/invunitofmeasure/list</div>
+					
+					<p>Returns all inventory units of measure.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;invUnitOfMeasureId&quot;: 1,
+            &quot;abbreviation&quot;:       &quot;EA&quot;,
+            &quot;description&quot;:        &quot;Each&quot;
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurinventory-getall">
+
+				<div class="apidocs-header">/nurinventory/getall</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurinventory/getall</div>
+					
+					<p>Returns nursery inventory as a flattened list grouped by variety, root, and source with per-size quantities.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>year: inventory year, defaults to current year</li><li>species: array of species IDs to filter</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;year&quot;:    2024,
+    &quot;species&quot;: [1, 2]
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;year&quot;: 2024,
+    &quot;list&quot;: [
+        {
+            &quot;nurVarietyId&quot;: 10,
+            &quot;varietyName&quot;:  &quot;Honeycrisp&quot;,
+            &quot;varietyCode&quot;:  &quot;HC&quot;,
+            &quot;speciesName&quot;:  &quot;Apple&quot;,
+            &quot;nurSourceId&quot;:  1,
+            &quot;sourceName&quot;:   &quot;Own Grown&quot;,
+            &quot;sizeQtyTotal&quot;: 200,
+            &quot;sizeQty1&quot;:     100,
+            &quot;sizeQty2&quot;:     100
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurinventory-simple">
+
+				<div class="apidocs-header">/nurinventory/simple</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurinventory/simple</div>
+					
+					<p>Returns a simplified nursery inventory list with only essential fields.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;nurVarietyId&quot;: 10,
+            &quot;varietyName&quot;:  &quot;Honeycrisp&quot;,
+            &quot;speciesName&quot;:  &quot;Apple&quot;,
+            &quot;quantity&quot;:     200
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurinventory-save">
+
+				<div class="apidocs-header">/nurinventory/save</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurinventory/save</div>
+					
+					<p>Creates or updates nursery inventory records.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>year</li><li>nurVarietyId</li><li>nurRootId</li><li>nurSourceId</li><li>entries</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;year&quot;:         2024,
+    &quot;nurVarietyId&quot;: 10,
+    &quot;nurRootId&quot;:    1,
+    &quot;nurSourceId&quot;:  1,
+    &quot;entries&quot;: [
+        { &quot;nurSizeId&quot;: 1, &quot;quantity&quot;: 100 },
+        { &quot;nurSizeId&quot;: 2, &quot;quantity&quot;: 100 }
+    ]
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurinventory-type-getall">
+
+				<div class="apidocs-header">/nurinventory/type/getall</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurinventory/type/getall</div>
+					
+					<p>Returns all nursery inventory types.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;nurInventoryTypeId&quot;: 1, &quot;name&quot;: &quot;Bare Root&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurvariety-getall">
+
+				<div class="apidocs-header">/nurvariety/getall</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurvariety/getall</div>
+					
+					<p>Returns all nursery varieties.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;nurVarietyId&quot;: 10,
+            &quot;description&quot;:  &quot;Honeycrisp&quot;,
+            &quot;code&quot;:         &quot;HC&quot;,
+            &quot;sku&quot;:          &quot;HC-001&quot;,
+            &quot;brandName&quot;:    &quot;&quot;
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurvariety-get">
+
+				<div class="apidocs-header">/nurvariety/get</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurvariety/get</div>
+					
+					<p>Returns full detail for a single nursery variety.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>nurVarietyId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;nurVarietyId&quot;: 10
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;nurVarietyId&quot;: 10,
+    &quot;description&quot;:  &quot;Honeycrisp&quot;,
+    &quot;code&quot;:         &quot;HC&quot;,
+    &quot;sku&quot;:          &quot;HC-001&quot;,
+    &quot;brandName&quot;:    &quot;&quot;,
+    &quot;speciesId&quot;:    2,
+    &quot;speciesName&quot;:  &quot;Apple&quot;
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurorder-getall">
+
+				<div class="apidocs-header">/nurorder/getall</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurorder/getall</div>
+					
+					<p>Returns all nursery orders. Supports incremental sync via sinceDateTime.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>sinceDateTime</li><li>year</li><li>page</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;year&quot;:          2024,
+    &quot;sinceDateTime&quot;: &quot;2024-01-01 00:00:00&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;nurOrderId&quot;:   1,
+            &quot;orderDate&quot;:    &quot;2024-03-15&quot;,
+            &quot;customerName&quot;: &quot;Valley Nursery&quot;,
+            &quot;status&quot;:       &quot;open&quot;,
+            &quot;year&quot;:         2024
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurorder-get">
+
+				<div class="apidocs-header">/nurorder/get</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurorder/get</div>
+					
+					<p>Returns full detail for a single nursery order including all line items.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>nurOrderId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;nurOrderId&quot;: 1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;nurOrderId&quot;:   1,
+    &quot;orderDate&quot;:    &quot;2024-03-15&quot;,
+    &quot;customerName&quot;: &quot;Valley Nursery&quot;,
+    &quot;status&quot;:       &quot;open&quot;,
+    &quot;details&quot;: [
+        { &quot;nurVarietyId&quot;: 10, &quot;varietyName&quot;: &quot;Honeycrisp&quot;, &quot;nurSizeId&quot;: 1, &quot;quantity&quot;: 50 }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurorder-getdeleted">
+
+				<div class="apidocs-header">/nurorder/getdeleted</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurorder/getdeleted</div>
+					
+					<p>Returns nursery orders that have been deleted. Used to sync deletions to external systems.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>sinceDateTime</li><li>year</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;sinceDateTime&quot;: &quot;2024-01-01 00:00:00&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;nurOrderId&quot;: 5, &quot;deletedAt&quot;: &quot;2024-05-10 14:22:00&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurorderdetail-getall">
+
+				<div class="apidocs-header">/nurorderdetail/getall</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurorderdetail/getall</div>
+					
+					<p>Returns all nursery order detail lines. Supports incremental sync via sinceDateTime.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>sinceDateTime</li><li>nurOrderId</li><li>year</li><li>page</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;nurOrderId&quot;: 1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;nurOrderDetailId&quot;: 10,
+            &quot;nurOrderId&quot;:       1,
+            &quot;nurVarietyId&quot;:     10,
+            &quot;varietyName&quot;:      &quot;Honeycrisp&quot;,
+            &quot;nurSizeId&quot;:        1,
+            &quot;sizeName&quot;:         &quot;5 Gallon&quot;,
+            &quot;quantity&quot;:         50,
+            &quot;unitPrice&quot;:        15.00
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurorderdetail-get">
+
+				<div class="apidocs-header">/nurorderdetail/get</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurorderdetail/get</div>
+					
+					<p>Returns a single nursery order detail line.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>nurOrderDetailId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;nurOrderDetailId&quot;: 10
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;nurOrderDetailId&quot;: 10,
+    &quot;nurOrderId&quot;:       1,
+    &quot;nurVarietyId&quot;:     10,
+    &quot;varietyName&quot;:      &quot;Honeycrisp&quot;,
+    &quot;nurSizeId&quot;:        1,
+    &quot;quantity&quot;:         50,
+    &quot;unitPrice&quot;:        15.00
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nursize-getall">
+
+				<div class="apidocs-header">/nursize/getall</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nursize/getall</div>
+					
+					<p>Returns all nursery sizes.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;nurSizeId&quot;: 1, &quot;description&quot;: &quot;5 Gallon&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nursource-getall">
+
+				<div class="apidocs-header">/nursource/getall</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nursource/getall</div>
+					
+					<p>Returns all nursery sources.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;nurSourceId&quot;: 1, &quot;name&quot;: &quot;Own Grown&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurboxpickup-scan">
+
+				<div class="apidocs-header">/nurboxpickup/scan</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurboxpickup/scan</div>
+					
+					<p>Adds a box to a nursery pickup session by scanning its barcode.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>barcode</li></ul>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>pickupId: existing pickup session ID</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;barcode&quot;:  &quot;BOX-00042&quot;,
+    &quot;pickupId&quot;: 5
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;pickupId&quot;: 5,
+    &quot;boxCount&quot;: 3,
+    &quot;added&quot;:    true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurboxpickup-remove">
+
+				<div class="apidocs-header">/nurboxpickup/remove</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurboxpickup/remove</div>
+					
+					<p>Removes a box from a nursery pickup session.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>pickupId</li><li>barcode</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;pickupId&quot;: 5,
+    &quot;barcode&quot;:  &quot;BOX-00042&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;removed&quot;:  true,
+    &quot;boxCount&quot;: 2
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="nurboxpickup-complete">
+
+				<div class="apidocs-header">/nurboxpickup/complete</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/nurboxpickup/complete</div>
+					
+					<p>Completes and finalizes a nursery box pickup session.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>pickupId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;pickupId&quot;: 5
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;completed&quot;: true,
+    &quot;pickupId&quot;:  5,
+    &quot;boxCount&quot;:  2
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="department-list">
+
+				<div class="apidocs-header">/department/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/department/list</div>
+					
+					<p>Returns all departments.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;departmentId&quot;: 1, &quot;name&quot;: &quot;First Department&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="employee-list">
+
+				<div class="apidocs-header">/employee/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/employee/list</div>
+					
+					<p>Returns all employees with department memberships and credentials. Supports incremental sync via lastChange.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>lastChange: Unix timestamp or datetime — return only records changed after this time</li><li>activeOnly: true to return only active employees</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;lastChange&quot;: &quot;2024-01-01 00:00:00&quot;,
+    &quot;activeOnly&quot;: true
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;employeeId&quot;:   1,
+            &quot;departmentId&quot;: 2,
+            &quot;lastChanged&quot;:  &quot;2024-05-15 09:00:00&quot;,
+            &quot;number&quot;:       &quot;EMP-001&quot;,
+            &quot;canUseClock&quot;:  true,
+            &quot;displayName&quot;:  &quot;John Smith&quot;,
+            &quot;firstName&quot;:    &quot;John&quot;,
+            &quot;lastName&quot;:     &quot;Smith&quot;,
+            &quot;departments&quot;: [
+                {
+                    &quot;departmentId&quot;:   2,
+                    &quot;member&quot;:         true,
+                    &quot;supervisorAuth&quot;: false,
+                    &quot;supervisor&quot;:     false
+                }
+            ],
+            &quot;creds&quot;: [
+                {
+                    &quot;type&quot;:  &quot;pin&quot;,
+                    &quot;value&quot;: &quot;1234&quot;,
+                    &quot;date&quot;:  &quot;2024-01-01 00:00:00&quot;
+                }
+            ]
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="job-start">
+
+				<div class="apidocs-header">/job/start</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/job/start</div>
+					
+					<p>Reserves and returns a new job number. All parameters optional.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>jobName</li><li>divisionId</li><li>customerId</li><li>orderedBy</li><li>description</li><li>phoneNumber</li><li>customerPO</li><li>bidType</li><li>bidPrice</li><li>orderDate</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;jobName&quot;:    &quot;Test Job&quot;,
+    &quot;divisionId&quot;: 1,
+    &quot;customerId&quot;: 1,
+    &quot;bidType&quot;:    2,
+    &quot;bidPrice&quot;:   1000.00,
+    &quot;orderDate&quot;:  &quot;10/25/2014&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;jobNumber&quot;: 2000,
+    &quot;jobId&quot;:     1234
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="job-bidtypes">
+
+				<div class="apidocs-header">/job/bidtypes</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/job/bidtypes</div>
+					
+					<p>Returns available job bid types.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;bidTypeId&quot;: 2, &quot;name&quot;: &quot;Time &amp; Materials&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="job-lookup">
+
+				<div class="apidocs-header">/job/lookup</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/job/lookup</div>
+					
+					<p>Looks up job IDs by PO number or job number.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>poNumber</li><li>jobNumber</li><li>ids: true to return record IDs instead of job numbers</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;poNumber&quot;: 1200,
+    &quot;ids&quot;:      true
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [1000, 1001]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="job-search">
+
+				<div class="apidocs-header">/job/search</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/job/search</div>
+					
+					<p>Searches jobs. All parameters optional.</p>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>jobNumber</li><li>status: open|completed|void</li><li>division</li><li>department</li><li>customer</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;status&quot;:   &quot;open&quot;,
+    &quot;customer&quot;: &quot;Jimbo&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;id&quot;:         123456,
+            &quot;jobName&quot;:    &quot;Awesome Job&quot;,
+            &quot;jobNumber&quot;:  &quot;5050&quot;,
+            &quot;status&quot;:     &quot;Open&quot;,
+            &quot;customer&quot;:   &quot;Awesome Customer&quot;,
+            &quot;division&quot;:   &quot;DIV&quot;,
+            &quot;department&quot;: &quot;DEP&quot;,
+            &quot;bidType&quot;:    &quot;Time &amp; Materials&quot;,
+            &quot;bidPrice&quot;:   100.00
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="job-info">
+
+				<div class="apidocs-header">/job/info</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/job/info</div>
+					
+					<p>Returns full details for one job. Send either jobId or jobNumber.</p>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;jobId&quot;: 123456
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;data&quot;: {
+        &quot;id&quot;:        123456,
+        &quot;jobName&quot;:   &quot;Awesome Job&quot;,
+        &quot;jobNumber&quot;: &quot;5050&quot;,
+        &quot;status&quot;:    &quot;Open&quot;
+    }
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="jccostcode-list">
+
+				<div class="apidocs-header">/jccostcode/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/jccostcode/list</div>
+					
+					<p>Returns all job cost codes.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;jcCostCodeId&quot;:  1,
+            &quot;classification&quot;: &quot;Labor&quot;,
+            &quot;code&quot;:           &quot;LAB&quot;,
+            &quot;name&quot;:           &quot;Labor&quot;,
+            &quot;glAccountId&quot;:    42
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="jccostsubcode-list">
+
+				<div class="apidocs-header">/jccostsubcode/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/jccostsubcode/list</div>
+					
+					<p>Returns all job cost sub-codes.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;jcCostSubCodeId&quot;: 1,
+            &quot;jcCostCodeId&quot;:    1,
+            &quot;code&quot;:            &quot;LAB-REG&quot;,
+            &quot;description&quot;:     &quot;Regular Labor&quot;,
+            &quot;glAccountId&quot;:     42
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="attachment-locations">
+
+				<div class="apidocs-header">/attachment/locations</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/attachment/locations</div>
+					
+					<p>Returns all attachment locations and their categories.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        {
+            &quot;id&quot;:         1,
+            &quot;name&quot;:       &quot;Job&quot;,
+            &quot;namePlural&quot;: &quot;Jobs&quot;,
+            &quot;categories&quot;: [
+                { &quot;id&quot;: 1, &quot;name&quot;: &quot;First Category&quot; }
+            ]
+        }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="attachment-list">
+
+				<div class="apidocs-header">/attachment/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/attachment/list</div>
+					
+					<p>Returns paginated entries for a given location. 500 results per page.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>location: id from attachment/locations</li></ul>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>page: page number, default 1</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;location&quot;: 1,
+    &quot;page&quot;:     1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;page&quot;:  1,
+    &quot;pages&quot;: 25,
+    &quot;list&quot;:  [ { &quot;id&quot;: 1000, &quot;jobNumber&quot;: &quot;AJ2&quot;, &quot;jobName&quot;: &quot;Awesome Job #2&quot; } ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="attachment-generate">
+
+				<div class="apidocs-header">/attachment/generate</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/attachment/generate</div>
+					
+					<p>Generates a lookup ID (barcode value) used to upload a file.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>category: id from attachment/locations</li><li>id: item id from attachment/list</li><li>description</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;category&quot;:    1,
+    &quot;id&quot;:          282449,
+    &quot;description&quot;: &quot;My file&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;lookup&quot;: 1000
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="attachment-upload">
+
+				<div class="apidocs-header">/attachment/upload</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/attachment/upload</div>
+					
+					<p>Uploads a file to the lookup ID generated by attachment/generate. Uses multipart/form-data with a field named <code>file</code>.</p>
+					
+					
+					
+					
+											<p class="apidocs-label">Curl Example</p>
+						<code class="apidocs-code">curl -v https://www.nrsaccounting.com/api/attachment/upload/{lookup} \
+     -H &quot;Company: YOUR_API_KEY&quot; \
+     -F &quot;file=@/{filename}&quot;</code>
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="client-save">
+
+				<div class="apidocs-header">/client/save</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/client/save</div>
+					
+					<p>Updates client billing preferences.</p>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">[
+    {
+        &quot;accountNumber&quot;:   &quot;01-0052-00-02&quot;,
+        &quot;email&quot;:           &quot;test@test.net&quot;,
+        &quot;emailBilling&quot;:    true,
+        &quot;paperBilling&quot;:    true,
+        &quot;emailNewsletter&quot;: true
+    }
+]</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: {
+        &quot;0100520002&quot;: true
+    }
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="client-billPdf">
+
+				<div class="apidocs-header">/client/billPdf</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/client/billPdf</div>
+					
+					<p>Returns a base64-encoded PDF of a billing record.</p>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;UtilMasterClientBillingId&quot;: 12345
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;size&quot;: 123,
+    &quot;pdf&quot;:  &quot;...&quot;
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="util-get">
+
+				<div class="apidocs-header">/util/get</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/util/get</div>
+					
+					<p>Returns utility table data for the portal.</p>
+					
+					
+					
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="util-set">
+
+				<div class="apidocs-header">/util/set</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/util/set</div>
+					
+					<p>Updates utility table data.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>entries</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;entries&quot;: [
+        { &quot;accountNumber&quot;: &quot;01-0052-00-02&quot;, &quot;meterRead&quot;: 1234 }
+    ]
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="expense-save">
+
+				<div class="apidocs-header">/expense/save</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/expense/save</div>
+					
+					<p>Submits a mobile employee expense. Creates a checkbook credit-card entry (ckEntryTypeId 50) against the chosen expense account. Attach receipt photos separately via <code>upload</code> with <code>foreignTable=ckCheckReg</code> and the returned <code>ckCheckRegId</code>. Both <code>save</code> and <code>submit</code> are accepted as the action name.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>apExpenseAccountId: id from apexpenseaccount/list</li><li>amount: must be &gt; 0</li></ul>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>apVendorId: vendor to pay; defaults to NOF (no-vendor) if omitted</li><li>name: payee name (used when no vendor or NOF vendor)</li><li>address1, address2, address3, city, state, zip</li><li>description: defaults to &quot;Mobile Expense - {account name}&quot;</li><li>accountId: override the bank/cash account; defaults to company mobile expense setting</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;apExpenseAccountId&quot;: 1,
+    &quot;amount&quot;:             45.99,
+    &quot;description&quot;:        &quot;Client lunch&quot;,
+    &quot;name&quot;:               &quot;Corner Cafe&quot;,
+    &quot;address1&quot;:           &quot;789 Oak Ave&quot;,
+    &quot;city&quot;:               &quot;Spokane&quot;,
+    &quot;state&quot;:              &quot;WA&quot;,
+    &quot;zip&quot;:                &quot;99202&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;:        true,
+    &quot;ckCheckRegId&quot;: 5001
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="scanner-info">
+
+				<div class="apidocs-header">/scanner/info</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/scanner/info</div>
+					
+					<p>Returns configuration info for a scanner device by its identifier.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>deviceId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;deviceId&quot;: &quot;SCAN-01&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;deviceId&quot;:   &quot;SCAN-01&quot;,
+    &quot;name&quot;:       &quot;Front Desk Scanner&quot;,
+    &quot;locationId&quot;: 1
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="scanner-categories">
+
+				<div class="apidocs-header">/scanner/categories</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/scanner/categories</div>
+					
+					<p>Returns all scanner form categories.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;categoryId&quot;: 1, &quot;name&quot;: &quot;Receiving&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="scanner-form-setup">
+
+				<div class="apidocs-header">/scanner/form/setup</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/scanner/form/setup</div>
+					
+					<p>Returns the field configuration for a scanner form.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>categoryId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;categoryId&quot;: 1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;fields&quot;: [
+        { &quot;name&quot;: &quot;jobNumber&quot;, &quot;label&quot;: &quot;Job Number&quot;, &quot;type&quot;: &quot;text&quot;, &quot;required&quot;: true }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="scanner-form-submit">
+
+				<div class="apidocs-header">/scanner/form/submit</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/scanner/form/submit</div>
+					
+					<p>Submits a completed scanner form.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>categoryId</li><li>data</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;categoryId&quot;: 1,
+    &quot;data&quot;: {
+        &quot;jobNumber&quot;: &quot;5050&quot;,
+        &quot;quantity&quot;:  10
+    }
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="scanner-attachment-categories">
+
+				<div class="apidocs-header">/scanner/attachment/categories</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/scanner/attachment/categories</div>
+					
+					<p>Returns attachment categories available for a given scanner category.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>categoryId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;categoryId&quot;: 1
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;id&quot;: 1, &quot;name&quot;: &quot;Invoice Scan&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="scanner-attachment-info">
+
+				<div class="apidocs-header">/scanner/attachment/info</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/scanner/attachment/info</div>
+					
+					<p>Returns info for a scanned attachment by its lookup code.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>lookup</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;lookup&quot;: &quot;NRS0000001000&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;lookupId&quot;:    1000,
+    &quot;description&quot;: &quot;My file&quot;,
+    &quot;location&quot;:    &quot;Job&quot;,
+    &quot;itemId&quot;:      282449
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="scanner-attachment-update">
+
+				<div class="apidocs-header">/scanner/attachment/update</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/scanner/attachment/update</div>
+					
+					<p>Updates the description or category of an existing scanned attachment.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>lookupId</li></ul>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>description</li><li>categoryId</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;lookupId&quot;:    1000,
+    &quot;description&quot;: &quot;Updated description&quot;
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;saved&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="scanner-attachment-move">
+
+				<div class="apidocs-header">/scanner/attachment/move</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/scanner/attachment/move</div>
+					
+					<p>Moves a scanned attachment to a different item or location.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>lookupId</li><li>location</li><li>itemId</li></ul>
+					
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;lookupId&quot;: 1000,
+    &quot;location&quot;: 1,
+    &quot;itemId&quot;:   282500
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;moved&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="upload">
+
+				<div class="apidocs-header">/upload</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/upload</div>
+					
+					<p>Uploads a scanned document. Uses multipart/form-data with a field named <code>file</code>.</p>
+					
+					
+					
+					
+											<p class="apidocs-label">Curl Example</p>
+						<code class="apidocs-code">curl -v https://www.nrsaccounting.com/api/upload \
+     -H &quot;Company: YOUR_API_KEY&quot; \
+     -F &quot;lookup=NRS0000001000&quot; \
+     -F &quot;file=@/{filename}&quot;</code>
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="device-locations">
+
+				<div class="apidocs-header">/device/locations</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/device/locations</div>
+					
+					<p>Returns all device locations.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;locationId&quot;: 1, &quot;description&quot;: &quot;Location 1&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="device-list">
+
+				<div class="apidocs-header">/device/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/device/list</div>
+					
+					<p>Returns all devices.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;type&quot;: &quot;Timeclock&quot;, &quot;locationId&quot;: 1, &quot;uniqueId&quot;: &quot;4d5ds6sd&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="display-show-url">
+
+				<div class="apidocs-header">/display/show/url</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/display/show/url</div>
+					
+					<p>Tells one or more display devices to show a URL.</p>
+											<p class="apidocs-label">Required</p>
+						<ul><li>device: uniqueId string or array of uniqueId strings</li><li>url</li></ul>
+					
+											<p class="apidocs-label">Optional</p>
+						<ul><li>description</li><li>displayTimeSeconds</li><li>scrollPixelsPerSecond</li><li>scrollUntilComplete</li><li>scrollToPixel</li><li>pauseAtBottomSeconds</li><li>soundId</li></ul>
+					
+											<p class="apidocs-label">Example Request</p>
+						<code class="apidocs-code">{
+    &quot;device&quot;:             &quot;4d5ds6sd&quot;,
+    &quot;description&quot;:        &quot;GOOGLE!&quot;,
+    &quot;url&quot;:                &quot;http://www.google.com/&quot;,
+    &quot;displayTimeSeconds&quot;: 30,
+    &quot;soundId&quot;:            6
+}</code>
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;sent&quot;: true
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="display-sound-list">
+
+				<div class="apidocs-header">/display/sound/list</div>
+				<div class="apidocs-body">
+
+											<div class="apidocs-url">https://www.nrsaccounting.com/api/display/sound/list</div>
+					
+					<p>Returns all available display device sounds.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;list&quot;: [
+        { &quot;id&quot;: 6, &quot;name&quot;: &quot;My Awesome Sound&quot;, &quot;url&quot;: &quot;https://...&quot; }
+    ]
+}</code>
+					
+					
+				</div>
+			</div>
+					<div class="apidocs-section" id="errors">
+
+				<div class="apidocs-header">API Errors</div>
+				<div class="apidocs-body">
+
+					
+					<p>All errors are returned as JSON with a numeric code and message.</p>
+					
+					
+					
+											<p class="apidocs-label">Example Response</p>
+						<code class="apidocs-code">{
+    &quot;err&quot;: {
+        &quot;num&quot;: 103,
+        &quot;msg&quot;: &quot;Company Not Found&quot;
+    }
+}</code>
+					
+					
+				</div>
+			</div>
+			</div>
+
+</div>
+
+<script>
+$(function() {
+	$('.apidocs-header').click(function() {
+		$(this).next('.apidocs-body').toggleClass('hidden');
+		$(this).toggleClass('closed');
+	});
+
+	$('#apidocs-search').on('input', function() {
+		var q = $(this).val().toLowerCase();
+		$('.apidocs-toc h4').show();
+		$('.toc-link').each(function() {
+			$(this).toggle(!q || $(this).text().toLowerCase().indexOf(q) >= 0);
+		});
+		$('.apidocs-toc h4').each(function() {
+			var hasVisible = false;
+			$(this).nextUntil('h4', 'a').each(function() {
+				if ($(this).is(':visible')) hasVisible = true;
+			});
+			$(this).toggle(hasVisible);
+		});
+	});
+
+	$('.toc-link').click(function(e) {
+		e.preventDefault();
+		var $t = $($(this).attr('href'));
+		$t.find('.apidocs-body').removeClass('hidden');
+		$t.find('.apidocs-header').removeClass('closed');
+		$('html,body').animate({ scrollTop: $t.offset().top - 10 }, 200);
+		$('.toc-link').removeClass('active');
+		$(this).addClass('active');
+	});
+
+	$(window).on('scroll', function() {
+		var top = $(window).scrollTop() + 20;
+		$('.apidocs-section').each(function() {
+			if ($(this).offset().top <= top) {
+				$('.toc-link').removeClass('active');
+				$('.toc-link[href="#' + $(this).attr('id') + '"]').addClass('active');
+			}
+		});
+	});
+});
+</script>
+	</div>
+	
+		
+</div>
+
+	
+</body>
+</html>

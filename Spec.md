@@ -1161,3 +1161,44 @@ inventory_drop_items table:
 - source_photo_ids — array of photo IDs showing this item
 - pricing_decision_id — links to created pricing decision (nullable)
 - created_at
+
+21. Customer Holds & Staff Notes
+
+21.1 Purpose
+
+Digitize two paper processes at the register: the physical holds shelf (items waiting on a price, on a vendor accepting an offer, or on a customer pickup) and the post-it note board staff use to leave each other messages.
+
+21.2 Customer Holds
+
+- Staff create a hold with a required photo of the item, a reason (awaiting price, awaiting vendor acceptance, customer pickup, other), and customer name + phone (skipped in "missing price" mode, where the item is parked rather than promised). Customer pickups require a pickup date.
+- Each hold carries an urgency anchor: end of the promised pickup day (Pacific) for customer pickups, otherwise creation time. The hold card turns red 24 hours past the anchor and flashes red after 48 hours; the queue sorts most-overdue first.
+- Holds are cleared with a reason (price received, sold, returned to shelf, cancelled). Clearing is atomic — concurrent clears cannot overwrite each other's attribution — and cleared holds remain in a history view.
+- The staff dashboard shows the active hold count and the four most-urgent holds.
+
+21.3 Staff Notes
+
+- A shared board of sticky notes with text and/or a photo (e.g. of a hand-written note). Notes can be addressed to all staff (default), all vendors, or one specific person.
+- Staff see the whole board; the dashboard surfaces only notes addressed to the viewer personally or to all staff. Vendor-portal users see only notes addressed to them or to all vendors (vendor home card + /vendor/notes), and are read-only.
+- Taking a note down is a soft delete: the note is retained in history with who removed it and when.
+
+21.4 Access Control
+
+Holds are staff-only; the holds API rejects vendor-portal users outright. The notes API scopes reads for vendors and rejects vendor writes. Both APIs validate client-supplied photo paths to local /uploads/ paths (no traversal) before storing or rendering them.
+
+21.5 Data Model
+
+customer_holds table:
+
+- id, created_by_user_id, reason (enum), missing_price
+- customer_name, customer_phone, item_description, pickup_date, notes
+- photo_path, photo_original_name, photo_mime_type, photo_size_bytes
+- status ('active' | 'cleared'), cleared_reason (enum), cleared_by_user_id, cleared_at
+- created_at, updated_at
+
+staff_notes table:
+
+- id, created_by_user_id
+- recipient_group ('all_staff' | 'all_vendors') or recipient_user_id (exactly one)
+- body, photo_path, photo_original_name, photo_mime_type, photo_size_bytes
+- status ('active' | 'deleted'), deleted_by_user_id, deleted_at
+- created_at, updated_at

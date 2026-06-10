@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
 	import RecentShoutouts from '$lib/components/RecentShoutouts.svelte';
 	import WhosWorking from '$lib/components/WhosWorking.svelte';
+	import HoldCard from '$lib/components/HoldCard.svelte';
+	import NoteCard from '$lib/components/NoteCard.svelte';
 
 	export let data: PageData;
 
@@ -13,7 +16,17 @@
 	$: activeBreak = data.activeBreak;
 	$: pendingTasks = data.pendingTasks;
 	$: unreadMessages = data.unreadMessages;
+	$: holds = data.holds;
+	$: notesForYou = data.notesForYou;
 	$: dropStats = data.dropStats;
+
+	// Tick so the holds urgency clock (red / flashing) updates live.
+	let now = new Date();
+	let holdTimer: ReturnType<typeof setInterval>;
+	onMount(() => {
+		holdTimer = setInterval(() => (now = new Date()), 30_000);
+	});
+	onDestroy(() => clearInterval(holdTimer));
 	$: userIsPurchaser = data.userIsPurchaser;
 	$: gamification = data.gamification;
 	$: whosWorking = data.whosWorking;
@@ -297,6 +310,42 @@
 			</div>
 		</a>
 	</div>
+
+	<!-- Notes directed at you -->
+	{#if notesForYou && notesForYou.length > 0}
+		<div class="card mb-6">
+			<div class="card-header flex items-center justify-between">
+				<h2 class="font-semibold">Notes for You ({notesForYou.length})</h2>
+				<a href="/notes" class="text-primary-600 text-sm hover:underline">View Board</a>
+			</div>
+			<div class="card-body grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+				{#each notesForYou as note (note.id)}
+					<NoteCard {note} compact forYou={note.recipientUserId === data.user.id} />
+				{/each}
+			</div>
+		</div>
+	{/if}
+
+	<!-- Customer Holds Section (all staff) -->
+	{#if holds && holds.total > 0}
+		<div class="card mb-6">
+			<div class="card-header flex items-center justify-between">
+				<h2 class="font-semibold">Customer Holds ({holds.total})</h2>
+				<a href="/holds" class="text-primary-600 text-sm hover:underline">View All</a>
+			</div>
+			<div class="card-body space-y-3">
+				{#each holds.items as hold (hold.id)}
+					<HoldCard {hold} {now} compact />
+				{/each}
+				<a href="/holds/new" class="btn-secondary w-full text-center block">
+					<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+					</svg>
+					New Hold
+				</a>
+			</div>
+		</div>
+	{/if}
 
 	<!-- Inventory Drops Section for Purchasers -->
 	{#if userIsPurchaser && dropStats}

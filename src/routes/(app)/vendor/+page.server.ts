@@ -1,13 +1,39 @@
 import type { PageServerLoad } from './$types';
-import { and, eq, sql } from 'drizzle-orm';
-import { db, pendingInventoryChanges, salesTransactions } from '$lib/server/db';
+import { and, eq, or, desc, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import { db, pendingInventoryChanges, salesTransactions, staffNotes, users } from '$lib/server/db';
 import {
 	getVendorPersonalStats,
 	type VendorPersonalStats
 } from '$lib/server/services/vendor-stats-service';
 
-export const load: PageServerLoad = async ({ parent }) => {
+export const load: PageServerLoad = async ({ parent, locals }) => {
 	const { vendor } = await parent();
+
+	// Notes from the team for this vendor (personally or to all vendors).
+	const noteRecipient = alias(users, 'note_recipient');
+	const notesForYou = await db
+		.select({
+			id: staffNotes.id,
+			body: staffNotes.body,
+			photoPath: staffNotes.photoPath,
+			createdAt: staffNotes.createdAt,
+			createdByName: users.name,
+			recipientGroup: staffNotes.recipientGroup,
+			recipientUserId: staffNotes.recipientUserId,
+			recipientName: noteRecipient.name
+		})
+		.from(staffNotes)
+		.leftJoin(users, eq(staffNotes.createdByUserId, users.id))
+		.leftJoin(noteRecipient, eq(staffNotes.recipientUserId, noteRecipient.id))
+		.where(
+			and(
+				eq(staffNotes.status, 'active'),
+				or(eq(staffNotes.recipientUserId, locals.user!.id), eq(staffNotes.recipientGroup, 'all_vendors'))
+			)
+		)
+		.orderBy(desc(staffNotes.createdAt))
+		.limit(4);
 
 	const counts = await db
 		.select({
@@ -44,7 +70,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 		vendor.inventoryCodePrefix
 	);
 
-	return { changeCounts: byStatus, personalStats, baseItemCheck };
+	return { changeCounts: byStatus, personalStats, baseItemCheck, notesForYou };
 };
 
 async function checkBaseItem(

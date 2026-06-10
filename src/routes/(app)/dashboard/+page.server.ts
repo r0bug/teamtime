@@ -1,7 +1,9 @@
 import type { PageServerLoad } from './$types';
-import { db, shifts, timeEntries, breakEntries, tasks, conversationParticipants, messages, inventoryDrops, inventoryDropItems, users, locations, pricingDecisions } from '$lib/server/db';
-import { eq, and, isNull, gt, gte, lt, sql, inArray, desc } from 'drizzle-orm';
+import { db, shifts, timeEntries, breakEntries, tasks, conversationParticipants, messages, inventoryDrops, inventoryDropItems, users, locations, pricingDecisions, customerHolds, staffNotes } from '$lib/server/db';
+import { eq, and, or, isNull, gt, gte, lt, sql, inArray, desc } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { isPurchaser, isManager, isAdmin } from '$lib/server/auth/roles';
+import { urgencyAnchor } from '$lib/server/services/holds-service';
 import { getOrCreateUserStats, getTodayPoints, getLeaderboard, getUserLeaderboardPosition, LEVEL_THRESHOLDS } from '$lib/server/services/points-service';
 import { getRecentAchievements, getAchievementStats } from '$lib/server/services/achievements-service';
 
@@ -77,6 +79,58 @@ export const load: PageServerLoad = async ({ locals }) => {
 			)
 		);
 	const unreadMessages = unreadResult[0]?.count || 0;
+
+	// Active customer holds — visible to all staff. Show the most-urgent few.
+	const holdRows = await db
+		.select({
+			id: customerHolds.id,
+			reason: customerHolds.reason,
+			missingPrice: customerHolds.missingPrice,
+			customerName: customerHolds.customerName,
+			itemDescription: customerHolds.itemDescription,
+			pickupDate: customerHolds.pickupDate,
+			photoPath: customerHolds.photoPath,
+			createdAt: customerHolds.createdAt,
+			createdByName: users.name
+		})
+		.from(customerHolds)
+		.leftJoin(users, eq(customerHolds.createdByUserId, users.id))
+		.where(eq(customerHolds.status, 'active'));
+	// No limit: urgency order (below) is not creation order, so a capped fetch
+	// would drop exactly the most-overdue holds and understate the total.
+
+	const allActiveHolds = holdRows
+		.map((h) => ({ ...h, urgencyAnchor: urgencyAnchor(h).toISOString() }))
+		.sort((a, b) => new Date(a.urgencyAnchor).getTime() - new Date(b.urgencyAnchor).getTime());
+	const holds = {
+		total: allActiveHolds.length,
+		items: allActiveHolds.slice(0, 4)
+	};
+
+	// Post-it notes for this staff member: directed at them personally, or to all staff.
+	const noteRecipient = alias(users, 'note_recipient');
+	const notesForYou = await db
+		.select({
+			id: staffNotes.id,
+			body: staffNotes.body,
+			photoPath: staffNotes.photoPath,
+			createdAt: staffNotes.createdAt,
+			createdByName: users.name,
+			recipientGroup: staffNotes.recipientGroup,
+			recipientUserId: staffNotes.recipientUserId,
+			recipientName: noteRecipient.name
+		})
+		.from(staffNotes)
+		.leftJoin(users, eq(staffNotes.createdByUserId, users.id))
+		.leftJoin(noteRecipient, eq(staffNotes.recipientUserId, noteRecipient.id))
+		.where(
+			and(
+				eq(staffNotes.status, 'active'),
+				or(eq(staffNotes.recipientUserId, user.id), eq(staffNotes.recipientGroup, 'all_staff'))
+			)
+		)
+		.orderBy(desc(staffNotes.createdAt))
+		.limit(6);
 
 	// Inventory drop stats for purchasers and above
 	let dropStats = null;
@@ -329,6 +383,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		activeBreak,
 		pendingTasks: pendingTasks || 0,
 		unreadMessages,
+		holds,
+		notesForYou,
 		dropStats,
 		userIsPurchaser: isPurchaser(user),
 		gamification,

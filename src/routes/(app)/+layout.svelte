@@ -77,6 +77,7 @@
 	const vendorNavItems = [
 		{ href: '/vendor', label: 'Home', icon: 'home', show: true, exact: true },
 		{ href: '/vendor/inventory', label: 'Inventory', icon: 'box', show: true },
+		{ href: '/vendor/notes', label: 'Notes', icon: 'document', show: true },
 		{ href: '/vendor/print', label: 'Print Sheet', icon: 'tag', show: true },
 		{ href: '/vendor/leaderboard', label: 'Leaderboard', icon: 'trophy', show: true },
 		{ href: '/vendor/sales', label: 'Sales', icon: 'chart', show: true },
@@ -95,6 +96,8 @@
 			{ href: '/sales', label: 'Sales', icon: 'chart', show: mod('sales') },
 			{ href: '/info', label: 'Info', icon: 'info', show: true },
 			{ href: '/pricing', label: 'Pricing', icon: 'tag', show: mod('pricing') },
+			{ href: '/holds', label: 'Holds', icon: 'clipboard-check', show: mod('holds') },
+			{ href: '/notes', label: 'Notes', icon: 'document', show: mod('notes') },
 			{ href: '/inventory/drops', label: 'Drops', icon: 'box', show: isPurchaser && mod('inventory') },
 			{ href: '/ebay/tasks', label: 'eBay Tasks', icon: 'globe', show: canListOnEbay && mod('ebay') },
 			{ href: '/expenses', label: 'Expenses', icon: 'dollar', show: isPurchaser && mod('expenses') },

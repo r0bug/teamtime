@@ -1,6 +1,22 @@
 export function formatDate(date: Date | string, options?: Intl.DateTimeFormatOptions): string {
-	const d = typeof date === 'string' ? new Date(date) : date;
+	let d: Date;
+	if (typeof date === 'string') {
+		// Date-only strings (pg `date` columns, e.g. '2026-06-11') must not go
+		// through the Date constructor: it treats them as UTC midnight, which
+		// renders as the previous day in any western timezone.
+		const m = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+		d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(date);
+	} else {
+		d = date;
+	}
 	return d.toLocaleDateString('en-US', options || { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+export function isUuid(value: unknown): value is string {
+	return (
+		typeof value === 'string' &&
+		/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+	);
 }
 
 export function formatTime(date: Date | string): string {

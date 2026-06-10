@@ -17,6 +17,8 @@ const DEFAULT_MODULES: Record<string, boolean> = {
 	achievements: true,
 	sales: true,
 	pricing: true,
+	holds: true,
+	notes: true,
 	inventory: true,
 	ebay: true
 };

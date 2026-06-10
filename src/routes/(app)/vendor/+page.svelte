@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import NoteCard from '$lib/components/NoteCard.svelte';
 	export let data: PageData;
 
 	function fmtMoney(n: number): string {
@@ -55,6 +56,23 @@
 				</div>
 			</div>
 		</div>
+	{/if}
+
+	<!-- Notes for you -->
+	{#if data.notesForYou && data.notesForYou.length > 0}
+		<section class="mt-6">
+			<div class="card">
+				<div class="card-header flex items-center justify-between">
+					<h2 class="font-semibold text-gray-900">Notes for You</h2>
+					<a href="/vendor/notes" class="text-sm text-primary-600 hover:underline">View all →</a>
+				</div>
+				<div class="card-body grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+					{#each data.notesForYou as note (note.id)}
+						<NoteCard {note} compact forYou={note.recipientUserId === data.user.id} />
+					{/each}
+				</div>
+			</div>
+		</section>
 	{/if}
 
 	<!-- Your Stats -->
