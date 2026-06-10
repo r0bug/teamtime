@@ -86,7 +86,7 @@ export function buildNrsTaskDescription(input: OnboardingInput): string {
 		`• Email: ${str(input.contactEmail) ?? ''}`,
 		`• Phone: ${str(input.contactPhone) ?? ''}`,
 		`• Booth Rent: ${rentDollars}`,
-		`• Is a Pass-Through Vendor: Yes for consignment/booth vendors (leave unchecked only for buy-outright vendors).`,
+		`• Is a Pass-Through Vendor: REQUIRED — check this for every vendor. All Yakima Finds vendors must be pass-through in NRS.`,
 		`• Vendor Payment %: ${100 - BOOTH_RENTAL_COMMISSION_PERCENT} for booth rentals (13% commission) / ${100 - INDIVIDUAL_ITEM_COMMISSION_PERCENT} for individual-item consignment (25% commission).`,
 		`• A/R Customer: set this if the vendor pays booth rent (links rent billing).`,
 		`• Enable Portal Access: check if this vendor will use the TeamTime vendor portal.`,
