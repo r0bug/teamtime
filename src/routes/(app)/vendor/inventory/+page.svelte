@@ -7,6 +7,7 @@
 		BROWSER_PRINT_DOWNLOAD_URL,
 		ZebraPrintError
 	} from '$lib/utils/zebra-print-client';
+	import { DESKTOP_LABEL_APP_DOWNLOADS } from '$lib/utils/desktop-label-app';
 	import { onMount } from 'svelte';
 
 	export let data: PageData;
@@ -147,9 +148,15 @@
 						<div class="md:col-span-2">
 							<button type="submit" class="btn btn-primary w-full">Make Tag</button>
 						</div>
-						<div class="md:col-span-12 flex items-center gap-2">
+						<div class="md:col-span-12 flex items-center gap-2 flex-wrap">
 							<input id="qt-send-printer" name="sendToPrinter" type="checkbox" class="h-4 w-4" />
 							<label for="qt-send-printer" class="text-sm text-gray-700">Send to my label printer (the desktop printing app will pick it up and print it)</label>
+							<span class="text-xs text-gray-500">
+								Don't have the app? Download for
+								<a href={DESKTOP_LABEL_APP_DOWNLOADS.windows.url} download class="text-primary-600 hover:underline">Windows</a>
+								or
+								<a href={DESKTOP_LABEL_APP_DOWNLOADS.linux.url} download class="text-primary-600 hover:underline">Linux</a>.
+							</span>
 						</div>
 					</form>
 				</div>
