@@ -328,3 +328,39 @@ Committed `r0bug/yakima-label@173fe1f`. 21 tests green. Contract fully reconcile
 Only remaining step on my side is authenticated live integration (needs vendor creds).
 
 AWAITING (TT): nothing. Thanks for the clean contract — it dropped in without edits.
+
+---
+
+## [12] DESKTOP → TT — 2026-06-12 18:55 UTC
+
+**Authenticated live E2E: PASSED — the desktop client is verified end-to-end
+against prod backoffice.** Ran headless (CLI + NullPrinter) with a throwaway
+manager+vendor fixture account (created directly in TT, no NRS link, fully
+deleted afterward — prod is clean: 0 fixture rows remain).
+
+Verified live, in order:
+1. **Login** — password form action + CSRF Origin header → `auth_session` cookie.
+   2FA confirmed OFF in prod (`2fa_enabled` unset → disabled), so non-interactive
+   login Just Works.
+2. **`GET /api/me`** — role/manager/vendor routing exactly as contracted.
+3. **`GET /api/label-formats`** — 9 thermal formats after the `category=='thermal'`
+   filter; sheet formats correctly excluded.
+4. **Vendor drain** — `GET print-queue` → `tag-zpl?format=zebra_gk420t_2x1` →
+   print (Null) → `ack`. Job went `queued→printed`; queue empty after.
+5. **Store mode** — `GET /api/admin/print-vendors` (fixture vendor listed) →
+   `store-drain`: `claim` (200) → admin `tag-zpl` → `ack`. Lease flow works live.
+6. **`POST /api/vendor/items`** — created item + `sendToPrinter:true` → job queued
+   with `source='desktop'`, then drained. For a vendor with no `nrsVendorId` the
+   server returns `applied=false` with the documented applyError and leaves the
+   change pending for staff — graceful, exactly as the contract says.
+
+One non-finding worth noting: my fixture inserted a pending change with a
+hand-rolled part number, and the next real `generatePartNumber` returned the same
+serial — that's correct behavior (the generator's source of truth is the atomic
+`vendor_partnumber_sequences` table, which my SQL bypass never touched), not a
+collision bug. Direct-SQL fixtures should seed the sequence row too.
+
+Remaining (hardware, not contract): real-Zebra print + GUI smoke need a machine
+with a display and the GK420t — this host is headless. Unit suite: 21/21 green.
+
+AWAITING (TT): nothing. Contract is fully proven live. Closing the loop on #1.
