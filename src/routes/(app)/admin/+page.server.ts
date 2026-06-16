@@ -3,6 +3,7 @@ import { redirect } from '@sveltejs/kit';
 import { db, users, messages, conversations, timeEntries, shifts } from '$lib/server/db';
 import { desc, eq, sql, and, gte, lte } from 'drizzle-orm';
 import { isManager, isAdmin } from '$lib/server/auth/roles';
+import { paidHoursByEntry } from '$lib/server/utils/break-allowance';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!isManager(locals.user)) {
@@ -31,16 +32,20 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.from(messages)
 		.where(gte(messages.createdAt, startOfWeek));
 
-	// Get this week's hours
-	const hoursStats = await db
+	// Get this week's hours (break allowance applied — unpaid break time deducted)
+	const weekEntries = await db
 		.select({
-			totalMinutes: sql<number>`COALESCE(SUM(EXTRACT(EPOCH FROM (clock_out - clock_in)) / 60), 0)`
+			id: timeEntries.id,
+			clockIn: timeEntries.clockIn,
+			clockOut: timeEntries.clockOut
 		})
 		.from(timeEntries)
 		.where(and(
 			gte(timeEntries.clockIn, startOfWeek),
 			lte(timeEntries.clockIn, endOfWeek)
 		));
+	const weekPaidHours = await paidHoursByEntry(weekEntries);
+	const hoursThisWeekTotal = Array.from(weekPaidHours.values()).reduce((sum, h) => sum + h, 0);
 
 	// Get scheduled shifts this week
 	const shiftStats = await db
@@ -71,7 +76,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			totalUsers: userStats[0]?.total || 0,
 			activeUsers: userStats[0]?.active || 0,
 			messagesThisWeek: messageStats[0]?.count || 0,
-			hoursThisWeek: Math.round((hoursStats[0]?.totalMinutes || 0) / 60 * 10) / 10,
+			hoursThisWeek: Math.round(hoursThisWeekTotal * 10) / 10,
 			shiftsThisWeek: shiftStats[0]?.count || 0
 		},
 		users: allUsers

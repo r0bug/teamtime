@@ -3,6 +3,7 @@ import { redirect } from '@sveltejs/kit';
 import { db, salesSnapshots, timeEntries, users } from '$lib/server/db';
 import { sql, gte, lte, and, eq, desc, isNotNull, inArray } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { paidHoursByEntry } from '$lib/server/utils/break-allowance';
 
 interface VendorSalesData {
 	vendor_id: string;
@@ -60,6 +61,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// Get time entries
 	const entriesResult = await db
 		.select({
+			entryId: timeEntries.id,
 			userId: timeEntries.userId,
 			userName: users.name,
 			clockIn: timeEntries.clockIn,
@@ -76,13 +78,18 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			)
 		);
 
+	// Paid hours per entry, with the break allowance applied (unpaid break time deducted)
+	const paidHours = await paidHoursByEntry(
+		entriesResult.map((e) => ({ id: e.entryId, clockIn: e.clockIn, clockOut: e.clockOut }))
+	);
+
 	// Group time entries by date
 	const hoursByDate = new Map<string, { totalHours: number; employees: Set<string> }>();
 	for (const entry of entriesResult) {
 		if (!entry.clockIn || !entry.clockOut) continue;
 
 		const dateStr = new Date(entry.clockIn).toISOString().split('T')[0];
-		const hours = (new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / (1000 * 60 * 60);
+		const hours = paidHours.get(entry.entryId) ?? 0;
 
 		const existing = hoursByDate.get(dateStr);
 		if (existing) {

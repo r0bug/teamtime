@@ -3,6 +3,7 @@ import { redirect } from '@sveltejs/kit';
 import { db, salesSnapshots, timeEntries, users } from '$lib/server/db';
 import { sql, gte, lte, and, eq, desc, count } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { paidHoursByEntry } from '$lib/server/utils/break-allowance';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!isManager(locals.user)) {
@@ -56,6 +57,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// Get time entries for the date range
 	const timeEntriesData = await db
 		.select({
+			entryId: timeEntries.id,
 			userId: timeEntries.userId,
 			userName: users.name,
 			clockIn: timeEntries.clockIn,
@@ -71,6 +73,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		)
 		.orderBy(desc(timeEntries.clockIn));
 
+	// Paid hours per entry, with the break allowance applied (unpaid break time deducted)
+	const paidHours = await paidHoursByEntry(
+		timeEntriesData.map((e) => ({ id: e.entryId, clockIn: e.clockIn, clockOut: e.clockOut }))
+	);
+
 	// Calculate summary stats
 	const totalSales = snapshots.reduce((sum, s) => sum + parseFloat(s.totalSales || '0'), 0);
 	const totalRetained = snapshots.reduce((sum, s) => sum + parseFloat(s.totalRetained || '0'), 0);
@@ -81,8 +88,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	let totalHours = 0;
 	for (const entry of timeEntriesData) {
 		if (entry.clockIn && entry.clockOut) {
-			const hours = (new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / (1000 * 60 * 60);
-			totalHours += hours;
+			totalHours += paidHours.get(entry.entryId) ?? 0;
 		}
 	}
 
@@ -132,7 +138,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	for (const entry of timeEntriesData) {
 		if (entry.clockIn && entry.clockOut) {
 			const dateStr = new Date(entry.clockIn).toISOString().split('T')[0];
-			const hours = (new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / (1000 * 60 * 60);
+			const hours = paidHours.get(entry.entryId) ?? 0;
 			const existing = hoursByDate.get(dateStr);
 			if (existing) {
 				existing.hours += hours;

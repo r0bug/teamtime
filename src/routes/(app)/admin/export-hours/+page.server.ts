@@ -3,6 +3,7 @@ import { redirect } from '@sveltejs/kit';
 import { db, users, timeEntries } from '$lib/server/db';
 import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { paidHoursByEntry } from '$lib/server/utils/break-allowance';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!isManager(locals.user)) {
@@ -45,12 +46,12 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		))
 		.orderBy(desc(timeEntries.clockIn));
 
+	// Paid hours per entry, with the break allowance applied (unpaid break time deducted)
+	const paidHours = await paidHoursByEntry(entries);
+
 	// Calculate hours and pay for each entry
 	const entriesWithHours = entries.map(entry => {
-		let hours = 0;
-		if (entry.clockIn && entry.clockOut) {
-			hours = (new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / (1000 * 60 * 60);
-		}
+		const hours = paidHours.get(entry.id) ?? 0;
 		const rate = parseFloat(entry.hourlyRate || '0');
 		const pay = hours * rate;
 		return {

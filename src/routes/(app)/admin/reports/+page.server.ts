@@ -3,6 +3,7 @@ import { redirect } from '@sveltejs/kit';
 import { db, timeEntries, atmWithdrawals, withdrawalAllocations, users, purchaseRequests, appSettings } from '$lib/server/db';
 import { sql, gte, lte, and, eq, desc } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { paidHoursByEntry } from '$lib/server/utils/break-allowance';
 
 interface PayPeriodConfig {
 	type: 'semi-monthly' | 'bi-weekly' | 'weekly' | 'monthly';
@@ -149,6 +150,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		))
 		.orderBy(users.name, desc(timeEntries.clockIn));
 
+	// Paid hours per entry, with the break allowance applied (unpaid break time deducted)
+	const paidHours = await paidHoursByEntry(
+		hoursData.map((e) => ({ id: e.entryId, clockIn: e.clockIn, clockOut: e.clockOut }))
+	);
+
 	// Aggregate hours by employee
 	const employeeHoursMap = new Map<string, {
 		userId: string;
@@ -184,7 +190,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		}
 
 		if (entry.clockIn && entry.clockOut) {
-			const hours = (new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / (1000 * 60 * 60);
+			const hours = paidHours.get(entry.entryId) ?? 0;
 			emp.totalHours += hours;
 			if (emp.hourlyRate) {
 				emp.totalPay += hours * emp.hourlyRate;
@@ -200,9 +206,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	// Time entries detail for the selected date range
 	const timeEntriesDetail = hoursData.map(entry => {
-		const hours = entry.clockIn && entry.clockOut
-			? (new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / (1000 * 60 * 60)
-			: null;
+		const hours = entry.clockIn && entry.clockOut ? (paidHours.get(entry.entryId) ?? 0) : null;
 		const rate = entry.hourlyRate ? parseFloat(entry.hourlyRate) : null;
 		return {
 			id: entry.entryId,

@@ -16,6 +16,7 @@
  * @see {@link $lib/server/utils/timezone} for timezone utilities
  */
 import { db, salesSnapshots, timeEntries, users } from '$lib/server/db';
+import { paidHoursByEntry } from '$lib/server/utils/break-allowance';
 import { eq, desc, gte, lte, and, isNull } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
@@ -85,6 +86,7 @@ async function calculateLaborForDate(date: string): Promise<{ hours: number; cos
 	// Get time entries for the day
 	const entries = await db
 		.select({
+			entryId: timeEntries.id,
 			userId: timeEntries.userId,
 			clockIn: timeEntries.clockIn,
 			clockOut: timeEntries.clockOut,
@@ -100,11 +102,17 @@ async function calculateLaborForDate(date: string): Promise<{ hours: number; cos
 			)
 		);
 
+	// Paid hours per entry, with the break allowance applied (unpaid break time
+	// deducted). Still-clocked-in shifts are estimated up to the current time.
+	const paidHours = await paidHoursByEntry(
+		entries.map((e) => ({ id: e.entryId, clockIn: e.clockIn, clockOut: e.clockOut })),
+		{ openShiftEnd: new Date() }
+	);
+
 	const workerMap = new Map<string, LaborSummary>();
 
 	for (const entry of entries) {
-		const clockOut = entry.clockOut || new Date(); // Use current time if still clocked in
-		const hoursWorked = (clockOut.getTime() - entry.clockIn.getTime()) / (1000 * 60 * 60);
+		const hoursWorked = paidHours.get(entry.entryId) ?? 0;
 		const hourlyRate = entry.hourlyRate ? parseFloat(entry.hourlyRate) : 15; // Default $15/hr
 		const laborCost = hoursWorked * hourlyRate;
 

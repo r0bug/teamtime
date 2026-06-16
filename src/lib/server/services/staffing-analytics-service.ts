@@ -28,6 +28,7 @@ import {
 } from '$lib/server/db';
 import { eq, and, gte, lte, sql, isNotNull, desc, asc } from 'drizzle-orm';
 import { createLogger } from '$lib/server/logger';
+import { paidHoursByEntry } from '$lib/server/utils/break-allowance';
 import {
 	getPacificDayBounds,
 	toPacificDateString
@@ -151,6 +152,7 @@ async function getDailySalesAndStaffing(dateRange: DateRange): Promise<DailySale
 	// Get time entries
 	const entries = await db
 		.select({
+			entryId: timeEntries.id,
 			userId: timeEntries.userId,
 			userName: users.name,
 			clockIn: timeEntries.clockIn,
@@ -165,6 +167,11 @@ async function getDailySalesAndStaffing(dateRange: DateRange): Promise<DailySale
 				isNotNull(timeEntries.clockOut)
 			)
 		);
+
+	// Paid hours per entry, with the break allowance applied (unpaid break time deducted)
+	const paidHours = await paidHoursByEntry(
+		entries.map((e) => ({ id: e.entryId, clockIn: e.clockIn, clockOut: e.clockOut }))
+	);
 
 	// Map data by date
 	const dataByDate = new Map<string, DailySalesData>();
@@ -186,7 +193,7 @@ async function getDailySalesAndStaffing(dateRange: DateRange): Promise<DailySale
 		if (!entry.clockIn || !entry.clockOut) continue;
 
 		const dateStr = toPacificDateString(entry.clockIn);
-		const hours = (new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / (1000 * 60 * 60);
+		const hours = paidHours.get(entry.entryId) ?? 0;
 
 		let dayData = dataByDate.get(dateStr);
 		if (!dayData) {

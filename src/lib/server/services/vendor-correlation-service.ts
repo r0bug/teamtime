@@ -31,6 +31,7 @@ import {
 } from '$lib/server/db';
 import { eq, and, gte, lt, lte, sql, isNotNull, desc, asc } from 'drizzle-orm';
 import { createLogger } from '$lib/server/logger';
+import { paidHoursByEntry } from '$lib/server/utils/break-allowance';
 import {
 	getPacificDayBounds,
 	getPacificWeekStart,
@@ -142,6 +143,7 @@ async function getEmployeeShiftsForDate(date: Date): Promise<EmployeeShiftData[]
 
 	const entries = await db
 		.select({
+			entryId: timeEntries.id,
 			userId: timeEntries.userId,
 			userName: users.name,
 			clockIn: timeEntries.clockIn,
@@ -157,18 +159,22 @@ async function getEmployeeShiftsForDate(date: Date): Promise<EmployeeShiftData[]
 			)
 		);
 
+	// Paid hours per entry, with the break allowance applied (unpaid break time deducted)
+	const paidHours = await paidHoursByEntry(
+		entries.map((e) => ({ id: e.entryId, clockIn: e.clockIn, clockOut: e.clockOut }))
+	);
+
 	return entries
 		.filter(e => e.clockOut !== null)
 		.map(e => {
 			const clockIn = new Date(e.clockIn);
 			const clockOut = new Date(e.clockOut!);
-			const hoursWorked = (clockOut.getTime() - clockIn.getTime()) / (1000 * 60 * 60);
 			return {
 				userId: e.userId,
 				userName: e.userName || 'Unknown',
 				clockIn,
 				clockOut,
-				hoursWorked: Math.round(hoursWorked * 100) / 100
+				hoursWorked: Math.round((paidHours.get(e.entryId) ?? 0) * 100) / 100
 			};
 		});
 }

@@ -14,6 +14,7 @@
 
 import { db, salesSnapshots, timeEntries, users } from '$lib/server/db';
 import { eq, and, gte, lt, sql, isNotNull } from 'drizzle-orm';
+import { paidHoursByEntry } from '$lib/server/utils/break-allowance';
 import { createLogger } from '$lib/server/logger';
 import type { MetricCollector, DateRange, CollectedMetric } from './types';
 import type { VendorSalesData, SalesSnapshot } from '$lib/server/db/schema';
@@ -53,6 +54,7 @@ function dateStrToBounds(dateStr: string): { dayStart: Date; dayEnd: Date } {
 async function getTotalLaborHours(dayStart: Date, dayEnd: Date): Promise<number> {
 	const entries = await db
 		.select({
+			id: timeEntries.id,
 			clockIn: timeEntries.clockIn,
 			clockOut: timeEntries.clockOut
 		})
@@ -65,15 +67,13 @@ async function getTotalLaborHours(dayStart: Date, dayEnd: Date): Promise<number>
 			)
 		);
 
+	// Paid hours per entry, with the break allowance applied (unpaid break time deducted)
+	const paidHours = await paidHoursByEntry(entries);
+
 	let totalHours = 0;
-	for (const entry of entries) {
-		if (entry.clockOut) {
-			const clockIn = new Date(entry.clockIn);
-			const clockOut = new Date(entry.clockOut);
-			const hours = (clockOut.getTime() - clockIn.getTime()) / (1000 * 60 * 60);
-			if (hours > 0) {
-				totalHours += hours;
-			}
+	for (const hours of paidHours.values()) {
+		if (hours > 0) {
+			totalHours += hours;
 		}
 	}
 

@@ -609,7 +609,7 @@ CREATE TABLE break_entries (
 
 **Audit log**: `audit_logs.action` now accepts `break_start` and `break_end` in addition to `clock_in` / `clock_out`.
 
-**Config**: `app_settings.break_allowance_config` holds `{minutesPer: number, perHours: number}` — e.g. `{minutesPer: 15, perHours: 4}` means employees get 15 paid minutes per 4 hours worked, scaled proportionally. Only break time exceeding the allowance is deducted from the timesheet.
+**Config**: `app_settings.break_allowance_config` holds `{minutesPer: number, perHours: number}` — e.g. `{minutesPer: 15, perHours: 4}` means employees get 15 paid minutes per 4 hours worked, scaled proportionally. Only break time exceeding the allowance is deducted from paid hours, applied consistently everywhere hours are computed via the shared helper `src/lib/server/utils/break-allowance.ts` (payroll export, reports, metrics, sales attribution, AI labor tools).
 
 ---
 

@@ -21,7 +21,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - GPS-verified clock in/out from any device
 - Real-time "who's working where" visibility
 - Automatic shift matching and overtime tracking
-- **Break tracking** — employees start/end breaks from their dashboard, with a configurable paid-break allowance (e.g. 15 min per 4 hours) applied to payroll timesheets
+- **Break tracking** — employees start/end breaks from their dashboard, with a configurable paid-break allowance (e.g. 15 min per 4 hours) applied consistently across payroll export, reports, and metrics (excess break time deducted everywhere, via a shared helper)
 - **Payroll Timesheet** (`/admin/timesheet`) — per-employee daily rollups with break minutes, allowed/excess breakdown, auto-clock-out flagging, and CSV export
 - **Smart clock-out reminders** — 3-tier escalation (30min friendly → 90min firm → 180min auto-clock-out), interactive SMS with natural-language time parsing ("left at 5:30"), post-auto-clock-out corrections
 - **Late arrival detection** with automated SMS alerts and demerit escalation

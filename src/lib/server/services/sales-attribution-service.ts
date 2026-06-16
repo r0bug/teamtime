@@ -24,6 +24,7 @@
 
 import { db, timeEntries, salesSnapshots, userStats, users } from '$lib/server/db';
 import { eq, and, gte, lt, sql, isNotNull } from 'drizzle-orm';
+import { paidHoursByEntry } from '$lib/server/utils/break-allowance';
 import { awardPoints, POINT_VALUES } from './points-service';
 import { checkAndAwardAchievements } from './achievements-service';
 import { getPacificDayBounds } from '$lib/server/utils/timezone';
@@ -75,6 +76,7 @@ export async function processDailySalesPoints(date: Date): Promise<DailySalesAtt
 	// Get all time entries for this date (staff who worked)
 	const entries = await db
 		.select({
+			entryId: timeEntries.id,
 			userId: timeEntries.userId,
 			userName: users.name,
 			clockIn: timeEntries.clockIn,
@@ -95,15 +97,18 @@ export async function processDailySalesPoints(date: Date): Promise<DailySalesAtt
 		return null;
 	}
 
+	// Paid hours per entry, with the break allowance applied (unpaid break time deducted)
+	const paidHours = await paidHoursByEntry(
+		entries.map((e) => ({ id: e.entryId, clockIn: e.clockIn, clockOut: e.clockOut }))
+	);
+
 	// Calculate hours for each staff member
 	const staffHours: Map<string, { name: string; hours: number }> = new Map();
 
 	for (const entry of entries) {
 		if (!entry.clockOut) continue;
 
-		const clockIn = new Date(entry.clockIn);
-		const clockOut = new Date(entry.clockOut);
-		const hours = (clockOut.getTime() - clockIn.getTime()) / (1000 * 60 * 60);
+		const hours = paidHours.get(entry.entryId) ?? 0;
 
 		const existing = staffHours.get(entry.userId);
 		if (existing) {

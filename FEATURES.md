@@ -2551,7 +2551,7 @@ All endpoints are manager-gated via the shared `isManager` check.
 
 ### Overview
 
-Break Tracking lets employees log breaks during their shifts with a single button tap. The Payroll Timesheet admin page rolls breaks up against a configurable paid-break allowance and reports the excess that should be deducted from paid hours.
+Break Tracking lets employees log breaks during their shifts with a single button tap. A configurable paid-break allowance (state minimum: 15 minutes per 4 hours worked) is applied consistently to **every** "hours worked" calculation in the app — payroll export, reports, metrics dashboards, sales attribution, and AI labor tools — so only break time beyond the allowance is unpaid and deducted. The Payroll Timesheet admin page additionally surfaces the per-entry break/allowed/excess breakdown.
 
 ### Employee Experience
 
@@ -2564,9 +2564,17 @@ Break Tracking lets employees log breaks during their shifts with a single butto
 Configured at `/admin/settings` as `{minutesPer, perHours}` (e.g. 15 minutes per 4 hours worked). The allowance scales proportionally by shift length: an 8-hour shift with `{15, 4}` gets 30 allowed paid-break minutes.
 
 For each time entry:
-- **Break minutes** = sum of break durations
-- **Allowed minutes** = `floor(hoursWorked / perHours * minutesPer)`
+- **Break minutes** = sum of completed break durations
+- **Allowed minutes** = `hoursWorked / perHours * minutesPer`
 - **Excess minutes** = `max(0, breakMinutes - allowedMinutes)` — this is what gets deducted from paid hours
+- **Paid hours** = `max(0, hoursWorked - excessMinutes / 60)`
+
+This math lives in a single shared helper, `src/lib/server/utils/break-allowance.ts`, used everywhere hours are computed so no two views disagree:
+- `computePaidHours(rawHours, breakMinutes, config)` — the pure per-shift calculation
+- `paidHoursByEntry(entries, opts)` — batch helper returning `entryId → paidHours` (loads breaks + config once; `opts.openShiftEnd` estimates in-progress shifts for live labor cost)
+- `loadBreakAllowanceConfig()` — reads `app_settings.break_allowance_config`, defaulting to `{15, 4}`
+
+Time entries span the full shift (clock-in → clock-out) including break time; breaks are stored separately in `break_entries`, so the allowance must be applied wherever hours are derived — it is not baked into the clock timestamps.
 
 ### Payroll Timesheet
 
@@ -2603,6 +2611,8 @@ Both endpoints write to `audit_logs` with `action = break_start` / `break_end`.
 **Dashboard**: `src/routes/(app)/dashboard/+page.svelte` (break buttons)
 
 **Timesheet**: `src/routes/(app)/admin/timesheet/+page.svelte` + `+page.server.ts`
+
+**Shared allowance helper**: `src/lib/server/utils/break-allowance.ts` (+ tests `tests/unit/utils/break-allowance.test.ts`). Consumed by payroll export, `/api/reports/time`, admin reports/dashboard, all metrics pages (`metrics`, `metrics/sales-trends`, `metrics/vendor-correlations`), the sales-attribution / staffing-analytics / vendor-correlation services, the sales metric collector, and the `view_sales` AI tool.
 
 **Audit**: `src/lib/server/services/audit-service.ts` (`auditClockEvent` extended action types)
 
