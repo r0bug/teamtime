@@ -9,6 +9,7 @@
 		{ href: '/vendor', label: 'Home', exact: true },
 		{ href: '/vendor/inventory', label: 'Inventory' },
 		{ href: '/vendor/print', label: 'Print Sheet' },
+		{ href: '/vendor/app', label: 'Get the App' },
 		{ href: '/vendor/leaderboard', label: 'Leaderboard' },
 		{ href: '/vendor/sales', label: 'Sales' },
 		{ href: '/vendor/profile', label: 'Profile' }
