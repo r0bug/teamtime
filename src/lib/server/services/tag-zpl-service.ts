@@ -104,11 +104,19 @@ export async function renderVendorTagZpl(
 		.where(eq(vendorTagSettings.vendorId, vendor.id))
 		.limit(1);
 
+	// Vertical tag date down the edge — the item's creation date when known,
+	// else today (for shelf-age). renderZpl auto-skips it on labels too short
+	// to fit a vertical date (barbell/jewelry stock).
+	const tagDate = new Date(pending?.submittedAt ?? Date.now());
+	const edgeDate = `${String(tagDate.getMonth() + 1).padStart(2, '0')}/${String(tagDate.getDate()).padStart(2, '0')}/${tagDate.getFullYear()}`;
+
 	return renderZpl({
 		vendorDisplayName: vendor.displayName,
 		settings: settings ?? null,
 		item: { partNumber, name, description, priceCents },
 		copies: opts.copies,
-		formatCode: opts.formatCode
+		formatCode: opts.formatCode,
+		edgeDate,
+		edgeDateSide: 'right'
 	});
 }

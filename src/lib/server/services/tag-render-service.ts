@@ -27,12 +27,21 @@ export interface TagRenderContext {
 	/** Number of copies to print (^PQ). Clamped to [1, 99]; defaults to 1. */
 	copies?: number;
 	/**
-	 * Optional label-format code override (e.g. a thermal format chosen at print
-	 * time by the desktop label app). When omitted, the vendor's preferred format
-	 * from `settings` is used. Callers that allow overrides must validate the code
-	 * (exists + appropriate category) before passing it.
+	 * Override the label format code for this render. When set, takes priority
+	 * over `settings.preferredFormat` — lets the desktop app print a vendor's
+	 * item on whichever label stock is loaded. Falls back to settings/defaults.
 	 */
-	formatCode?: string;
+	formatCode?: string | null;
+	/** Override DPI for thermal rendering (else settings.zebraDpi or 203). */
+	dpi?: number | null;
+	/**
+	 * Optional date string printed vertically (rotated 90°) along an edge — e.g.
+	 * the tag/created date for shelf-age. Auto-skipped on labels too short to fit
+	 * it (barbell/jewelry stock).
+	 */
+	edgeDate?: string | null;
+	/** Which edge the vertical date sits on. Default 'right'. */
+	edgeDateSide?: 'left' | 'right';
 }
 
 export interface TagDimensions {
@@ -383,8 +392,8 @@ function embedSvgFitContent(svg: string): string {
 export async function renderZpl(ctx: TagRenderContext): Promise<string> {
 	const copies = Math.max(1, Math.min(99, Math.floor(ctx.copies ?? 1)));
 	const eff = resolveSettings(ctx.settings);
-	const dims = await getFormatDimensions(ctx.formatCode ?? eff.preferredFormat);
-	const dpi = eff.zebraDpi || 203;
+	const dims = await getFormatDimensions(ctx.formatCode || eff.preferredFormat);
+	const dpi = ctx.dpi || eff.zebraDpi || 203;
 	const widthDots = Math.round(dims.widthInches * dpi);
 	const heightDots = Math.round(dims.heightInches * dpi);
 
@@ -406,16 +415,24 @@ export async function renderZpl(ctx: TagRenderContext): Promise<string> {
 
 	const scale = eff.fontScale === 'small' ? 0.85 : eff.fontScale === 'large' ? 1.15 : 1;
 	const fH = Math.max(14, Math.round(heightDots * 0.10 * scale));      // header font height
-	const fBody = Math.max(12, Math.round(heightDots * 0.08 * scale));   // desc / footer
+	const fBody = Math.max(12, Math.round(heightDots * 0.08 * scale));   // footer
 	const fPart = Math.max(12, Math.round(heightDots * 0.085 * scale));  // part #
-	const fPrice = Math.max(20, Math.round(heightDots * 0.16 * scale));  // price
+	const fDesc = Math.max(14, Math.round(heightDots * 0.13 * scale));   // description (enlarged)
+	const fPrice = Math.max(18, Math.round(heightDots * 0.125 * scale)); // price
+
+	// Optional vertical date down one edge. Skipped on labels too short to hold
+	// it (barbell/jewelry stock < 0.8").
+	const fDate = Math.max(13, Math.round(heightDots * 0.085 * scale));
+	const showDate = !!ctx.edgeDate && dims.heightInches >= 0.8;
+	const dateSide = ctx.edgeDateSide ?? 'right';
+	const dateCol = showDate ? fDate + 6 : 0; // reserved edge column so text/barcode clear it
 
 	const rows: { kind: 'text' | 'barcode'; height: number; payload: string; opts?: Record<string, number | string> }[] = [];
 	rows.push({ kind: 'text', height: fH, payload: header, opts: { font: fH, weight: 1 } });
 	if (eff.includeBarcode && partNumber) {
 		rows.push({
 			kind: 'barcode',
-			height: Math.round(usable * 0.32),
+			height: Math.round(usable * 0.24),
 			payload: partNumber,
 			opts: { sym: eff.barcodeSymbology }
 		});
@@ -424,7 +441,7 @@ export async function renderZpl(ctx: TagRenderContext): Promise<string> {
 		rows.push({ kind: 'text', height: fPart, payload: partNumber, opts: { font: fPart } });
 	}
 	if (eff.includeDescription && (partName || description)) {
-		rows.push({ kind: 'text', height: fBody, payload: partName || description, opts: { font: fBody } });
+		rows.push({ kind: 'text', height: fDesc, payload: partName || description, opts: { font: fDesc } });
 	}
 	if (eff.includePrice && priceText) {
 		rows.push({ kind: 'text', height: fPrice, payload: priceText, opts: { font: fPrice, weight: 1 } });
@@ -446,35 +463,55 @@ export async function renderZpl(ctx: TagRenderContext): Promise<string> {
 
 	for (const r of rows) {
 		const rowY = Math.round(y);
+		// Content area is everything left of the reserved date column.
+		const blockW = widthDots - dateCol;
 		if (r.kind === 'text') {
 			const fontH = (r.opts?.font as number) ?? r.height;
-			// Center horizontally: ^FB block of full width with center alignment
+			// Truncate to one line that fits, so ^FB never wraps on top of itself.
+			const maxChars = Math.max(1, Math.floor(blockW / (fontH * 0.6)));
+			const text = r.payload.length > maxChars ? r.payload.slice(0, maxChars) : r.payload;
 			cmds.push(`^FO0,${rowY}`);
 			cmds.push(`^A0N,${fontH},${fontH}`);
-			cmds.push(`^FB${widthDots},1,0,C,0`);
-			cmds.push(`^FD${zplEscape(r.payload)}^FS`);
+			cmds.push(`^FB${blockW},1,0,C,0`);
+			cmds.push(`^FD${zplEscape(text)}^FS`);
 		} else {
 			const sym = (r.opts?.sym as string) ?? 'code_128';
 			if (sym === 'datamatrix') {
-				const dims2 = Math.min(widthDots * 0.6, r.height);
+				const dims2 = Math.min(blockW * 0.6, r.height);
 				const moduleSize = Math.max(3, Math.round(dims2 / 24));
-				const x = Math.round((widthDots - dims2) / 2);
+				const x = Math.round((blockW - dims2) / 2);
 				cmds.push(`^FO${x},${rowY}`);
 				cmds.push(`^BXN,${moduleSize},200`);
 				cmds.push(`^FD${zplEscape(r.payload)}^FS`);
 			} else {
-				// Code 128: width-by-narrow-bar dots, height in dots.
-				const narrow = 2;
+				// Code 128: size the narrow bar so the symbol fits the content area
+				// (so it never runs into the date column), then center it.
+				const margin = Math.round(widthDots * 0.04);
+				const modules = r.payload.length * 11 + 35; // approx incl. start/stop/check
+				// Prefer narrow bar = 2-3 dots (robust scanning); fall back to 1 only
+				// when the symbol otherwise won't fit the label width (tiny stock).
+				let narrow = Math.floor((blockW - 2 * margin) / modules);
+				narrow = Math.max(1, Math.min(3, narrow));
+				const bcW = modules * narrow;
+				const x = Math.max(margin, Math.round((blockW - bcW) / 2));
 				cmds.push('^BY' + narrow);
-				const x = Math.round(widthDots * 0.05);
-				const bcWidth = widthDots - x * 2;
 				cmds.push(`^FO${x},${rowY}`);
 				cmds.push(`^BCN,${r.height},N,N,N`);
 				cmds.push(`^FD${zplEscape(r.payload)}^FS`);
-				void bcWidth; // ZPL Code 128 picks its own width from ^BY + data length
 			}
 		}
 		y += r.height + gap;
+	}
+
+	// Vertical date down the chosen edge (rotated 90°). Reads top→bottom.
+	if (showDate) {
+		const dateStr = (ctx.edgeDate as string).slice(0, 12);
+		const estLen = Math.round(dateStr.length * fDate * 0.62);
+		const dy = Math.max(padTop, Math.round((heightDots - estLen) / 2));
+		const dx = dateSide === 'left' ? 2 : widthDots - fDate - 2;
+		cmds.push(`^FO${dx},${dy}`);
+		cmds.push(`^A0R,${fDate},${fDate}`);
+		cmds.push(`^FD${zplEscape(dateStr)}^FS`);
 	}
 
 	cmds.push(`^PQ${copies}`);                 // print quantity
