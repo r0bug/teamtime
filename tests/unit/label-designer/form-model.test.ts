@@ -53,6 +53,25 @@ describe('form-model', () => {
 		expect(dims).toMatchObject({ widthInches: 1.5, heightInches: 1.0, mediaShape: 'rectangle' });
 	});
 
+	it('round-trips lineScales into shapeDimsJson (rectangle) and shapeDims', () => {
+		const f = { ...base, lineScales: { price: 1.5, footer: 0.8 } };
+		expect(formStateToInput(f).shapeDimsJson).toEqual({ lineScales: { price: 1.5, footer: 0.8 } });
+		expect(formStateToDimensions(f).shapeDims).toEqual({ lineScales: { price: 1.5, footer: 0.8 } });
+	});
+
+	it('merges pads and lineScales for barbell', () => {
+		const f = {
+			...base,
+			mediaShape: 'barbell',
+			pads: [{ role: 'barcode', xIn: 0, widthIn: 0.85 }],
+			lineScales: { price: 2 }
+		};
+		expect(formStateToInput(f).shapeDimsJson).toEqual({
+			pads: [{ role: 'barcode', xIn: 0, widthIn: 0.85 }],
+			lineScales: { price: 2 }
+		});
+	});
+
 	it('parses prices to cents', () => {
 		expect(parsePriceToCents('$9.99')).toBe(999);
 		expect(parsePriceToCents('12')).toBe(1200);
