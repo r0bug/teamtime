@@ -7,6 +7,9 @@ import { route } from './router';
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, 'ui/index.html'), 'utf8');
 const port = parseInt(process.env.LABEL_DESIGNER_PORT ?? '5599', 10);
+// Default to loopback (safe). On a headless fleet box, set LABEL_DESIGNER_HOST
+// to the overlay/LAN IP (e.g. 10.42.0.11) to reach it from another machine.
+const host = process.env.LABEL_DESIGNER_HOST ?? '127.0.0.1';
 
 async function main() {
 	if (process.env.LABEL_DESIGNER_TUNNEL) {
@@ -41,8 +44,8 @@ async function main() {
 		res.end(JSON.stringify(r.json ?? {}));
 	});
 
-	server.listen(port, '127.0.0.1', () => {
-		console.log(`label-designer: http://127.0.0.1:${port}`);
+	server.listen(port, host, () => {
+		console.log(`label-designer: http://${host}:${port}`);
 	});
 }
 
