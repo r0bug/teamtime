@@ -444,7 +444,7 @@ export async function renderZpl(ctx: TagRenderContext): Promise<string> {
 	const usable = heightDots - padTop - padBottom;
 
 	const scale = eff.fontScale === 'small' ? 0.85 : eff.fontScale === 'large' ? 1.15 : 1;
-	const fH = Math.max(14, Math.round(heightDots * 0.10 * scale));      // header font height
+	const fH = Math.max(18, Math.round(heightDots * 0.14 * scale));      // header (vendor name) — sized prominently
 	const fBody = Math.max(12, Math.round(heightDots * 0.08 * scale));   // footer
 	const fPart = Math.max(12, Math.round(heightDots * 0.085 * scale));  // part #
 	const fDesc = Math.max(14, Math.round(heightDots * 0.13 * scale));   // description (enlarged)

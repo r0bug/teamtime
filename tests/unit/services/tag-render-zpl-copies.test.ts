@@ -43,3 +43,19 @@ describe('renderZpl ^PQ behavior', () => {
 		expect(await renderZpl({ ...baseCtx, copies: 3.7 })).toContain('^PQ3');
 	});
 });
+
+describe('renderZpl header (vendor name) sizing', () => {
+	it('renders the vendor name prominently (>= 12% of label height)', async () => {
+		const zpl = await renderZpl(baseCtx); // fallback avery_5160 -> 1.0" tall @203dpi
+		const heightDots = Math.round(1.0 * 203);
+		const lines = zpl.split('\n');
+		const hdr = lines.findIndex((l) => /^\^FDSample Vendor/.test(l));
+		expect(hdr).toBeGreaterThan(-1);
+		let font = -1;
+		for (let j = hdr; j >= 0; j--) {
+			const m = lines[j].match(/^\^A0N,(\d+),/);
+			if (m) { font = parseInt(m[1], 10); break; }
+		}
+		expect(font).toBeGreaterThanOrEqual(Math.round(heightDots * 0.12));
+	});
+});
