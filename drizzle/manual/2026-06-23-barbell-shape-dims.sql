@@ -15,7 +15,7 @@ SET
   label_height_inches = 0.6125,           -- measured; was 0.625 (≈3 dots @203dpi)
   shape_dims_json = '{
     "pads": [
-      { "role": "barcode", "xIn": 0.00,  "widthIn": 0.85 },
+      { "role": "barcode", "xIn": 0.00,  "widthIn": 0.85, "barcodeHeightIn": 0.28 },
       { "role": "info",    "xIn": 1.275, "widthIn": 0.85 }
     ]
   }'::jsonb,

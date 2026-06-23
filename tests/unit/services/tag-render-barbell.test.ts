@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Barbell jewelry stock: 2.125" x 0.6125" (stored 0.613, decimal(5,3)), with two
 // printable end pads joined by a thin fold/neck. shape_dims_json describes the
@@ -7,25 +7,30 @@ import { describe, it, expect, vi } from 'vitest';
 //   barcode pad: xIn 0.00 .. 0.85  -> dots 0 .. 173   (neck starts at 173)
 //   neck/fold:   0.85 .. 1.275      -> dots 173 .. 259 (blank)
 //   info pad:    1.275 .. 2.125     -> dots 259 .. 431
-const BARBELL_ROW = {
-	code: 'zebra_barbell_2125x0625',
-	labelWidthInches: '2.125',
-	labelHeightInches: '0.613',
-	mediaShape: 'barbell',
-	shapeDimsJson: {
-		pads: [
-			{ role: 'barcode', xIn: 0.0, widthIn: 0.85 },
-			{ role: 'info', xIn: 1.275, widthIn: 0.85 }
-		]
-	}
-};
+function barbellRow() {
+	return {
+		code: 'zebra_barbell_2125x0625',
+		labelWidthInches: '2.125',
+		labelHeightInches: '0.613',
+		mediaShape: 'barbell',
+		shapeDimsJson: {
+			pads: [
+				{ role: 'barcode', xIn: 0.0, widthIn: 0.85 },
+				{ role: 'info', xIn: 1.275, widthIn: 0.85 }
+			]
+		} as any
+	};
+}
+
+// Mutable so individual tests can vary shape_dims_json (default vs tuned).
+const hoisted = vi.hoisted(() => ({ row: null as any }));
 
 vi.mock('$lib/server/db', () => ({
 	db: {
 		select: () => ({
 			from: () => ({
 				where: () => ({
-					limit: () => Promise.resolve([BARBELL_ROW])
+					limit: () => Promise.resolve([hoisted.row])
 				})
 			})
 		})
@@ -34,6 +39,10 @@ vi.mock('$lib/server/db', () => ({
 }));
 
 import { renderZpl } from '$lib/server/services/tag-render-service';
+
+beforeEach(() => {
+	hoisted.row = barbellRow();
+});
 
 const DPI = 203;
 const NECK_START = Math.round(0.85 * DPI); // 173
@@ -90,6 +99,24 @@ describe('renderZpl barbell two-pad layout', () => {
 		const zpl = await renderZpl(baseCtx);
 		const dx = foBefore(zpl, /\^FDVintage/);
 		expect(dx).toBeGreaterThanOrEqual(NECK_END);
+	});
+
+	it('keeps the barcode from dominating the pad height', async () => {
+		const zpl = await renderZpl(baseCtx);
+		const m = zpl.match(/\^BCN,(\d+),/);
+		expect(m).not.toBeNull();
+		const barH = parseInt(m![1], 10);
+		const heightDots = Math.round(0.613 * DPI); // 124
+		// Barcode should leave clear vertical breathing room on the pad.
+		expect(barH).toBeLessThanOrEqual(Math.round(heightDots * 0.5));
+	});
+
+	it('honors an explicit barcodeHeightIn from shape_dims_json (no rebuild to tune)', async () => {
+		hoisted.row.shapeDimsJson.pads[0].barcodeHeightIn = 0.2;
+		const zpl = await renderZpl(baseCtx);
+		const m = zpl.match(/\^BCN,(\d+),/);
+		expect(m).not.toBeNull();
+		expect(parseInt(m![1], 10)).toBe(Math.round(0.2 * DPI)); // 41
 	});
 
 	it('leaves the fold/neck region blank (no field originates inside it)', async () => {
