@@ -170,6 +170,15 @@ export async function renderBarcodeSvg(
 export async function renderTagSvg(ctx: TagRenderContext): Promise<string> {
 	const eff = resolveSettings(ctx.settings);
 	const dims = await getFormatDimensions(ctx.formatCode ?? eff.preferredFormat);
+	return renderTagSvgFromDimensions(dims, ctx);
+}
+
+/** Render the preview SVG from already-resolved dimensions (no DB lookup). */
+export async function renderTagSvgFromDimensions(
+	dims: TagDimensions,
+	ctx: TagRenderContext
+): Promise<string> {
+	const eff = resolveSettings(ctx.settings);
 	const widthPx = Math.round(dims.widthInches * 96); // 96 dpi screen
 	const heightPx = Math.round(dims.heightInches * 96);
 
@@ -413,9 +422,16 @@ function embedSvgFitContent(svg: string): string {
  * Code 128: ^BC. Data Matrix: ^BX. Vendor's `barcodeSymbology` setting picks.
  */
 export async function renderZpl(ctx: TagRenderContext): Promise<string> {
-	const copies = Math.max(1, Math.min(99, Math.floor(ctx.copies ?? 1)));
 	const eff = resolveSettings(ctx.settings);
 	const dims = await getFormatDimensions(ctx.formatCode || eff.preferredFormat);
+	return renderZplFromDimensions(dims, ctx);
+}
+
+/** Render ZPL from already-resolved dimensions (no DB lookup) — lets callers
+ *  (e.g. the label designer) preview a format that isn't saved yet. */
+export function renderZplFromDimensions(dims: TagDimensions, ctx: TagRenderContext): string {
+	const copies = Math.max(1, Math.min(99, Math.floor(ctx.copies ?? 1)));
+	const eff = resolveSettings(ctx.settings);
 	const dpi = ctx.dpi || eff.zebraDpi || 203;
 	const widthDots = Math.round(dims.widthInches * dpi);
 	const heightDots = Math.round(dims.heightInches * dpi);
