@@ -57,8 +57,19 @@ export interface BarbellPad {
 	 *  label height when omitted. */
 	barcodeHeightIn?: number;
 }
+/** Per-line font multipliers (default 1.0 each), stored per format in
+ *  shape_dims_json so sizing is tunable without a rebuild. */
+export interface LineScales {
+	header?: number;
+	barcode?: number;
+	partNumber?: number;
+	description?: number;
+	price?: number;
+	footer?: number;
+}
 export interface BarbellShapeDims {
-	pads: BarbellPad[];
+	pads?: BarbellPad[];
+	lineScales?: LineScales;
 }
 
 export interface TagDimensions {
@@ -195,10 +206,13 @@ export async function renderTagSvgFromDimensions(
 	// Font sizes scale with format and user preference.
 	const baseFs = Math.max(8, heightPx * 0.09);
 	const scale = eff.fontScale === 'small' ? 0.85 : eff.fontScale === 'large' ? 1.15 : 1;
-	const fsHeader = Math.round(baseFs * 1.0 * scale);
-	const fsBody = Math.round(baseFs * 0.85 * scale);
-	const fsPrice = Math.round(baseFs * 1.6 * scale);
-	const fsPartNum = Math.round(baseFs * 0.9 * scale);
+	// Per-line scale from the format (default 1.0), applied on top of the base.
+	const fsHeader = Math.round(baseFs * 1.0 * scale * lineScale(dims, 'header'));
+	const fsBodyDesc = Math.round(baseFs * 0.85 * scale * lineScale(dims, 'description'));
+	const fsBodyFooter = Math.round(baseFs * 0.85 * scale * lineScale(dims, 'footer'));
+	const fsPrice = Math.round(baseFs * 1.6 * scale * lineScale(dims, 'price'));
+	const fsPartNum = Math.round(baseFs * 0.9 * scale * lineScale(dims, 'partNumber'));
+	const barcodeRowH = heightPx * 0.32 * lineScale(dims, 'barcode');
 
 	// Barcode renders into a row inside the SVG. Roughly 35% of tag height.
 	let barcodeSvg = '';
@@ -221,7 +235,7 @@ export async function renderTagSvgFromDimensions(
 	if (eff.includeBarcode && barcodeSvg) {
 		rows.push({
 			content: `<g transform="translate(${widthPx * 0.1}, 0) scale(${(widthPx * 0.8) / 200}, 1)">${barcodeSvg}</g>`,
-			height: heightPx * 0.32
+			height: barcodeRowH
 		});
 	}
 	if (eff.includePartNumber && partNumber) {
@@ -233,8 +247,8 @@ export async function renderTagSvgFromDimensions(
 	if (eff.includeDescription && (partName || description)) {
 		const text = partName || description;
 		rows.push({
-			content: `<text x="${widthPx / 2}" y="0" font-family="Arial, sans-serif" font-size="${fsBody}" text-anchor="middle">${escapeXml(truncate(text, 40))}</text>`,
-			height: fsBody * 1.2
+			content: `<text x="${widthPx / 2}" y="0" font-family="Arial, sans-serif" font-size="${fsBodyDesc}" text-anchor="middle">${escapeXml(truncate(text, 40))}</text>`,
+			height: fsBodyDesc * 1.2
 		});
 	}
 	if (eff.includePrice && priceText) {
@@ -245,8 +259,8 @@ export async function renderTagSvgFromDimensions(
 	}
 	if (footer) {
 		rows.push({
-			content: `<text x="${widthPx / 2}" y="0" font-family="Arial, sans-serif" font-size="${fsBody}" text-anchor="middle">${escapeXml(footer)}</text>`,
-			height: fsBody * 1.2
+			content: `<text x="${widthPx / 2}" y="0" font-family="Arial, sans-serif" font-size="${fsBodyFooter}" text-anchor="middle">${escapeXml(footer)}</text>`,
+			height: fsBodyFooter * 1.2
 		});
 	}
 
@@ -427,6 +441,12 @@ export async function renderZpl(ctx: TagRenderContext): Promise<string> {
 	return renderZplFromDimensions(dims, ctx);
 }
 
+/** Per-line font multiplier from the format's shape_dims_json (default 1.0). */
+function lineScale(dims: TagDimensions, key: keyof LineScales): number {
+	const v = dims.shapeDims?.lineScales?.[key];
+	return typeof v === 'number' && v > 0 ? v : 1;
+}
+
 /** Render ZPL from already-resolved dimensions (no DB lookup) — lets callers
  *  (e.g. the label designer) preview a format that isn't saved yet. */
 export function renderZplFromDimensions(dims: TagDimensions, ctx: TagRenderContext): string {
@@ -460,11 +480,12 @@ export function renderZplFromDimensions(dims: TagDimensions, ctx: TagRenderConte
 	const usable = heightDots - padTop - padBottom;
 
 	const scale = eff.fontScale === 'small' ? 0.85 : eff.fontScale === 'large' ? 1.15 : 1;
-	const fH = Math.max(18, Math.round(heightDots * 0.14 * scale));      // header (vendor name) — sized prominently
-	const fBody = Math.max(12, Math.round(heightDots * 0.08 * scale));   // footer
-	const fPart = Math.max(12, Math.round(heightDots * 0.085 * scale));  // part #
-	const fDesc = Math.max(14, Math.round(heightDots * 0.13 * scale));   // description (enlarged)
-	const fPrice = Math.max(18, Math.round(heightDots * 0.125 * scale)); // price
+	// Base per-line fonts, then a per-line scale from the format (default 1.0).
+	const fH = Math.round(Math.max(18, Math.round(heightDots * 0.14 * scale)) * lineScale(dims, 'header'));
+	const fBody = Math.round(Math.max(12, Math.round(heightDots * 0.08 * scale)) * lineScale(dims, 'footer'));
+	const fPart = Math.round(Math.max(12, Math.round(heightDots * 0.085 * scale)) * lineScale(dims, 'partNumber'));
+	const fDesc = Math.round(Math.max(14, Math.round(heightDots * 0.13 * scale)) * lineScale(dims, 'description'));
+	const fPrice = Math.round(Math.max(18, Math.round(heightDots * 0.125 * scale)) * lineScale(dims, 'price'));
 
 	// Optional vertical date down one edge. Skipped on labels too short to hold
 	// it (barbell/jewelry stock < 0.8").
@@ -478,7 +499,7 @@ export function renderZplFromDimensions(dims: TagDimensions, ctx: TagRenderConte
 	if (eff.includeBarcode && partNumber) {
 		rows.push({
 			kind: 'barcode',
-			height: Math.round(usable * 0.24),
+			height: Math.round(Math.round(usable * 0.24) * lineScale(dims, 'barcode')),
 			payload: partNumber,
 			opts: { sym: eff.barcodeSymbology }
 		});
@@ -608,7 +629,7 @@ function renderBarbellZpl(
 
 	const cmds: string[] = ['^XA', `^PW${widthDots}`, `^LL${heightDots}`, '^LH0,0', '^CI28'];
 
-	for (const pad of shape.pads) {
+	for (const pad of shape.pads ?? []) {
 		const x0 = Math.round(pad.xIn * dpi);
 		const padW = Math.round(pad.widthIn * dpi);
 		if (pad.role === 'barcode') {
