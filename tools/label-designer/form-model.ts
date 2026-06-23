@@ -1,5 +1,9 @@
 import type { LabelFormatInput } from '$lib/server/services/label-format-service';
-import type { TagDimensions, TagRenderContext } from '$lib/server/services/tag-render-service';
+import type {
+	TagDimensions,
+	TagRenderContext,
+	LineScales
+} from '$lib/server/services/tag-render-service';
 
 export interface PadInput {
 	role: 'barcode' | 'info';
@@ -25,6 +29,7 @@ export interface FormState {
 	hPitchIn?: number | null;
 	mediaShape: 'rectangle' | 'barbell';
 	pads?: PadInput[];
+	lineScales?: LineScales;
 	mediaSensor?: 'gap' | 'mark' | 'continuous' | null;
 	manufacturer?: 'zebra' | 'avery' | 'custom';
 	partNumber?: string | null;
@@ -37,6 +42,14 @@ export function parsePriceToCents(s: string): number | null {
 	if (!t) return null;
 	const n = Number(t);
 	return Number.isFinite(n) ? Math.round(n * 100) : null;
+}
+
+/** Build shape_dims_json from barbell pads and/or per-line scales (null if neither). */
+function buildShapeDims(f: FormState): Record<string, unknown> | null {
+	const sd: Record<string, unknown> = {};
+	if (f.mediaShape === 'barbell' && f.pads?.length) sd.pads = f.pads;
+	if (f.lineScales && Object.keys(f.lineScales).length) sd.lineScales = f.lineScales;
+	return Object.keys(sd).length ? sd : null;
 }
 
 export function formStateToInput(f: FormState): LabelFormatInput {
@@ -56,7 +69,7 @@ export function formStateToInput(f: FormState): LabelFormatInput {
 		verticalPitchInches: sheet ? f.vPitchIn ?? null : null,
 		horizontalPitchInches: sheet ? f.hPitchIn ?? null : null,
 		mediaShape: f.mediaShape,
-		shapeDimsJson: f.mediaShape === 'barbell' && f.pads?.length ? { pads: f.pads } : null,
+		shapeDimsJson: buildShapeDims(f),
 		mediaSensor: f.mediaSensor ?? (sheet ? null : 'gap'),
 		category: f.layout,
 		manufacturer: f.manufacturer ?? 'custom',
@@ -71,7 +84,7 @@ export function formStateToDimensions(f: FormState): TagDimensions {
 		heightInches: f.heightIn,
 		cssClass: 'preview',
 		mediaShape: f.mediaShape,
-		shapeDims: f.mediaShape === 'barbell' && f.pads?.length ? { pads: f.pads } : null
+		shapeDims: buildShapeDims(f) as TagDimensions['shapeDims']
 	};
 }
 
