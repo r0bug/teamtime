@@ -18,7 +18,11 @@ npm run label-designer
 ### Env vars
 - `DATABASE_URL` (required) — the DB the **Save** button writes to. The UI shows
   the resolved host/name; Save confirms it.
-- `LABEL_DESIGNER_PORT` — server port (default `5599`, bound to `127.0.0.1`).
+- `LABEL_DESIGNER_PORT` — server port (default `5599`).
+- `LABEL_DESIGNER_HOST` — bind address (default `127.0.0.1`). On a **headless**
+  fleet box, set it to the overlay/LAN IP (e.g. `10.42.0.11`) to reach the UI
+  from another machine, or leave it loopback and use an SSH tunnel
+  (`ssh -L 5599:localhost:5599 robug@<box>` → open `http://localhost:5599`).
 - `LABEL_DESIGNER_TUNNEL` — ssh host to auto-open a Postgres tunnel before start.
 
 ## Writing to production
