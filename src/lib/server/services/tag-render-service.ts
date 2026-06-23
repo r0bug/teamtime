@@ -44,10 +44,27 @@ export interface TagRenderContext {
 	edgeDateSide?: 'left' | 'right';
 }
 
+/**
+ * A printable end-pad of a barbell/rat-tail tag, in inches from the label's
+ * left edge. The gap between pads is the fold/neck and prints blank.
+ */
+export interface BarbellPad {
+	role: 'barcode' | 'info';
+	xIn: number;
+	widthIn: number;
+}
+export interface BarbellShapeDims {
+	pads: BarbellPad[];
+}
+
 export interface TagDimensions {
 	widthInches: number;
 	heightInches: number;
 	cssClass: string;
+	/** 'rectangle' | 'barbell' | 'circle' | 'custom' — drives layout. */
+	mediaShape?: string;
+	/** Per-pad geometry for barbell stock; null for plain rectangles. */
+	shapeDims?: BarbellShapeDims | null;
 }
 
 // Hard-coded fallback in case the DB lookup misses (offline mode, race
@@ -75,7 +92,9 @@ export async function getFormatDimensions(format: string): Promise<TagDimensions
 		return {
 			widthInches: parseFloat(row.labelWidthInches),
 			heightInches: parseFloat(row.labelHeightInches),
-			cssClass: `tag-${row.code.replace(/_/g, '-')}`
+			cssClass: `tag-${row.code.replace(/_/g, '-')}`,
+			mediaShape: row.mediaShape ?? undefined,
+			shapeDims: (row.shapeDimsJson as BarbellShapeDims | null) ?? null
 		};
 	}
 	return FALLBACK_DIMENSIONS[format] ?? FALLBACK_DIMENSIONS.avery_5160;
@@ -397,6 +416,13 @@ export async function renderZpl(ctx: TagRenderContext): Promise<string> {
 	const widthDots = Math.round(dims.widthInches * dpi);
 	const heightDots = Math.round(dims.heightInches * dpi);
 
+	// Barbell/rat-tail jewelry stock: two printable end pads joined by a thin
+	// fold. The generic vertical-stack layout below centers content on the
+	// fold; barbell needs a side-by-side, fold-clearing layout instead.
+	if (dims.mediaShape === 'barbell') {
+		return renderBarbellZpl(ctx, eff, dims, dpi, copies);
+	}
+
 	const header = (eff.headerLine?.trim() || ctx.vendorDisplayName).slice(0, 64);
 	const partNumber = ctx.item.partNumber;
 	const partName = (ctx.item.name ?? '').slice(0, 64);
@@ -517,6 +543,153 @@ export async function renderZpl(ctx: TagRenderContext): Promise<string> {
 	cmds.push(`^PQ${copies}`);                 // print quantity
 	cmds.push('^XZ');                  // end of label
 	return cmds.join('\n');
+}
+
+/**
+ * Fallback pad geometry when a barbell format has no `shape_dims_json`:
+ * 40% pad / 20% blank neck / 40% pad. Keeps output sane pre-migration.
+ */
+function defaultBarbellPads(widthInches: number): BarbellShapeDims {
+	const padW = widthInches * 0.4;
+	return {
+		pads: [
+			{ role: 'barcode', xIn: 0, widthIn: padW },
+			{ role: 'info', xIn: widthInches - padW, widthIn: padW }
+		]
+	};
+}
+
+/**
+ * Barbell/rat-tail layout: each pad is rendered independently inside its own
+ * x-window so nothing lands on the fold/neck between them. By default the
+ * barcode (SKU) goes on one pad and price + description on the other.
+ */
+function renderBarbellZpl(
+	ctx: TagRenderContext,
+	eff: ReturnType<typeof resolveSettings>,
+	dims: TagDimensions,
+	dpi: number,
+	copies: number
+): string {
+	const widthDots = Math.round(dims.widthInches * dpi);
+	const heightDots = Math.round(dims.heightInches * dpi);
+	const shape =
+		dims.shapeDims && dims.shapeDims.pads?.length
+			? dims.shapeDims
+			: defaultBarbellPads(dims.widthInches);
+
+	const scale = eff.fontScale === 'small' ? 0.85 : eff.fontScale === 'large' ? 1.15 : 1;
+	const partNumber = ctx.item.partNumber;
+	const priceText =
+		ctx.item.priceCents !== null && ctx.item.priceCents !== undefined
+			? `$${(ctx.item.priceCents / 100).toFixed(2)}`
+			: '';
+	const description = ((ctx.item.name || ctx.item.description) ?? '').slice(0, 64);
+
+	const cmds: string[] = ['^XA', `^PW${widthDots}`, `^LL${heightDots}`, '^LH0,0', '^CI28'];
+
+	for (const pad of shape.pads) {
+		const x0 = Math.round(pad.xIn * dpi);
+		const padW = Math.round(pad.widthIn * dpi);
+		if (pad.role === 'barcode') {
+			barbellBarcodePad(cmds, { x0, padW, heightDots, partNumber, eff, scale });
+		} else {
+			barbellInfoPad(cmds, { x0, padW, heightDots, priceText, description, eff, scale });
+		}
+	}
+
+	cmds.push(`^PQ${copies}`);
+	cmds.push('^XZ');
+	return cmds.join('\n');
+}
+
+/** Render the SKU barcode (and optional human-readable SKU) inside one pad. */
+function barbellBarcodePad(
+	cmds: string[],
+	p: {
+		x0: number;
+		padW: number;
+		heightDots: number;
+		partNumber: string;
+		eff: ReturnType<typeof resolveSettings>;
+		scale: number;
+	}
+): void {
+	const { x0, padW, heightDots, partNumber, eff, scale } = p;
+	if (!partNumber) return;
+	const margin = Math.max(4, Math.round(padW * 0.06));
+	const inner = padW - 2 * margin;
+	const showText = eff.includePartNumber;
+	const fPart = showText ? Math.max(12, Math.round(heightDots * 0.16 * scale)) : 0;
+	const textGap = showText ? 3 : 0;
+	const barTop = Math.round(heightDots * 0.08);
+	const barH = Math.max(20, heightDots - barTop - fPart - textGap - Math.round(heightDots * 0.06));
+
+	if (eff.includeBarcode) {
+		if (eff.barcodeSymbology === 'datamatrix') {
+			const side = Math.min(inner, heightDots - barTop - fPart - textGap);
+			const moduleSize = Math.max(3, Math.round(side / 24));
+			const dx = x0 + Math.max(margin, Math.round((padW - side) / 2));
+			cmds.push(`^FO${dx},${barTop}`);
+			cmds.push(`^BXN,${moduleSize},200`);
+			cmds.push(`^FD${zplEscape(partNumber)}^FS`);
+		} else {
+			// Code 128: pick the widest narrow-bar (1-3 dots) that still fits the pad,
+			// so the symbol never crosses into the fold.
+			const modules = partNumber.length * 11 + 35; // incl. start/stop/check
+			const narrow = Math.max(1, Math.min(3, Math.floor(inner / modules)));
+			const bcW = modules * narrow;
+			const bx = x0 + Math.max(margin, Math.round((padW - bcW) / 2));
+			cmds.push('^BY' + narrow);
+			cmds.push(`^FO${bx},${barTop}`);
+			cmds.push(`^BCN,${barH},N,N,N`);
+			cmds.push(`^FD${zplEscape(partNumber)}^FS`);
+		}
+	}
+	if (showText) {
+		const ty = eff.includeBarcode ? barTop + barH + textGap : Math.round((heightDots - fPart) / 2);
+		cmds.push(`^FO${x0},${ty}`);
+		cmds.push(`^A0N,${fPart},${fPart}`);
+		cmds.push(`^FB${padW},1,0,C,0`);
+		cmds.push(`^FD${zplEscape(partNumber)}^FS`);
+	}
+}
+
+/** Render price + description, vertically centered, inside one pad. */
+function barbellInfoPad(
+	cmds: string[],
+	p: {
+		x0: number;
+		padW: number;
+		heightDots: number;
+		priceText: string;
+		description: string;
+		eff: ReturnType<typeof resolveSettings>;
+		scale: number;
+	}
+): void {
+	const { x0, padW, heightDots, priceText, description, eff, scale } = p;
+	const rows: { text: string; f: number; lines: number }[] = [];
+	if (eff.includePrice && priceText) {
+		rows.push({ text: priceText, f: Math.max(20, Math.round(heightDots * 0.3 * scale)), lines: 1 });
+	}
+	if (eff.includeDescription && description) {
+		rows.push({ text: description, f: Math.max(12, Math.round(heightDots * 0.16 * scale)), lines: 2 });
+	}
+	if (rows.length === 0) return;
+
+	const lineH = (r: { f: number; lines: number }) => r.f * 1.2 * r.lines;
+	const total = rows.reduce((s, r) => s + lineH(r), 0);
+	let y = Math.max(2, Math.round((heightDots - total) / 2));
+	for (const r of rows) {
+		const maxChars = Math.max(1, Math.floor((padW * r.lines) / (r.f * 0.6)));
+		const text = r.text.length > maxChars ? r.text.slice(0, maxChars) : r.text;
+		cmds.push(`^FO${x0},${Math.round(y)}`);
+		cmds.push(`^A0N,${r.f},${r.f}`);
+		cmds.push(`^FB${padW},${r.lines},0,C,0`);
+		cmds.push(`^FD${zplEscape(text)}^FS`);
+		y += lineH(r);
+	}
 }
 
 /**
