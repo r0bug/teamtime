@@ -52,6 +52,10 @@ export interface BarbellPad {
 	role: 'barcode' | 'info';
 	xIn: number;
 	widthIn: number;
+	/** Barcode pad only: explicit barcode height in inches. Tunable from the DB
+	 *  (shape_dims_json) so height changes need no rebuild. Defaults to ~45% of
+	 *  label height when omitted. */
+	barcodeHeightIn?: number;
 }
 export interface BarbellShapeDims {
 	pads: BarbellPad[];
@@ -592,7 +596,8 @@ function renderBarbellZpl(
 		const x0 = Math.round(pad.xIn * dpi);
 		const padW = Math.round(pad.widthIn * dpi);
 		if (pad.role === 'barcode') {
-			barbellBarcodePad(cmds, { x0, padW, heightDots, partNumber, eff, scale });
+			const barHeightDots = pad.barcodeHeightIn ? Math.round(pad.barcodeHeightIn * dpi) : undefined;
+			barbellBarcodePad(cmds, { x0, padW, heightDots, partNumber, eff, scale, barHeightDots });
 		} else {
 			barbellInfoPad(cmds, { x0, padW, heightDots, priceText, description, eff, scale });
 		}
@@ -613,17 +618,22 @@ function barbellBarcodePad(
 		partNumber: string;
 		eff: ReturnType<typeof resolveSettings>;
 		scale: number;
+		barHeightDots?: number;
 	}
 ): void {
-	const { x0, padW, heightDots, partNumber, eff, scale } = p;
+	const { x0, padW, heightDots, partNumber, eff, scale, barHeightDots } = p;
 	if (!partNumber) return;
 	const margin = Math.max(4, Math.round(padW * 0.06));
 	const inner = padW - 2 * margin;
 	const showText = eff.includePartNumber;
 	const fPart = showText ? Math.max(12, Math.round(heightDots * 0.16 * scale)) : 0;
 	const textGap = showText ? 3 : 0;
-	const barTop = Math.round(heightDots * 0.08);
-	const barH = Math.max(20, heightDots - barTop - fPart - textGap - Math.round(heightDots * 0.06));
+	// Barcode height: explicit shape_dims_json value (tunable, no rebuild) or
+	// ~45% of label height so it doesn't dominate the small pad. Center the
+	// barcode (+ SKU text) block vertically.
+	const barH = Math.max(20, barHeightDots ?? Math.round(heightDots * 0.45));
+	const blockH = barH + (showText ? textGap + fPart : 0);
+	const barTop = Math.max(2, Math.round((heightDots - blockH) / 2));
 
 	if (eff.includeBarcode) {
 		if (eff.barcodeSymbology === 'datamatrix') {
