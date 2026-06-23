@@ -28,6 +28,7 @@ import {
 } from '$lib/server/db/schema';
 import { getVendors as fetchNrsVendors, getVendorDetail, type NrsVendorDetail } from './nrs-api-client';
 import { getVendorWebFlagsBatch } from './nrs-web-client';
+import { getPacificDateParts } from '$lib/server/utils/timezone';
 import { hashPin } from '$lib/server/auth/pin';
 import { sendVendorPortalInvitationEmail } from '$lib/server/email';
 import { sendSMS, formatPhoneToE164 } from '$lib/server/twilio';
@@ -1331,10 +1332,13 @@ export async function generatePartNumber(vendorId: string, opts?: { now?: Date }
 		);
 	}
 
+	// Day bucket keyed on store-local (Pacific) date, so an item tagged in the
+	// evening stays on the correct business day (UTC would roll it to tomorrow).
 	const now = opts?.now ?? new Date();
-	const m = String(now.getUTCMonth() + 1);
-	const dd = String(now.getUTCDate()).padStart(2, '0');
-	const yy = String(now.getUTCFullYear()).slice(-2);
+	const pac = getPacificDateParts(now);
+	const m = String(pac.month); // no leading zero (matches MDDYY)
+	const dd = String(pac.day).padStart(2, '0');
+	const yy = String(pac.year).slice(-2);
 	const dateStr = `${m}${dd}${yy}`;
 
 	// Atomic increment: insert with last_number=1 if no row, otherwise bump.
