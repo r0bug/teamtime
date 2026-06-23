@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Label Format Designer</title>
+		<style>
+			* { box-sizing: border-box; }
+			body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: #111; }
+			header { background: #0f172a; color: #fff; padding: 8px 16px; display: flex; gap: 16px; align-items: center; }
+			header b { font-size: 15px; }
+			#dbLabel { margin-left: auto; font: 12px monospace; background: #1e293b; padding: 4px 8px; border-radius: 4px; }
+			main { display: grid; grid-template-columns: 360px 1fr; gap: 0; height: calc(100vh - 41px); }
+			form { padding: 16px; overflow: auto; border-right: 1px solid #e5e7eb; }
+			.row { display: flex; gap: 8px; margin-bottom: 8px; }
+			.row label { flex: 1; display: flex; flex-direction: column; font-size: 12px; color: #475569; gap: 2px; }
+			input, select { padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font: inherit; }
+			fieldset { border: 1px solid #e5e7eb; border-radius: 6px; margin: 12px 0; padding: 10px; }
+			legend { font-size: 12px; color: #475569; padding: 0 4px; }
+			button { padding: 8px 12px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; font: inherit; }
+			button.secondary { background: #475569; }
+			button.save { background: #16a34a; }
+			.preview-pane { padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 16px; overflow: auto; background: #f8fafc; }
+			.preview-box { background: #fff; border: 1px solid #cbd5e1; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+			.pad-row { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+			.pad-row input { width: 70px; }
+			#msg { min-height: 18px; font-size: 13px; }
+			.ok { color: #16a34a; } .err { color: #dc2626; }
+		</style>
+	</head>
+	<body>
+		<header>
+			<b>Label Format Designer</b>
+			<span id="dbLabel">db: …</span>
+		</header>
+		<main>
+			<form id="f" autocomplete="off">
+				<div class="row">
+					<label>Code<input id="code" placeholder="zebra_gk420t_15x1" /></label>
+				</div>
+				<div class="row">
+					<label>Name<input id="name" placeholder="Zebra 1.5 x 1 (GK420t)" /></label>
+				</div>
+				<div class="row">
+					<label>Layout<select id="layout"><option value="thermal">thermal</option><option value="sheet">sheet</option></select></label>
+					<label>DPI<input id="dpi" type="number" value="203" /></label>
+				</div>
+				<div class="row">
+					<label>Width (in)<input id="widthIn" type="number" step="0.0625" value="1.5" /></label>
+					<label>Height (in)<input id="heightIn" type="number" step="0.0625" value="1.0" /></label>
+				</div>
+				<div class="row">
+					<label>Media shape<select id="mediaShape"><option value="rectangle">rectangle</option><option value="barbell">barbell</option></select></label>
+					<label>Sensor<select id="mediaSensor"><option value="gap">gap</option><option value="mark">mark</option><option value="continuous">continuous</option></select></label>
+				</div>
+				<div class="row">
+					<label>Manufacturer<select id="manufacturer"><option value="zebra">zebra</option><option value="avery">avery</option><option value="custom">custom</option></select></label>
+					<label>Part #<input id="partNumber" placeholder="optional" /></label>
+				</div>
+
+				<fieldset id="sheetFields" style="display:none">
+					<legend>Sheet</legend>
+					<div class="row">
+						<label>Page W<input id="pageWidthIn" type="number" step="0.01" value="8.5" /></label>
+						<label>Page H<input id="pageHeightIn" type="number" step="0.01" value="11" /></label>
+					</div>
+					<div class="row">
+						<label>Cols<input id="cols" type="number" value="3" /></label>
+						<label>Rows<input id="rows" type="number" value="10" /></label>
+					</div>
+					<div class="row">
+						<label>Margin top<input id="marginTopIn" type="number" step="0.01" value="0.5" /></label>
+						<label>Margin left<input id="marginLeftIn" type="number" step="0.01" value="0.19" /></label>
+					</div>
+					<div class="row">
+						<label>V pitch<input id="vPitchIn" type="number" step="0.01" value="0" /></label>
+						<label>H pitch<input id="hPitchIn" type="number" step="0.01" value="0.13" /></label>
+					</div>
+				</fieldset>
+
+				<fieldset id="barbellFields" style="display:none">
+					<legend>Barbell pads (inches from left)</legend>
+					<div id="pads"></div>
+					<button type="button" class="secondary" id="addPad">+ pad</button>
+				</fieldset>
+
+				<fieldset>
+					<legend>Sample data (preview only)</legend>
+					<div class="row"><label>Vendor<input id="s_vendor" value="Yakima Finds" /></label></div>
+					<div class="row">
+						<label>Price<input id="s_price" value="$9.99" /></label>
+						<label>SKU<input id="s_sku" value="SR62301001" /></label>
+					</div>
+					<div class="row"><label>Description<input id="s_desc" value="Vintage Pyrex bowl" /></label></div>
+					<label>Font scale<select id="fontScale"><option>small</option><option selected>medium</option><option>large</option></select></label>
+				</fieldset>
+
+				<div class="row">
+					<label>Printer (host:port)<input id="printer" placeholder="192.168.88.x:9100" /></label>
+				</div>
+				<div class="row">
+					<button type="button" id="borderBtn" class="secondary">Test print: border</button>
+					<button type="button" id="sampleBtn" class="secondary">Test print: sample</button>
+				</div>
+				<div class="row">
+					<button type="button" id="saveBtn" class="save">Save to DB</button>
+				</div>
+				<div id="msg"></div>
+			</form>
+
+			<div class="preview-pane">
+				<div class="preview-box" id="preview">…</div>
+				<small>Preview at 96px/in. Print to verify true size.</small>
+			</div>
+		</main>
+
+		<script>
+			const $ = (id) => document.getElementById(id);
+			const num = (id) => parseFloat($(id).value) || 0;
+
+			function collectForm() {
+				const layout = $('layout').value;
+				const mediaShape = $('mediaShape').value;
+				const f = {
+					code: $('code').value.trim(),
+					name: $('name').value.trim(),
+					layout,
+					dpi: num('dpi'),
+					widthIn: num('widthIn'),
+					heightIn: num('heightIn'),
+					mediaShape,
+					mediaSensor: $('mediaSensor').value,
+					manufacturer: $('manufacturer').value,
+					partNumber: $('partNumber').value.trim() || null,
+					fontScale: $('fontScale').value,
+					sample: {
+						vendorName: $('s_vendor').value,
+						price: $('s_price').value,
+						sku: $('s_sku').value,
+						description: $('s_desc').value
+					}
+				};
+				if (layout === 'sheet') {
+					Object.assign(f, {
+						pageWidthIn: num('pageWidthIn'), pageHeightIn: num('pageHeightIn'),
+						cols: num('cols'), rows: num('rows'),
+						marginTopIn: num('marginTopIn'), marginLeftIn: num('marginLeftIn'),
+						vPitchIn: num('vPitchIn'), hPitchIn: num('hPitchIn')
+					});
+				}
+				if (mediaShape === 'barbell') f.pads = collectPads();
+				return f;
+			}
+
+			function collectPads() {
+				return [...document.querySelectorAll('#pads .pad-row')].map((r) => {
+					const role = r.querySelector('.p-role').value;
+					const pad = {
+						role,
+						xIn: parseFloat(r.querySelector('.p-x').value) || 0,
+						widthIn: parseFloat(r.querySelector('.p-w').value) || 0
+					};
+					const bh = r.querySelector('.p-bh');
+					if (role === 'barcode' && bh && bh.value) pad.barcodeHeightIn = parseFloat(bh.value);
+					return pad;
+				});
+			}
+
+			function addPad(role = 'barcode', xIn = 0, widthIn = 0.85) {
+				const div = document.createElement('div');
+				div.className = 'pad-row';
+				div.innerHTML =
+					'<select class="p-role"><option value="barcode">barcode</option><option value="info">info</option></select>' +
+					'x<input class="p-x" type="number" step="0.01" value="' + xIn + '"/>' +
+					'w<input class="p-w" type="number" step="0.01" value="' + widthIn + '"/>' +
+					'bcH<input class="p-bh" type="number" step="0.01" placeholder="auto"/>' +
+					'<button type="button" class="secondary p-del">×</button>';
+				div.querySelector('.p-role').value = role;
+				div.querySelector('.p-del').onclick = () => { div.remove(); render(); };
+				div.querySelectorAll('input,select').forEach((el) => el.addEventListener('input', render));
+				$('pads').appendChild(div);
+			}
+
+			function syncSections() {
+				$('sheetFields').style.display = $('layout').value === 'sheet' ? '' : 'none';
+				$('barbellFields').style.display = $('mediaShape').value === 'barbell' ? '' : 'none';
+			}
+
+			let t;
+			function render() {
+				clearTimeout(t);
+				t = setTimeout(async () => {
+					try {
+						const res = await fetch('/api/preview', {
+							method: 'POST', headers: { 'content-type': 'application/json' },
+							body: JSON.stringify(collectForm())
+						});
+						$('preview').innerHTML = res.ok ? await res.text() : 'preview error';
+					} catch (e) { $('preview').textContent = 'preview error'; }
+				}, 200);
+			}
+
+			function msg(text, cls) { $('msg').textContent = text; $('msg').className = cls || ''; }
+
+			async function testPrint(mode) {
+				const printer = $('printer').value.trim();
+				if (!printer) return msg('Enter a printer host:port', 'err');
+				msg('Printing ' + mode + '…');
+				const res = await fetch('/api/test-print', {
+					method: 'POST', headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ form: collectForm(), mode, printer })
+				});
+				const j = await res.json();
+				msg(res.ok ? '✓ sent ' + mode + ' to ' + printer : '✗ ' + (j.error || 'print failed'), res.ok ? 'ok' : 'err');
+			}
+
+			async function save() {
+				const f = collectForm();
+				if (!confirm('Save format "' + f.code + '" to ' + $('dbLabel').textContent + '?')) return;
+				msg('Saving…');
+				const res = await fetch('/api/save', {
+					method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(f)
+				});
+				const j = await res.json();
+				msg(res.ok ? '✓ saved ' + f.code : '✗ ' + (j.error || 'save failed'), res.ok ? 'ok' : 'err');
+			}
+
+			$('layout').addEventListener('change', () => { syncSections(); render(); });
+			$('mediaShape').addEventListener('change', () => { syncSections(); render(); });
+			$('addPad').onclick = () => { addPad('info', 1.275, 0.85); render(); };
+			$('borderBtn').onclick = () => testPrint('border');
+			$('sampleBtn').onclick = () => testPrint('sample');
+			$('saveBtn').onclick = save;
+			document.querySelectorAll('#f input, #f select').forEach((el) => el.addEventListener('input', render));
+
+			(async () => {
+				try { const d = await (await fetch('/api/db')).json(); $('dbLabel').textContent = 'db: ' + d.db; } catch {}
+				addPad('barcode', 0, 0.85);
+				addPad('info', 1.275, 0.85);
+				syncSections();
+				render();
+			})();
+		</script>
+	</body>
+</html>
