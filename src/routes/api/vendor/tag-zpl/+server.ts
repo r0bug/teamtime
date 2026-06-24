@@ -27,6 +27,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	}
 
 	const formatCode = url.searchParams.get('format')?.trim() || undefined;
+	const nameSource = url.searchParams.get('nameSource')?.trim();
 
 	const vendor = await getVendorForUser(locals.user.id);
 	if (!vendor) throw error(403, 'Vendor portal access not enabled');
@@ -42,7 +43,9 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	try {
 		await assertThermalFormat(formatCode);
-		const zpl = await renderVendorTagZpl(vendor, partNumber, { copies, formatCode });
+		const headerOverride =
+			nameSource === 'contact' ? (vendor.contactName ?? undefined) : undefined;
+		const zpl = await renderVendorTagZpl(vendor, partNumber, { copies, formatCode, headerOverride });
 		return new Response(zpl, {
 			headers: {
 				'Content-Type': 'text/plain; charset=utf-8',

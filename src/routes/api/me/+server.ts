@@ -29,6 +29,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		id: string;
 		prefix: string | null;
 		displayName: string;
+		contactName: string | null;
 		preferredFormatCode: string | null;
 	} | null = null;
 
@@ -42,6 +43,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			id: vendor.id,
 			prefix: vendor.inventoryCodePrefix ?? null,
 			displayName: vendor.displayName,
+			contactName: vendor.contactName ?? null,
 			preferredFormatCode: settings?.preferredFormat ?? null
 		};
 	}
