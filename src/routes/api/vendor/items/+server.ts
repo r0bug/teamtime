@@ -66,6 +66,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		description?: string;
 		priceDollars?: number | string;
 		quantity?: number | string;
+		categoryId?: number | string;
 		sendToPrinter?: boolean;
 	} = {};
 	try {
@@ -86,6 +87,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	if (body.quantity !== undefined && body.quantity !== null && body.quantity !== '') {
 		const q = parseInt(String(body.quantity), 10);
 		if (isFinite(q)) quantity = q;
+	}
+	let categoryId: number | undefined = undefined;
+	if (body.categoryId !== undefined && body.categoryId !== null && body.categoryId !== '') {
+		const c = parseInt(String(body.categoryId), 10);
+		if (isFinite(c)) categoryId = c;
 	}
 	const sendToPrinter = body.sendToPrinter === true;
 
@@ -114,7 +120,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 				partName: description,
 				description,
 				priceCents,
-				...(quantity !== undefined ? { quantity } : {})
+				...(quantity !== undefined ? { quantity } : {}),
+				...(categoryId !== undefined ? { categoryId } : {})
 			},
 			previousPayload: null
 		});
