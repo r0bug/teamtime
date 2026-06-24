@@ -17,6 +17,9 @@ export interface TagItem {
 
 export interface TagRenderContext {
 	vendorDisplayName: string;
+	/** Per-request header override (e.g. the vendor's first-contact/store name).
+	 *  Takes precedence over settings.headerLine and vendorDisplayName. */
+	headerOverride?: string;
 	settings: VendorTagSettings | null; // null → defaults
 	item: TagItem;
 	/**
@@ -193,7 +196,7 @@ export async function renderTagSvgFromDimensions(
 	const widthPx = Math.round(dims.widthInches * 96); // 96 dpi screen
 	const heightPx = Math.round(dims.heightInches * 96);
 
-	const header = eff.headerLine?.trim() || ctx.vendorDisplayName;
+	const header = ctx.headerOverride?.trim() || eff.headerLine?.trim() || ctx.vendorDisplayName;
 	const partNumber = ctx.item.partNumber;
 	const partName = ctx.item.name ?? '';
 	const description = ctx.item.description ?? '';
@@ -463,7 +466,7 @@ export function renderZplFromDimensions(dims: TagDimensions, ctx: TagRenderConte
 		return renderBarbellZpl(ctx, eff, dims, dpi, copies);
 	}
 
-	const header = (eff.headerLine?.trim() || ctx.vendorDisplayName).slice(0, 64);
+	const header = (ctx.headerOverride?.trim() || eff.headerLine?.trim() || ctx.vendorDisplayName).slice(0, 64);
 	const partNumber = ctx.item.partNumber;
 	const partName = (ctx.item.name ?? '').slice(0, 64);
 	const description = (ctx.item.description ?? '').slice(0, 64);

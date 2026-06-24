@@ -53,7 +53,7 @@ export async function assertThermalFormat(formatCode: string | undefined): Promi
 export async function renderVendorTagZpl(
 	vendor: Vendor,
 	partNumber: string,
-	opts: { copies?: number; formatCode?: string } = {}
+	opts: { copies?: number; formatCode?: string; headerOverride?: string } = {}
 ): Promise<string> {
 	let name: string | null = null;
 	let description: string | null = null;
@@ -112,6 +112,7 @@ export async function renderVendorTagZpl(
 
 	return renderZpl({
 		vendorDisplayName: vendor.displayName,
+		headerOverride: opts.headerOverride,
 		settings: settings ?? null,
 		item: { partNumber, name, description, priceCents },
 		copies: opts.copies,
