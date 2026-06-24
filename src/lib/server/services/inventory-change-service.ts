@@ -80,6 +80,8 @@ export interface ChangePayload {
 	description?: string;
 	priceCents?: number;
 	quantity?: number;
+	/** NRS inventory category id (invCategoryId), set from the desktop app. */
+	categoryId?: number;
 	/** Vendor-supplied reason, required on delete requests. */
 	reason?: string;
 	[key: string]: unknown;
@@ -257,7 +259,8 @@ export async function applyCreateViaApi(
 		// NRS's documented save params don't include quantityOnHand; send it
 		// best-effort so on-hand carries through when supported and is harmlessly
 		// ignored otherwise. The intended qty is preserved in the journal payload.
-		...(typeof p.quantity === 'number' ? { quantityOnHand: p.quantity } : {})
+		...(typeof p.quantity === 'number' ? { quantityOnHand: p.quantity } : {}),
+		...(typeof p.categoryId === 'number' ? { invCategoryId: p.categoryId } : {})
 	};
 
 	try {
