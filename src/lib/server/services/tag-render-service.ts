@@ -450,6 +450,72 @@ function lineScale(dims: TagDimensions, key: keyof LineScales): number {
 	return typeof v === 'number' && v > 0 ? v : 1;
 }
 
+// ── Smart font auto-fit ────────────────────────────────────────────────────────
+// Instead of a static font height (which silently truncates long item names),
+// shrink the font so the text fits — down to a 203dpi-relative readability floor,
+// wrapping the item name to a second line, and ellipsizing only as a last resort.
+
+/** Approx glyph advance of the ^A0 scalable font ≈ 0.6 × the font height. */
+const GLYPH_W = 0.6;
+
+/** Readability floor in dots: ~12 dots (≈4.3pt) at 203dpi, scaled to hold the
+ *  same physical size at other DPIs. Matches the existing Math.max(12,…) mins. */
+function fontFloorDots(dpi: number): number {
+	return Math.max(8, Math.round((12 * dpi) / 203));
+}
+
+/** Whole chars that fit on one line of width `blockW` at font height `h`. */
+function lineCapacity(blockW: number, h: number): number {
+	return Math.max(1, Math.floor(blockW / (h * GLYPH_W)));
+}
+
+/** Largest font height (≤ desired, ≥ floor) that fits `text` across up to
+ *  `maxLines` lines of width `blockW`. Never raises above `desired`. */
+function fitFontHeight(
+	text: string,
+	blockW: number,
+	desired: number,
+	floor: number,
+	maxLines: number
+): number {
+	if (!text) return desired;
+	const effFloor = Math.min(floor, desired);
+	const fit = Math.floor((maxLines * blockW) / (text.length * GLYPH_W));
+	return Math.max(effFloor, Math.min(desired, fit));
+}
+
+/** Lines (1..maxLines) the text needs at font `h`. */
+function neededLines(text: string, blockW: number, h: number, maxLines: number): number {
+	return Math.max(1, Math.min(maxLines, Math.ceil(text.length / lineCapacity(blockW, h))));
+}
+
+/** Ellipsize `text` only if it still can't fit `maxLines` lines at font `h`. */
+function fitTextToLines(text: string, blockW: number, h: number, maxLines: number): string {
+	const cap = lineCapacity(blockW, h) * maxLines;
+	if (text.length <= cap) return text;
+	return text.slice(0, Math.max(1, cap - 1)) + '…';
+}
+
+interface FittedLine {
+	font: number;
+	lines: number;
+	text: string;
+}
+
+/** Auto-fit one logical line: pick the font, line count, and (rarely) ellipsized
+ *  text so `text` fits `blockW` within `maxLines` and the dpi floor. */
+function fitLine(
+	text: string,
+	blockW: number,
+	desired: number,
+	dpi: number,
+	maxLines: number
+): FittedLine {
+	const font = fitFontHeight(text, blockW, desired, fontFloorDots(dpi), maxLines);
+	const lines = neededLines(text, blockW, font, maxLines);
+	return { font, lines, text: fitTextToLines(text, blockW, font, maxLines) };
+}
+
 /** Render ZPL from already-resolved dimensions (no DB lookup) — lets callers
  *  (e.g. the label designer) preview a format that isn't saved yet. */
 export function renderZplFromDimensions(dims: TagDimensions, ctx: TagRenderContext): string {
@@ -497,8 +563,22 @@ export function renderZplFromDimensions(dims: TagDimensions, ctx: TagRenderConte
 	const dateSide = ctx.edgeDateSide ?? 'right';
 	const dateCol = showDate ? fDate + 6 : 0; // reserved edge column so text/barcode clear it
 
-	const rows: { kind: 'text' | 'barcode'; height: number; payload: string; opts?: Record<string, number | string> }[] = [];
-	rows.push({ kind: 'text', height: fH, payload: header, opts: { font: fH, weight: 1 } });
+	// Content width available to text (the date column, if any, is reserved).
+	const fitW = widthDots - dateCol;
+
+	type Row = {
+		kind: 'text' | 'barcode';
+		height: number;
+		payload: string;
+		opts?: Record<string, number | string>;
+		pre?: FittedLine;
+	};
+	const rows: Row[] = [];
+
+	// Vendor/header name: shrink-to-fit on one line.
+	const preHeader = fitLine(header, fitW, fH, dpi, 1);
+	rows.push({ kind: 'text', height: preHeader.font, payload: header, pre: preHeader });
+
 	if (eff.includeBarcode && partNumber) {
 		rows.push({
 			kind: 'barcode',
@@ -507,11 +587,16 @@ export function renderZplFromDimensions(dims: TagDimensions, ctx: TagRenderConte
 			opts: { sym: eff.barcodeSymbology }
 		});
 	}
+	// Part number: shrink-to-fit on one line (same policy as the vendor name).
 	if (eff.includePartNumber && partNumber) {
-		rows.push({ kind: 'text', height: fPart, payload: partNumber, opts: { font: fPart } });
+		const prePart = fitLine(partNumber, fitW, fPart, dpi, 1);
+		rows.push({ kind: 'text', height: prePart.font, payload: partNumber, pre: prePart });
 	}
+	// Item name: shrink-to-fit, wrapping to a second line before hitting the floor.
 	if (eff.includeDescription && (partName || description)) {
-		rows.push({ kind: 'text', height: fDesc, payload: partName || description, opts: { font: fDesc } });
+		const name = partName || description;
+		const preDesc = fitLine(name, fitW, fDesc, dpi, 2);
+		rows.push({ kind: 'text', height: preDesc.font * preDesc.lines, payload: name, pre: preDesc });
 	}
 	if (eff.includePrice && priceText) {
 		rows.push({ kind: 'text', height: fPrice, payload: priceText, opts: { font: fPrice, weight: 1 } });
@@ -536,14 +621,22 @@ export function renderZplFromDimensions(dims: TagDimensions, ctx: TagRenderConte
 		// Content area is everything left of the reserved date column.
 		const blockW = widthDots - dateCol;
 		if (r.kind === 'text') {
-			const fontH = (r.opts?.font as number) ?? r.height;
-			// Truncate to one line that fits, so ^FB never wraps on top of itself.
-			const maxChars = Math.max(1, Math.floor(blockW / (fontH * 0.6)));
-			const text = r.payload.length > maxChars ? r.payload.slice(0, maxChars) : r.payload;
-			cmds.push(`^FO0,${rowY}`);
-			cmds.push(`^A0N,${fontH},${fontH}`);
-			cmds.push(`^FB${blockW},1,0,C,0`);
-			cmds.push(`^FD${zplEscape(text)}^FS`);
+			if (r.pre) {
+				// Auto-fitted line: pre-computed font, line count, and (rarely) ellipsis.
+				cmds.push(`^FO0,${rowY}`);
+				cmds.push(`^A0N,${r.pre.font},${r.pre.font}`);
+				cmds.push(`^FB${blockW},${r.pre.lines},0,C,0`);
+				cmds.push(`^FD${zplEscape(r.pre.text)}^FS`);
+			} else {
+				const fontH = (r.opts?.font as number) ?? r.height;
+				// Truncate to one line that fits, so ^FB never wraps on top of itself.
+				const maxChars = Math.max(1, Math.floor(blockW / (fontH * 0.6)));
+				const text = r.payload.length > maxChars ? r.payload.slice(0, maxChars) : r.payload;
+				cmds.push(`^FO0,${rowY}`);
+				cmds.push(`^A0N,${fontH},${fontH}`);
+				cmds.push(`^FB${blockW},1,0,C,0`);
+				cmds.push(`^FD${zplEscape(text)}^FS`);
+			}
 		} else {
 			const sym = (r.opts?.sym as string) ?? 'code_128';
 			if (sym === 'datamatrix') {
@@ -566,7 +659,10 @@ export function renderZplFromDimensions(dims: TagDimensions, ctx: TagRenderConte
 				const x = Math.max(margin, Math.round((blockW - bcW) / 2));
 				cmds.push('^BY' + narrow);
 				cmds.push(`^FO${x},${rowY}`);
-				cmds.push(`^BCN,${r.height},N,N,N`);
+				// Automatic mode (trailing ,A): the printer auto-uses Code 128 subset C
+				// for digit runs, packing two digits per symbol — a smaller barcode,
+				// still plain Code 128 (any 1D scanner reads it).
+				cmds.push(`^BCN,${r.height},N,N,N,A`);
 				cmds.push(`^FD${zplEscape(r.payload)}^FS`);
 			}
 		}
@@ -692,7 +788,7 @@ function barbellBarcodePad(
 			const bx = x0 + Math.max(margin, Math.round((padW - bcW) / 2));
 			cmds.push('^BY' + narrow);
 			cmds.push(`^FO${bx},${barTop}`);
-			cmds.push(`^BCN,${barH},N,N,N`);
+			cmds.push(`^BCN,${barH},N,N,N,A`); // Code 128 automatic mode (subset C packing)
 			cmds.push(`^FD${zplEscape(partNumber)}^FS`);
 		}
 	}
