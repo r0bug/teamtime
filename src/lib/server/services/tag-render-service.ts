@@ -232,27 +232,44 @@ export async function renderTagSvgFromDimensions(
 		}
 	}
 
+	// Content width the centered text must fit within (screen "dpi" = 96, so the
+	// auto-fit floor lands at the same physical size as the printed label).
+	const fitW = widthPx;
+	const SCREEN_DPI = 96;
+
 	// Compute vertical layout: header / barcode / partNumber / description / price / footer
 	const rows: { content: string; height: number }[] = [];
-	rows.push({ content: `<text x="${widthPx / 2}" y="0" font-family="Arial, sans-serif" font-size="${fsHeader}" font-weight="700" text-anchor="middle">${escapeXml(header)}</text>`, height: fsHeader * 1.2 });
+	// Vendor/header name: shrink-to-fit on one line.
+	const preHeader = fitLine(header, fitW, fsHeader, SCREEN_DPI, 1);
+	rows.push({ content: `<text x="${widthPx / 2}" y="0" font-family="Arial, sans-serif" font-size="${preHeader.font}" font-weight="700" text-anchor="middle">${escapeXml(preHeader.text)}</text>`, height: preHeader.font * 1.2 });
 	if (eff.includeBarcode && barcodeSvg) {
 		rows.push({
 			content: `<g transform="translate(${widthPx * 0.1}, 0) scale(${(widthPx * 0.8) / 200}, 1)">${barcodeSvg}</g>`,
 			height: barcodeRowH
 		});
 	}
+	// Part number: shrink-to-fit on one line (same policy as the vendor name).
 	if (eff.includePartNumber && partNumber) {
+		const prePart = fitLine(partNumber, fitW, fsPartNum, SCREEN_DPI, 1);
 		rows.push({
-			content: `<text x="${widthPx / 2}" y="0" font-family="monospace" font-size="${fsPartNum}" text-anchor="middle">${escapeXml(partNumber)}</text>`,
-			height: fsPartNum * 1.2
+			content: `<text x="${widthPx / 2}" y="0" font-family="monospace" font-size="${prePart.font}" text-anchor="middle">${escapeXml(prePart.text)}</text>`,
+			height: prePart.font * 1.2
 		});
 	}
+	// Item name: shrink-to-fit, wrapping to a second line before hitting the floor.
 	if (eff.includeDescription && (partName || description)) {
-		const text = partName || description;
-		rows.push({
-			content: `<text x="${widthPx / 2}" y="0" font-family="Arial, sans-serif" font-size="${fsBodyDesc}" text-anchor="middle">${escapeXml(truncate(text, 40))}</text>`,
-			height: fsBodyDesc * 1.2
-		});
+		const name = partName || description;
+		const preDesc = fitLine(name, fitW, fsBodyDesc, SCREEN_DPI, 2);
+		const dLines = wrapToLines(preDesc.text, fitW, preDesc.font, preDesc.lines);
+		const lh = preDesc.font * 1.2;
+		// Explicit (non-zero) y per line so the global y="0" centering pass skips these.
+		const content = dLines
+			.map(
+				(ln, i) =>
+					`<text x="${widthPx / 2}" y="${Math.round(lh * (i + 0.8))}" font-family="Arial, sans-serif" font-size="${preDesc.font}" text-anchor="middle">${escapeXml(ln)}</text>`
+			)
+			.join('');
+		rows.push({ content, height: lh * dLines.length });
 	}
 	if (eff.includePrice && priceText) {
 		rows.push({
@@ -516,6 +533,26 @@ function fitLine(
 	return { font, lines, text: fitTextToLines(text, blockW, font, maxLines) };
 }
 
+/** Greedy word-wrap (already-fitted) `text` into up to `maxLines` visual lines.
+ *  ZPL's ^FB wraps for us; the SVG preview has no auto-wrap, so it uses this. */
+function wrapToLines(text: string, blockW: number, font: number, maxLines: number): string[] {
+	if (maxLines <= 1) return [text];
+	const cap = lineCapacity(blockW, font);
+	const words = text.split(/\s+/).filter(Boolean);
+	const lines: string[] = [];
+	let cur = '';
+	for (const w of words) {
+		const cand = cur ? `${cur} ${w}` : w;
+		if (cand.length <= cap || !cur) cur = cand;
+		else if (lines.length < maxLines - 1) {
+			lines.push(cur);
+			cur = w;
+		} else cur = cand; // last line absorbs the rest (text is pre-ellipsized)
+	}
+	if (cur) lines.push(cur);
+	return lines.length ? lines : [text];
+}
+
 /** Render ZPL from already-resolved dimensions (no DB lookup) — lets callers
  *  (e.g. the label designer) preview a format that isn't saved yet. */
 export function renderZplFromDimensions(dims: TagDimensions, ctx: TagRenderContext): string {
@@ -733,9 +770,9 @@ function renderBarbellZpl(
 		const padW = Math.round(pad.widthIn * dpi);
 		if (pad.role === 'barcode') {
 			const barHeightDots = pad.barcodeHeightIn ? Math.round(pad.barcodeHeightIn * dpi) : undefined;
-			barbellBarcodePad(cmds, { x0, padW, heightDots, partNumber, eff, scale, barHeightDots });
+			barbellBarcodePad(cmds, { x0, padW, heightDots, partNumber, eff, scale, barHeightDots, dpi });
 		} else {
-			barbellInfoPad(cmds, { x0, padW, heightDots, priceText, description, eff, scale });
+			barbellInfoPad(cmds, { x0, padW, heightDots, priceText, description, eff, scale, dpi });
 		}
 	}
 
@@ -755,9 +792,10 @@ function barbellBarcodePad(
 		eff: ReturnType<typeof resolveSettings>;
 		scale: number;
 		barHeightDots?: number;
+		dpi: number;
 	}
 ): void {
-	const { x0, padW, heightDots, partNumber, eff, scale, barHeightDots } = p;
+	const { x0, padW, heightDots, partNumber, eff, scale, barHeightDots, dpi } = p;
 	if (!partNumber) return;
 	const margin = Math.max(4, Math.round(padW * 0.06));
 	const inner = padW - 2 * margin;
@@ -794,10 +832,12 @@ function barbellBarcodePad(
 	}
 	if (showText) {
 		const ty = eff.includeBarcode ? barTop + barH + textGap : Math.round((heightDots - fPart) / 2);
+		// Part number: shrink-to-fit on one line within the pad.
+		const pre = fitLine(partNumber, padW, fPart, dpi, 1);
 		cmds.push(`^FO${x0},${ty}`);
-		cmds.push(`^A0N,${fPart},${fPart}`);
+		cmds.push(`^A0N,${pre.font},${pre.font}`);
 		cmds.push(`^FB${padW},1,0,C,0`);
-		cmds.push(`^FD${zplEscape(partNumber)}^FS`);
+		cmds.push(`^FD${zplEscape(pre.text)}^FS`);
 	}
 }
 
@@ -812,15 +852,19 @@ function barbellInfoPad(
 		description: string;
 		eff: ReturnType<typeof resolveSettings>;
 		scale: number;
+		dpi: number;
 	}
 ): void {
-	const { x0, padW, heightDots, priceText, description, eff, scale } = p;
+	const { x0, padW, heightDots, priceText, description, eff, scale, dpi } = p;
 	const rows: { text: string; f: number; lines: number }[] = [];
 	if (eff.includePrice && priceText) {
 		rows.push({ text: priceText, f: Math.max(20, Math.round(heightDots * 0.3 * scale)), lines: 1 });
 	}
 	if (eff.includeDescription && description) {
-		rows.push({ text: description, f: Math.max(12, Math.round(heightDots * 0.16 * scale)), lines: 2 });
+		// Item name: shrink-to-fit, wrapping to a second line before the floor.
+		const desired = Math.max(12, Math.round(heightDots * 0.16 * scale));
+		const pre = fitLine(description, padW, desired, dpi, 2);
+		rows.push({ text: pre.text, f: pre.font, lines: pre.lines });
 	}
 	if (rows.length === 0) return;
 
@@ -853,9 +897,4 @@ function escapeXml(s: string): string {
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&apos;');
-}
-
-function truncate(s: string, max: number): string {
-	if (s.length <= max) return s;
-	return s.slice(0, max - 1) + '…';
 }
