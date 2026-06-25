@@ -78,6 +78,44 @@ export function formStateToInput(f: FormState): LabelFormatInput {
 	};
 }
 
+/** Reverse of formStateToInput: map a saved DB row (from listFormats) back into
+ *  a FormState so the UI can load an existing format for editing. Numeric columns
+ *  are stored as strings, so they're parsed here. Sample data is preview-only and
+ *  not stored, so it gets neutral placeholders. */
+export function formatRowToState(row: Record<string, unknown>): FormState {
+	const n = (v: unknown): number | null => {
+		if (v == null || v === '') return null;
+		const x = typeof v === 'number' ? v : parseFloat(String(v));
+		return Number.isFinite(x) ? x : null;
+	};
+	const sd = (row.shapeDimsJson ?? {}) as { pads?: PadInput[]; lineScales?: LineScales };
+	const shape = row.mediaShape === 'barbell' ? 'barbell' : 'rectangle';
+	return {
+		code: String(row.code ?? ''),
+		name: String(row.name ?? ''),
+		layout: row.layout === 'sheet' ? 'sheet' : 'thermal',
+		dpi: n(row.dpi) ?? 203,
+		widthIn: n(row.labelWidthInches) ?? 0,
+		heightIn: n(row.labelHeightInches) ?? 0,
+		pageWidthIn: n(row.pageWidthInches),
+		pageHeightIn: n(row.pageHeightInches),
+		cols: n(row.cols),
+		rows: n(row.rows),
+		marginTopIn: n(row.marginTopInches),
+		marginLeftIn: n(row.marginLeftInches),
+		vPitchIn: n(row.verticalPitchInches),
+		hPitchIn: n(row.horizontalPitchInches),
+		mediaShape: shape,
+		pads: shape === 'barbell' && Array.isArray(sd.pads) ? sd.pads : [],
+		lineScales: sd.lineScales ?? {},
+		mediaSensor: (row.mediaSensor as FormState['mediaSensor']) ?? null,
+		manufacturer: (row.manufacturer as FormState['manufacturer']) ?? 'custom',
+		partNumber: (row.partNumber as string | null) ?? null,
+		fontScale: 'medium',
+		sample: { vendorName: 'Yakima Finds', price: '$9.99', sku: 'SR62301001', description: 'Vintage Pyrex bowl' }
+	};
+}
+
 export function formStateToDimensions(f: FormState): TagDimensions {
 	return {
 		widthInches: f.widthIn,

@@ -3,7 +3,13 @@ import {
 	renderZplFromDimensions
 } from '$lib/server/services/tag-render-service';
 import * as formats from '$lib/server/services/label-format-service';
-import { formStateToDimensions, formStateToCtx, formStateToInput, type FormState } from './form-model';
+import {
+	formStateToDimensions,
+	formStateToCtx,
+	formStateToInput,
+	formatRowToState,
+	type FormState
+} from './form-model';
 import { buildAlignmentBorderZpl } from './zpl-border';
 import { renderBarbellPreviewSvg } from './barbell-svg';
 import { sendZplToPrinter, parsePrinterTarget } from './printer';
@@ -41,7 +47,16 @@ export async function route(
 			return { status: 200, json: { db: dbLabel() } };
 		}
 		if (req.method === 'GET' && req.path === '/api/formats') {
-			return { status: 200, json: { formats: await d.listFormats({ includeInactive: true }) } };
+			const rows = await d.listFormats({ includeInactive: true });
+			// Map each row to a loadable FormState so the UI dropdown can populate
+			// the whole form from a saved format in one step.
+			const formats = rows.map((r) => ({
+				code: r.code,
+				name: r.name,
+				layout: r.layout,
+				state: formatRowToState(r as unknown as Record<string, unknown>)
+			}));
+			return { status: 200, json: { formats } };
 		}
 		if (req.method === 'POST' && req.path === '/api/preview') {
 			const f = req.body as FormState;
