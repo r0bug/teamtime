@@ -31,6 +31,22 @@ describe('route', () => {
 		expect(sent[0]).toContain('^GB305,203,2'); // border ZPL
 	});
 
+	it('lists existing formats as loadable form states', async () => {
+		const res = await route(
+			{ method: 'GET', path: '/api/formats', body: undefined },
+			{
+				listFormats: async () => [
+					{ code: 'zebra_2x1', name: 'Zebra 2x1', layout: 'thermal', labelWidthInches: '2.000', labelHeightInches: '1.000', dpi: 203, mediaShape: 'rectangle', shapeDimsJson: null } as any
+				]
+			}
+		);
+		expect(res.status).toBe(200);
+		const json = res.json as { formats: { code: string; name: string; state: { widthIn: number } }[] };
+		expect(json.formats[0].code).toBe('zebra_2x1');
+		expect(json.formats[0].name).toBe('Zebra 2x1');
+		expect(json.formats[0].state.widthIn).toBe(2); // mapped to a loadable FormState
+	});
+
 	it('saves via createFormat when code is new', async () => {
 		const created: any[] = [];
 		const res = await route(

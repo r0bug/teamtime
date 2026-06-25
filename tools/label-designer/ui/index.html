@@ -31,6 +31,9 @@
 	<body>
 		<header>
 			<b>Label Format Designer</b>
+			<label style="font-size:12px;display:flex;gap:6px;align-items:center;color:#cbd5e1;">Load
+				<select id="loadFormat" style="color:#111;"><option value="">— existing —</option></select>
+			</label>
 			<span id="dbLabel">db: …</span>
 		</header>
 		<main>
@@ -188,7 +191,7 @@
 				});
 			}
 
-			function addPad(role = 'barcode', xIn = 0, widthIn = 0.85) {
+			function addPad(role = 'barcode', xIn = 0, widthIn = 0.85, barcodeHeightIn = null) {
 				const div = document.createElement('div');
 				div.className = 'pad-row';
 				div.innerHTML =
@@ -198,6 +201,7 @@
 					'bcH<input class="p-bh" type="number" step="0.01" placeholder="auto"/>' +
 					'<button type="button" class="secondary p-del">×</button>';
 				div.querySelector('.p-role').value = role;
+				if (barcodeHeightIn != null) div.querySelector('.p-bh').value = barcodeHeightIn;
 				div.querySelector('.p-del').onclick = () => { div.remove(); render(); };
 				div.querySelectorAll('input,select').forEach((el) => el.addEventListener('input', render));
 				$('pads').appendChild(div);
@@ -247,6 +251,60 @@
 				msg(res.ok ? '✓ saved ' + f.code : '✗ ' + (j.error || 'save failed'), res.ok ? 'ok' : 'err');
 			}
 
+			// Load an existing format from the DB into the whole form.
+			function applyState(s) {
+				$('code').value = s.code || '';
+				$('name').value = s.name || '';
+				$('layout').value = s.layout || 'thermal';
+				$('dpi').value = s.dpi != null ? s.dpi : 203;
+				$('widthIn').value = s.widthIn != null ? s.widthIn : '';
+				$('heightIn').value = s.heightIn != null ? s.heightIn : '';
+				$('mediaShape').value = s.mediaShape || 'rectangle';
+				$('mediaSensor').value = s.mediaSensor || 'gap';
+				$('manufacturer').value = s.manufacturer || 'custom';
+				$('partNumber').value = s.partNumber || '';
+				$('fontScale').value = s.fontScale || 'medium';
+				if (s.layout === 'sheet') {
+					const setIf = (id, v) => { if (v != null) $(id).value = v; };
+					setIf('pageWidthIn', s.pageWidthIn); setIf('pageHeightIn', s.pageHeightIn);
+					setIf('cols', s.cols); setIf('rows', s.rows);
+					setIf('marginTopIn', s.marginTopIn); setIf('marginLeftIn', s.marginLeftIn);
+					setIf('vPitchIn', s.vPitchIn); setIf('hPitchIn', s.hPitchIn);
+				}
+				document.querySelectorAll('.ls').forEach((el) => {
+					el.value = (s.lineScales && s.lineScales[el.dataset.ls]) || 1;
+				});
+				$('pads').innerHTML = '';
+				if (s.mediaShape === 'barbell' && Array.isArray(s.pads) && s.pads.length) {
+					s.pads.forEach((p) => addPad(p.role, p.xIn, p.widthIn, p.barcodeHeightIn != null ? p.barcodeHeightIn : null));
+				} else {
+					addPad('barcode', 0, 0.85);
+					addPad('info', 1.275, 0.85);
+				}
+				syncSections();
+				render();
+			}
+
+			let _formats = [];
+			async function loadFormatList() {
+				const sel = $('loadFormat');
+				try {
+					const res = await fetch('/api/formats');
+					const j = await res.json();
+					if (!res.ok || !j.formats) { sel.innerHTML = '<option value="">— DB unavailable —</option>'; return; }
+					_formats = j.formats;
+					sel.innerHTML = '<option value="">— existing (' + _formats.length + ') —</option>' +
+						_formats.map((f, i) => '<option value="' + i + '">' + f.code + ' — ' + f.name + '</option>').join('');
+				} catch (e) { sel.innerHTML = '<option value="">— DB error —</option>'; }
+			}
+
+			$('loadFormat').addEventListener('change', () => {
+				const i = $('loadFormat').value;
+				if (i === '') return;
+				applyState(_formats[i].state);
+				msg('Loaded ' + _formats[i].code, 'ok');
+			});
+
 			$('layout').addEventListener('change', () => { syncSections(); render(); });
 			$('mediaShape').addEventListener('change', () => { syncSections(); render(); });
 			$('addPad').onclick = () => { addPad('info', 1.275, 0.85); render(); };
@@ -257,6 +315,7 @@
 
 			(async () => {
 				try { const d = await (await fetch('/api/db')).json(); $('dbLabel').textContent = 'db: ' + d.db; } catch {}
+				await loadFormatList();
 				addPad('barcode', 0, 0.85);
 				addPad('info', 1.275, 0.85);
 				syncSections();
