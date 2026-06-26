@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	formStateToInput,
 	formStateToDimensions,
+	formStateToCtx,
 	formatRowToState,
 	parsePriceToCents
 } from '../../../tools/label-designer/form-model';
@@ -77,6 +78,25 @@ describe('form-model', () => {
 		expect(parsePriceToCents('$9.99')).toBe(999);
 		expect(parsePriceToCents('12')).toBe(1200);
 		expect(parsePriceToCents('')).toBeNull();
+	});
+});
+
+describe('formStateToCtx — sample edge date (preview fidelity)', () => {
+	it('passes the sample edge date + side into the render context', () => {
+		const ctx = formStateToCtx({
+			...base,
+			sample: { ...base.sample, edgeDate: '06/25/2026', edgeDateSide: 'right' }
+		} as any);
+		expect(ctx.edgeDate).toBe('06/25/2026');
+		expect(ctx.edgeDateSide).toBe('right');
+	});
+
+	it('omits the edge date when the side is "none"', () => {
+		const ctx = formStateToCtx({
+			...base,
+			sample: { ...base.sample, edgeDate: '06/25/2026', edgeDateSide: 'none' }
+		} as any);
+		expect(ctx.edgeDate).toBeUndefined();
 	});
 });
 

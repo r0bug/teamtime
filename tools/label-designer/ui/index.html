@@ -95,6 +95,10 @@
 						<label>SKU<input id="s_sku" value="SR62301001" /></label>
 					</div>
 					<div class="row"><label>Description<input id="s_desc" value="Vintage Pyrex bowl" /></label></div>
+					<div class="row">
+						<label>Edge date<input id="s_edgeDate" placeholder="MM/DD/YYYY" /></label>
+						<label>Date side<select id="s_edgeSide"><option value="right">right</option><option value="left">left</option><option value="none">none</option></select></label>
+					</div>
 					<label>Font scale<select id="fontScale"><option>small</option><option selected>medium</option><option>large</option></select></label>
 				</fieldset>
 
@@ -156,7 +160,9 @@
 						vendorName: $('s_vendor').value,
 						price: $('s_price').value,
 						sku: $('s_sku').value,
-						description: $('s_desc').value
+						description: $('s_desc').value,
+						edgeDate: $('s_edgeDate').value.trim(),
+						edgeDateSide: $('s_edgeSide').value
 					}
 				};
 				if (layout === 'sheet') {
@@ -315,6 +321,9 @@
 
 			(async () => {
 				try { const d = await (await fetch('/api/db')).json(); $('dbLabel').textContent = 'db: ' + d.db; } catch {}
+				// Default the sample edge date to today (the real print path stamps it).
+				const td = new Date();
+				$('s_edgeDate').value = String(td.getMonth() + 1).padStart(2, '0') + '/' + String(td.getDate()).padStart(2, '0') + '/' + td.getFullYear();
 				await loadFormatList();
 				addPad('barcode', 0, 0.85);
 				addPad('info', 1.275, 0.85);
