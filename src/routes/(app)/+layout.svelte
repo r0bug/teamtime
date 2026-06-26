@@ -74,19 +74,10 @@
 		return items.some(item => isActive(item.href));
 	}
 
-	const vendorNavItems = [
-		{ href: '/vendor', label: 'Home', icon: 'home', show: true, exact: true },
-		{ href: '/vendor/inventory', label: 'Inventory', icon: 'box', show: true },
-		{ href: '/vendor/notes', label: 'Notes', icon: 'document', show: true },
-		{ href: '/vendor/print', label: 'Print Sheet', icon: 'tag', show: true },
-		{ href: '/vendor/leaderboard', label: 'Leaderboard', icon: 'trophy', show: true },
-		{ href: '/vendor/sales', label: 'Sales', icon: 'chart', show: true },
-		{ href: '/vendor/profile', label: 'Profile', icon: 'users', show: true }
-	];
-
-	$: navItems = isVendor
-		? vendorNavItems
-		: [
+	// Staff/admin navigation. The vendor portal owns its own nav in
+	// (app)/vendor/+layout.svelte; vendors render that chrome only (see template
+	// below), so this layout no longer declares a competing vendor nav list.
+	$: navItems = [
 			{ href: '/dashboard', label: 'Home', icon: 'home', show: true },
 			{ href: '/schedule', label: 'Schedule', icon: 'calendar', show: mod('schedule') },
 			{ href: '/tasks', label: 'Tasks', icon: 'clipboard', show: mod('tasks') },
@@ -232,6 +223,16 @@
 	}
 </script>
 
+{#if isVendor}
+	<!-- Vendors use the dedicated portal chrome defined in (app)/vendor/+layout.svelte.
+	     Render only the page + global PWA helpers here — no staff shell, no staff-only
+	     overlays (GlobalSearch/ShortcutHelp). This removes the old double-navigation. -->
+	<main class="min-h-screen bg-gray-50">
+		<slot />
+	</main>
+	<InstallPrompt />
+	<ConnectionStatus />
+{:else}
 <div class="min-h-screen bg-gray-50">
 	<!-- Desktop Sidebar -->
 	<aside class="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col overflow-hidden">
@@ -564,6 +565,7 @@
 <ConnectionStatus />
 <GlobalSearch />
 <ShortcutHelp />
+{/if}
 
 <style>
 	/* Ensure sidebar nav scrolls properly */

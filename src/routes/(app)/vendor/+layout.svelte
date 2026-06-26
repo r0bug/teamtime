@@ -5,9 +5,11 @@
 
 	export let data: LayoutData;
 
+	// Single source of truth for the vendor portal navigation.
 	const navItems = [
 		{ href: '/vendor', label: 'Home', exact: true },
 		{ href: '/vendor/inventory', label: 'Inventory' },
+		{ href: '/vendor/notes', label: 'Notes' },
 		{ href: '/vendor/print', label: 'Print Sheet' },
 		{ href: '/vendor/app', label: 'Get the App' },
 		{ href: '/vendor/leaderboard', label: 'Leaderboard' },
