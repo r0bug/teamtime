@@ -8,7 +8,9 @@
 	const navItems = [
 		{ href: '/vendor', label: 'Home', exact: true },
 		{ href: '/vendor/inventory', label: 'Inventory' },
-		{ href: '/vendor/print', label: 'Print Sheet' },
+		// Web Avery "Print Sheet" unlinked — vendors print via the desktop app
+		// (USB/print-queue). Route + renderer kept intact for re-linking later.
+		// { href: '/vendor/print', label: 'Print Sheet' },
 		{ href: '/vendor/app', label: 'Get the App' },
 		{ href: '/vendor/leaderboard', label: 'Leaderboard' },
 		{ href: '/vendor/sales', label: 'Sales' },
