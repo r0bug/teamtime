@@ -234,17 +234,26 @@ export async function renderTagSvgFromDimensions(
 
 	// Content width the centered text must fit within (screen "dpi" = 96, so the
 	// auto-fit floor lands at the same physical size as the printed label).
-	const fitW = widthPx;
+	// Reserve a column for the vertical tag date (mirrors renderZpl: shown only on
+	// labels >= 0.8" tall), then center the body in the remaining width.
+	const fDate = Math.max(8, Math.round(heightPx * 0.085));
+	const showEdgeDate = !!ctx.edgeDate && dims.heightInches >= 0.8;
+	const edgeSide = ctx.edgeDateSide ?? 'right';
+	const dateColPx = showEdgeDate ? fDate + 4 : 0;
+	const contentX = showEdgeDate && edgeSide === 'left' ? dateColPx : 0;
+	const contentW = widthPx - dateColPx;
+	const cx = contentX + contentW / 2;
+	const fitW = contentW;
 	const SCREEN_DPI = 96;
 
 	// Compute vertical layout: header / barcode / partNumber / description / price / footer
 	const rows: { content: string; height: number }[] = [];
 	// Vendor/header name: shrink-to-fit on one line.
 	const preHeader = fitLine(header, fitW, fsHeader, SCREEN_DPI, 1);
-	rows.push({ content: `<text x="${widthPx / 2}" y="0" font-family="Arial, sans-serif" font-size="${preHeader.font}" font-weight="700" text-anchor="middle">${escapeXml(preHeader.text)}</text>`, height: preHeader.font * 1.2 });
+	rows.push({ content: `<text x="${cx}" y="0" font-family="Arial, sans-serif" font-size="${preHeader.font}" font-weight="700" text-anchor="middle">${escapeXml(preHeader.text)}</text>`, height: preHeader.font * 1.2 });
 	if (eff.includeBarcode && barcodeSvg) {
 		rows.push({
-			content: `<g transform="translate(${widthPx * 0.1}, 0) scale(${(widthPx * 0.8) / 200}, 1)">${barcodeSvg}</g>`,
+			content: `<g transform="translate(${contentX + contentW * 0.1}, 0) scale(${(contentW * 0.8) / 200}, 1)">${barcodeSvg}</g>`,
 			height: barcodeRowH
 		});
 	}
@@ -252,7 +261,7 @@ export async function renderTagSvgFromDimensions(
 	if (eff.includePartNumber && partNumber) {
 		const prePart = fitLine(partNumber, fitW, fsPartNum, SCREEN_DPI, 1);
 		rows.push({
-			content: `<text x="${widthPx / 2}" y="0" font-family="monospace" font-size="${prePart.font}" text-anchor="middle">${escapeXml(prePart.text)}</text>`,
+			content: `<text x="${cx}" y="0" font-family="monospace" font-size="${prePart.font}" text-anchor="middle">${escapeXml(prePart.text)}</text>`,
 			height: prePart.font * 1.2
 		});
 	}
@@ -266,20 +275,20 @@ export async function renderTagSvgFromDimensions(
 		const content = dLines
 			.map(
 				(ln, i) =>
-					`<text x="${widthPx / 2}" y="${Math.round(lh * (i + 0.8))}" font-family="Arial, sans-serif" font-size="${preDesc.font}" text-anchor="middle">${escapeXml(ln)}</text>`
+					`<text x="${cx}" y="${Math.round(lh * (i + 0.8))}" font-family="Arial, sans-serif" font-size="${preDesc.font}" text-anchor="middle">${escapeXml(ln)}</text>`
 			)
 			.join('');
 		rows.push({ content, height: lh * dLines.length });
 	}
 	if (eff.includePrice && priceText) {
 		rows.push({
-			content: `<text x="${widthPx / 2}" y="0" font-family="Arial, sans-serif" font-size="${fsPrice}" font-weight="700" text-anchor="middle">${escapeXml(priceText)}</text>`,
+			content: `<text x="${cx}" y="0" font-family="Arial, sans-serif" font-size="${fsPrice}" font-weight="700" text-anchor="middle">${escapeXml(priceText)}</text>`,
 			height: fsPrice * 1.1
 		});
 	}
 	if (footer) {
 		rows.push({
-			content: `<text x="${widthPx / 2}" y="0" font-family="Arial, sans-serif" font-size="${fsBodyFooter}" text-anchor="middle">${escapeXml(footer)}</text>`,
+			content: `<text x="${cx}" y="0" font-family="Arial, sans-serif" font-size="${fsBodyFooter}" text-anchor="middle">${escapeXml(footer)}</text>`,
 			height: fsBodyFooter * 1.2
 		});
 	}
@@ -315,7 +324,16 @@ export async function renderTagSvgFromDimensions(
 		monthBadge = `<g><rect x="${bx}" y="${by}" width="${badgeW}" height="${badgeH}" rx="3" ry="3" fill="black"/><text x="${bx + badgeW / 2}" y="${by + badgeH * 0.75}" font-family="Arial, sans-serif" font-size="${badgeFs}" font-weight="900" fill="white" text-anchor="middle">${escapeXml(code)}</text></g>`;
 	}
 
-	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${widthPx} ${heightPx}" width="${widthPx}" height="${heightPx}" style="background:white;border:1px solid #ddd;">${positioned}${monthBadge}</svg>`;
+	// Vertical tag date down the reserved edge column (rotated 90°, centered).
+	let edgeDateSvg = '';
+	if (showEdgeDate) {
+		const dateStr = String(ctx.edgeDate).slice(0, 12);
+		const dx = edgeSide === 'left' ? Math.round(fDate * 0.85) : widthPx - Math.round(fDate * 0.3);
+		const cy = heightPx / 2;
+		edgeDateSvg = `<text x="${dx}" y="${cy}" font-family="Arial, sans-serif" font-size="${fDate}" text-anchor="middle" transform="rotate(90 ${dx} ${cy})">${escapeXml(dateStr)}</text>`;
+	}
+
+	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${widthPx} ${heightPx}" width="${widthPx}" height="${heightPx}" style="background:white;border:1px solid #ddd;">${positioned}${monthBadge}${edgeDateSvg}</svg>`;
 }
 
 export interface AverySheetItem extends TagItem {

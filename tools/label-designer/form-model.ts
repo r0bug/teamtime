@@ -34,7 +34,16 @@ export interface FormState {
 	manufacturer?: 'zebra' | 'avery' | 'custom';
 	partNumber?: string | null;
 	fontScale?: 'small' | 'medium' | 'large';
-	sample: { vendorName: string; price: string; sku: string; description: string };
+	sample: {
+		vendorName: string;
+		price: string;
+		sku: string;
+		description: string;
+		/** Preview-only: the vertical tag date the real print path always adds
+		 *  down an edge (renderZpl shows it on labels >= 0.8" tall). */
+		edgeDate?: string;
+		edgeDateSide?: 'left' | 'right' | 'none';
+	};
 }
 
 export function parsePriceToCents(s: string): number | null {
@@ -137,6 +146,11 @@ export function formStateToCtx(f: FormState): TagRenderContext {
 			priceCents: parsePriceToCents(f.sample.price)
 		},
 		copies: 1,
-		dpi: f.layout === 'thermal' ? f.dpi : undefined
+		dpi: f.layout === 'thermal' ? f.dpi : undefined,
+		// Mirror the real print path, which always stamps a vertical tag date down
+		// an edge — so the preview reserves the same column and shows it.
+		edgeDate:
+			f.sample.edgeDateSide !== 'none' && f.sample.edgeDate ? f.sample.edgeDate : undefined,
+		edgeDateSide: f.sample.edgeDateSide === 'left' ? 'left' : 'right'
 	} as TagRenderContext;
 }
