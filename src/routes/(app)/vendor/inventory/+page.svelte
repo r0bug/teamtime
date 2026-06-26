@@ -1,44 +1,10 @@
 <script lang="ts">
 	import type { PageData, ActionData } from './$types';
 	import { enhance } from '$app/forms';
-	import {
-		printPartNumber,
-		isAvailable as isZebraAvailable,
-		BROWSER_PRINT_DOWNLOAD_URL,
-		ZebraPrintError
-	} from '$lib/utils/zebra-print-client';
 	import { DESKTOP_LABEL_APP_DOWNLOADS } from '$lib/utils/desktop-label-app';
-	import { onMount } from 'svelte';
 
 	export let data: PageData;
 	export let form: ActionData;
-
-	let zebraReady: 'unknown' | 'yes' | 'no' = 'unknown';
-	let zebraBusyFor: string | null = null;
-	let zebraStatus: { partNumber: string; ok: boolean; message: string } | null = null;
-
-	onMount(async () => {
-		zebraReady = (await isZebraAvailable()) ? 'yes' : 'no';
-	});
-
-	async function printOnZebra(partNumber: string) {
-		zebraBusyFor = partNumber;
-		zebraStatus = null;
-		try {
-			await printPartNumber(partNumber);
-			zebraStatus = { partNumber, ok: true, message: `Sent ${partNumber} to Zebra.` };
-			zebraReady = 'yes';
-		} catch (err) {
-			const message =
-				err instanceof ZebraPrintError ? err.message : err instanceof Error ? err.message : 'Print failed';
-			zebraStatus = { partNumber, ok: false, message };
-			if (err instanceof ZebraPrintError && /not running|install/i.test(message)) {
-				zebraReady = 'no';
-			}
-		} finally {
-			zebraBusyFor = null;
-		}
-	}
 
 	// Removal-request modal only. Adding items is done exclusively via the
 	// "Make a tag" card, which always auto-generates the part number.
@@ -95,34 +61,10 @@
 				{form.applied ? '✓ Tag created in NRS.' : '✓ Tag queued (staff will apply to NRS).'} Code: <code class="font-mono font-semibold">{form.partNumber}</code> — "{form.description}" — ${(Number(form.priceCents) / 100).toFixed(2)}
 				{#if form.queuedForPrint}<span class="ml-1">· 🖨️ Sent to your label printer's queue.</span>{/if}
 			</span>
-			<button
-				type="button"
-				class="btn btn-secondary text-xs whitespace-nowrap"
-				on:click={() => printOnZebra(String(form.partNumber))}
-				disabled={zebraBusyFor === String(form.partNumber)}>
-				{zebraBusyFor === String(form.partNumber) ? 'Sending…' : '🦓 Print on Zebra'}
-			</button>
 		</div>
 		{#if form.queueError}
 			<div class="mt-2 p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded text-sm">Tag created, but couldn't queue it for the label printer: {form.queueError}</div>
 		{/if}
-	{/if}
-
-	{#if zebraStatus}
-		<div class="mt-3 p-3 rounded text-sm border {zebraStatus.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-700'}">
-			{zebraStatus.ok ? '✓' : '⚠'} {zebraStatus.message}
-		</div>
-	{/if}
-
-	{#if zebraReady === 'no'}
-		<div class="mt-4 p-3 rounded text-sm bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 flex-wrap">
-			<span class="text-2xl leading-none">🦓</span>
-			<div class="flex-1 min-w-[200px]">
-				<strong>Zebra Browser Print not detected.</strong>
-				<p class="mt-1 text-amber-800">Install it once on this computer to print directly to your Zebra label printer. Free, signed by Zebra, Mac + Windows.</p>
-			</div>
-			<a href={BROWSER_PRINT_DOWNLOAD_URL} target="_blank" rel="noopener noreferrer" class="btn btn-secondary text-xs whitespace-nowrap">⬇ Download</a>
-		</div>
 	{/if}
 
 	<!-- Quick tag — fastest path: description + price → auto-generated barcode -->
@@ -200,15 +142,6 @@
 										{/if}
 									</td>
 									<td class="px-4 py-2 text-right whitespace-nowrap">
-										{#if p.changeType !== 'delete'}
-											<button
-												type="button"
-												class="text-primary-600 hover:underline text-sm mr-3 disabled:opacity-50"
-												on:click={() => printOnZebra(p.partNumber)}
-												disabled={zebraBusyFor === p.partNumber}>
-												{zebraBusyFor === p.partNumber ? 'Sending…' : '🦓 Zebra'}
-											</button>
-										{/if}
 										{#if p.status === 'pending'}
 											<form method="POST" action="?/cancel" use:enhance class="inline">
 												<input type="hidden" name="id" value={p.id} />
@@ -256,13 +189,6 @@
 									<td class="px-4 py-2 tabular-nums">{item.unitsSold}</td>
 									<td class="px-4 py-2 tabular-nums">${item.lastPrice.toFixed(2)}</td>
 									<td class="px-4 py-2 text-right whitespace-nowrap">
-										<button
-											type="button"
-											class="text-primary-600 hover:underline mr-3 text-sm disabled:opacity-50"
-											on:click={() => printOnZebra(item.partNumber)}
-											disabled={zebraBusyFor === item.partNumber}>
-											{zebraBusyFor === item.partNumber ? 'Sending…' : '🦓 Zebra'}
-										</button>
 										<button type="button" class="text-red-600 hover:underline text-sm" on:click={() => openDelete(item)}>Remove</button>
 									</td>
 								</tr>
