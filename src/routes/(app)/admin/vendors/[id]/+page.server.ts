@@ -23,6 +23,8 @@ import {
 import { isUploadPath } from '$lib/uploads';
 import { listTemplates } from '$lib/server/services/agreement-template-service';
 import { listGroups } from '$lib/server/services/vendor-group-service';
+import { isAdmin } from '$lib/server/auth/roles';
+import { audit } from '$lib/server/services/audit-service';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	if (!locals.user) throw redirect(302, '/dashboard');
@@ -70,6 +72,20 @@ export const actions: Actions = {
 			? Math.round(parseFloat(monthlyRentDollarsStr) * 100)
 			: null;
 
+		const nrsVendorIdRaw = ((data.get('nrsVendorId') as string) ?? '').trim();
+		const nrsVendorId = nrsVendorIdRaw ? parseInt(nrsVendorIdRaw, 10) : null;
+
+		// nrsVendorId is an identity-link field: reassigning it rewires which NRS
+		// sales/payouts roll up to this vendor record. It is admin-only and audited,
+		// matching the REST contract in api/vendors/[id]. Only gate/audit when it
+		// actually changes (this form always submits the current value).
+		const before = await getVendor(params.id);
+		if (!before) return fail(404, { error: 'Vendor not found' });
+		const nrsChanged = (before.nrsVendorId ?? null) !== nrsVendorId;
+		if (nrsChanged && !isAdmin(locals.user)) {
+			return fail(403, { error: 'Admin role required to change the NRS Vendor ID' });
+		}
+
 		await updateVendor(params.id, {
 			displayName: ((data.get('displayName') as string) ?? '').trim(),
 			contactName: ((data.get('contactName') as string) ?? '').trim() || null,
@@ -87,11 +103,20 @@ export const actions: Actions = {
 			status: ((data.get('status') as string) ?? 'inactive') as 'active' | 'inactive' | 'terminated',
 			startDate: ((data.get('startDate') as string) ?? '').trim() || null,
 			endDate: ((data.get('endDate') as string) ?? '').trim() || null,
-			nrsVendorId: ((data.get('nrsVendorId') as string) ?? '').trim()
-				? parseInt((data.get('nrsVendorId') as string).trim(), 10)
-				: null,
+			nrsVendorId,
 			notes: ((data.get('notes') as string) ?? '').trim() || null
 		});
+
+		if (nrsChanged) {
+			await audit({
+				userId: locals.user.id,
+				action: 'vendor.identity_reassign',
+				entityType: 'vendor',
+				entityId: params.id,
+				beforeData: { nrsVendorId: before.nrsVendorId ?? null },
+				afterData: { nrsVendorId }
+			});
+		}
 
 		return { success: 'updateTerms' };
 	},
