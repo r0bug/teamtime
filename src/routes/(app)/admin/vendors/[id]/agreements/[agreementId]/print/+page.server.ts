@@ -2,12 +2,11 @@ import type { PageServerLoad } from './$types';
 import { error, redirect } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import { db, vendors, vendorAgreements } from '$lib/server/db';
-import { isManager } from '$lib/server/auth/roles';
 import { marked } from 'marked';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	if (!locals.user) throw redirect(302, '/login');
-	if (!isManager(locals.user)) throw redirect(302, '/dashboard');
+	if (!locals.user) throw redirect(302, '/dashboard');
 
 	const [vendor] = await db
 		.select({

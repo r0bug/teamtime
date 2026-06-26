@@ -1,6 +1,5 @@
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { isManager } from '$lib/server/auth/roles';
 import {
 	computeLeaderboard,
 	resolvePeriod,
@@ -12,7 +11,7 @@ const VALID_METRICS: LeaderboardMetric[] = ['gross', 'vendorPortion', 'retained'
 const VALID_PERIODS: LeaderboardPeriod[] = ['7d', '30d', 'mtd', 'ytd', 'custom'];
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	if (!isManager(locals.user)) throw redirect(302, '/dashboard');
+	if (!locals.user) throw redirect(302, '/dashboard');
 
 	const periodParam = url.searchParams.get('period');
 	const metricParam = url.searchParams.get('metric');

@@ -2,7 +2,6 @@ import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 import { desc, eq, inArray } from 'drizzle-orm';
 import { db, vendors, vendorGroupMembers, vendorGroups } from '$lib/server/db';
-import { isManager } from '$lib/server/auth/roles';
 import {
 	setInventoryPrefix,
 	setVendorGroups,
@@ -13,7 +12,7 @@ import {
 import { listGroups } from '$lib/server/services/vendor-group-service';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	if (!isManager(locals.user)) throw redirect(302, '/dashboard');
+	if (!locals.user) throw redirect(302, '/dashboard');
 
 	// Vendors that haven't been marked complete yet.
 	const rows = await db
@@ -66,7 +65,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 export const actions: Actions = {
 	savePrefix: async ({ locals, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		const data = await request.formData();
 		const vendorId = data.get('vendorId') as string;
 		const prefix = ((data.get('inventoryCodePrefix') as string) ?? '').trim();
@@ -81,7 +80,7 @@ export const actions: Actions = {
 	},
 
 	saveGroups: async ({ locals, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		const data = await request.formData();
 		const vendorId = data.get('vendorId') as string;
 		const groupIds = data.getAll('groupId').map((v) => v.toString()).filter(Boolean);
@@ -91,7 +90,7 @@ export const actions: Actions = {
 	},
 
 	markComplete: async ({ locals, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		const data = await request.formData();
 		const vendorId = data.get('vendorId') as string;
 		if (!vendorId) return fail(400, { error: 'vendorId required' });
@@ -100,7 +99,7 @@ export const actions: Actions = {
 	},
 
 	invite: async ({ locals, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		if (!locals.user) return fail(401, { error: 'Not signed in' });
 		const data = await request.formData();
 		const vendorId = data.get('vendorId') as string;

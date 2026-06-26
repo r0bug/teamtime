@@ -2,7 +2,6 @@ import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 import { eq, sql } from 'drizzle-orm';
 import { db, vendors as vendorsTable } from '$lib/server/db';
-import { isManager } from '$lib/server/auth/roles';
 import {
 	listVendors,
 	syncFromNrs,
@@ -10,7 +9,7 @@ import {
 } from '$lib/server/services/vendor-service';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	if (!isManager(locals.user)) throw redirect(302, '/dashboard');
+	if (!locals.user) throw redirect(302, '/dashboard');
 
 	const status = url.searchParams.get('status') ?? '';
 	const search = url.searchParams.get('q') ?? '';
@@ -42,7 +41,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 export const actions: Actions = {
 	syncNrs: async ({ locals }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		try {
 			const result = await syncFromNrs();
 			return { syncResult: result };
@@ -52,7 +51,7 @@ export const actions: Actions = {
 	},
 
 	removeStubs: async ({ locals }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		try {
 			const result = await removeUnusedVendorStubs();
 			return { stubsResult: result };
