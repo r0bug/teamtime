@@ -199,24 +199,6 @@
 				</div>
 			</div>
 
-			{#if isThermal}
-				<div class="card">
-					<div class="card-header">
-						<h2 class="font-semibold text-gray-900">🦓 Zebra Browser Print</h2>
-					</div>
-					<div class="card-body text-sm space-y-2">
-						<p class="text-gray-700">To print to a Zebra thermal printer, install Zebra's free <strong>Browser Print</strong> helper once:</p>
-						<a
-							href="https://www.zebra.com/us/en/support-downloads/printer-software/browser-print.html"
-							target="_blank"
-							rel="noopener noreferrer"
-							class="btn btn-secondary block text-center w-full">
-							⬇ Download Zebra Browser Print
-						</a>
-						<p class="text-xs text-gray-500">Mac + Windows. Free, signed by Zebra. After install, our portal sends ZPL to <code>localhost:9101</code>.</p>
-					</div>
-				</div>
-			{/if}
 		</div>
 	</div>
 </div>
