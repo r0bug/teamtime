@@ -1,3 +1,4 @@
+import { partNumberMatchesPrefix } from '$lib/server/services/part-number';
 import type { RequestHandler } from './$types';
 import { error } from '@sveltejs/kit';
 import { and, eq, inArray, desc } from 'drizzle-orm';
@@ -41,7 +42,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		throw error(403, 'Vendor has no inventory code prefix configured');
 	}
 	for (const it of requested) {
-		if (!it.partNumber.startsWith(prefix)) {
+		if (!partNumberMatchesPrefix(it.partNumber, prefix)) {
 			throw error(403, `Part ${it.partNumber} does not belong to this vendor`);
 		}
 	}

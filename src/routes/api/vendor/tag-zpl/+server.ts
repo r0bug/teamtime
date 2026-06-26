@@ -1,3 +1,4 @@
+import { partNumberMatchesPrefix } from '$lib/server/services/part-number';
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
 import { getVendorForUser } from '$lib/server/services/vendor-service';
@@ -38,7 +39,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		// check fails open. Refuse rather than render with no scope guard.
 		throw error(403, 'Vendor has no inventory code prefix configured');
 	}
-	if (!partNumber.startsWith(prefix)) {
+	if (!partNumberMatchesPrefix(partNumber, prefix)) {
 		throw error(403, 'Part number does not belong to this vendor');
 	}
 
