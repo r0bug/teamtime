@@ -1,6 +1,5 @@
 import type { Actions, PageServerLoad } from './$types';
 import { error, fail, redirect } from '@sveltejs/kit';
-import { isManager } from '$lib/server/auth/roles';
 import {
 	getVendor,
 	updateVendor,
@@ -26,7 +25,7 @@ import { listTemplates } from '$lib/server/services/agreement-template-service';
 import { listGroups } from '$lib/server/services/vendor-group-service';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
-	if (!isManager(locals.user)) throw redirect(302, '/dashboard');
+	if (!locals.user) throw redirect(302, '/dashboard');
 
 	const vendor = await getVendor(params.id);
 	if (!vendor) throw error(404, 'Vendor not found');
@@ -63,7 +62,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 export const actions: Actions = {
 	updateTerms: async ({ locals, params, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		const data = await request.formData();
 
 		const monthlyRentDollarsStr = (data.get('monthlyRentDollars') as string) ?? '';
@@ -98,7 +97,7 @@ export const actions: Actions = {
 	},
 
 	signAgreement: async ({ locals, params, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 
 		const data = await request.formData();
 		const templateId = data.get('templateId') as string;
@@ -133,7 +132,7 @@ export const actions: Actions = {
 	},
 
 	uploadSignedDocument: async ({ locals, params, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 
 		const data = await request.formData();
 		const agreementId = (data.get('agreementId') as string) ?? '';
@@ -164,7 +163,7 @@ export const actions: Actions = {
 	},
 
 	updateOnboarding: async ({ locals, params, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		const data = await request.formData();
 		const prefixRaw = ((data.get('inventoryCodePrefix') as string) ?? '').trim();
 		const groupIds = data.getAll('groupId').map((v) => v.toString()).filter(Boolean);
@@ -180,14 +179,14 @@ export const actions: Actions = {
 	},
 
 	markOnboardingComplete: async ({ locals, params, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		const complete = (await request.formData()).get('complete') !== 'false';
 		await markOnboardingComplete(params.id, complete);
 		return { success: 'markOnboardingComplete' };
 	},
 
 	linkUser: async ({ locals, params, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		const userId = ((await request.formData()).get('userId') as string) ?? '';
 		if (!userId) return fail(400, { error: 'Pick a user to link' });
 		try {
@@ -200,7 +199,7 @@ export const actions: Actions = {
 	},
 
 	enablePortal: async ({ locals, params, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		const data = await request.formData();
 		const email = ((data.get('email') as string) ?? '').trim();
 		const contactName = ((data.get('contactName') as string) ?? '').trim();
@@ -220,7 +219,7 @@ export const actions: Actions = {
 	},
 
 	inviteToPortal: async ({ locals, params, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		if (!locals.user) return fail(401, { error: 'Not signed in' });
 		const data = await request.formData();
 		const sendEmail = data.get('sendEmail') === 'on';
@@ -247,7 +246,7 @@ export const actions: Actions = {
 	},
 
 	resetPortalPassword: async ({ locals, params, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		const password = ((await request.formData()).get('password') as string) ?? '';
 		try {
 			await resetPortalPassword(params.id, password);
@@ -259,7 +258,7 @@ export const actions: Actions = {
 	},
 
 	disablePortal: async ({ locals, params }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		try {
 			await disablePortal(params.id);
 		} catch (err) {
@@ -270,7 +269,7 @@ export const actions: Actions = {
 	},
 
 	unlockPortal: async ({ locals, params }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		if (!locals.user) return fail(401, { error: 'Not signed in' });
 		try {
 			await unlockPortalAccount(params.id, locals.user.id);

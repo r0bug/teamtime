@@ -95,6 +95,7 @@
 			{ href: '/achievements', label: 'Achievements', icon: 'star', show: mod('achievements') },
 			{ href: '/sales', label: 'Sales', icon: 'chart', show: mod('sales') },
 			{ href: '/info', label: 'Info', icon: 'info', show: true },
+			{ href: '/admin/vendors', label: 'Vendors', icon: 'box', show: true },
 			{ href: '/pricing', label: 'Pricing', icon: 'tag', show: mod('pricing') },
 			{ href: '/holds', label: 'Holds', icon: 'clipboard-check', show: mod('holds') },
 			{ href: '/notes', label: 'Notes', icon: 'document', show: mod('notes') },

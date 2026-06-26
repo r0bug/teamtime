@@ -2,12 +2,11 @@ import type { Actions, PageServerLoad } from './$types';
 import { error, fail, redirect } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { db, vendors, vendorTagSettings } from '$lib/server/db';
-import { isManager } from '$lib/server/auth/roles';
 import { renderTagSvg } from '$lib/server/services/tag-render-service';
 import { listFormats } from '$lib/server/services/label-format-service';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
-	if (!isManager(locals.user)) throw redirect(302, '/dashboard');
+	if (!locals.user) throw redirect(302, '/dashboard');
 
 	const [vendor] = await db.select().from(vendors).where(eq(vendors.id, params.id)).limit(1);
 	if (!vendor) throw error(404, 'Vendor not found');
@@ -44,7 +43,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 export const actions: Actions = {
 	save: async ({ locals, params, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 
 		const data = await request.formData();
 		const headerLine = ((data.get('headerLine') as string) ?? '').trim() || null;

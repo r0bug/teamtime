@@ -1,6 +1,5 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
-import { isManager } from '$lib/server/auth/roles';
 import {
 	listForReview,
 	pendingCountByStatus,
@@ -14,7 +13,7 @@ const VALID = ['pending', 'applied', 'rejected', 'cancelled'] as const;
 type Status = (typeof VALID)[number];
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	if (!isManager(locals.user)) throw redirect(302, '/dashboard');
+	if (!locals.user) throw redirect(302, '/dashboard');
 
 	const tab = (url.searchParams.get('status') as Status) ?? 'pending';
 	const status: Status = (VALID as readonly string[]).includes(tab) ? tab : 'pending';
@@ -26,7 +25,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 export const actions: Actions = {
 	apply: async ({ locals, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		const data = await request.formData();
 		const changeId = data.get('id') as string;
 		const notes = ((data.get('nrsApplyNotes') as string) ?? '').trim() || undefined;
@@ -41,7 +40,7 @@ export const actions: Actions = {
 	},
 
 	reject: async ({ locals, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		const data = await request.formData();
 		const changeId = data.get('id') as string;
 		const reason = ((data.get('reason') as string) ?? '').trim();
@@ -57,7 +56,7 @@ export const actions: Actions = {
 	},
 
 	autoApply: async ({ locals, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		const vendorId = ((await request.formData()).get('vendorId') as string) || undefined;
 		try {
 			const result = await autoApplyPendingCreatesViaApi({
