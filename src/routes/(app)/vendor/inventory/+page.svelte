@@ -58,12 +58,12 @@
 	{#if form?.success === 'quickTag'}
 		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm flex items-center justify-between gap-2 flex-wrap">
 			<span>
-				{form.applied ? '✓ Tag created in NRS.' : '✓ Tag queued (staff will apply to NRS).'} Code: <code class="font-mono font-semibold">{form.partNumber}</code> — "{form.description}" — ${(Number(form.priceCents) / 100).toFixed(2)}
-				{#if form.queuedForPrint}<span class="ml-1">· 🖨️ Sent to your label printer's queue.</span>{/if}
+				✓ Tag created in NRS. Code: <code class="font-mono font-semibold">{form.partNumber}</code> — "{form.description}" — ${(Number(form.priceCents) / 100).toFixed(2)}
+				{#if form.queuedForPrint}<span class="ml-1">· 🖨️ Queued to print — open the label app to print it.</span>{/if}
 			</span>
 		</div>
 		{#if form.queueError}
-			<div class="mt-2 p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded text-sm">Tag created, but couldn't queue it for the label printer: {form.queueError}</div>
+			<div class="mt-2 p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded text-sm">Item created in NRS, but couldn't queue it for printing: {form.queueError}</div>
 		{/if}
 	{/if}
 
@@ -74,7 +74,7 @@
 				<div class="card-header">
 					<h2 class="font-semibold text-gray-900">Make a tag</h2>
 					<p class="text-xs text-gray-500 mt-1">
-						Type the description and price. We'll generate a unique barcode automatically — your <code class="font-mono">{data.vendor.inventoryCodePrefix}</code> code, then the date and a counter (e.g. <code class="font-mono">{data.vendor.inventoryCodePrefix}60526001</code>) — and queue it for the shop to add to NRS.
+						Type the description and price. We'll generate a unique barcode automatically — your <code class="font-mono">{data.vendor.inventoryCodePrefix}</code> code, then the date and a counter (e.g. <code class="font-mono">{data.vendor.inventoryCodePrefix}60526001</code>) — add it to NRS, and queue it for printing.
 					</p>
 				</div>
 				<div class="card-body">
@@ -90,15 +90,12 @@
 						<div class="md:col-span-2">
 							<button type="submit" class="btn btn-primary w-full">Make Tag</button>
 						</div>
-						<div class="md:col-span-12 flex items-center gap-2 flex-wrap">
-							<input id="qt-send-printer" name="sendToPrinter" type="checkbox" class="h-4 w-4" />
-							<label for="qt-send-printer" class="text-sm text-gray-700">Send to my label printer (the desktop printing app will pick it up and print it)</label>
-							<span class="text-xs text-gray-500">
-								Don't have the app? Download for
-								<a href={DESKTOP_LABEL_APP_DOWNLOADS.windows.url} download class="text-primary-600 hover:underline">Windows</a>
-								or
-								<a href={DESKTOP_LABEL_APP_DOWNLOADS.linux.url} download class="text-primary-600 hover:underline">Linux</a>.
-							</span>
+						<div class="md:col-span-12 text-xs text-gray-500">
+							Every tag is queued for printing — open the desktop label app (or the Yakima Finds kiosk) to print it.
+							Don't have the app? Download for
+							<a href={DESKTOP_LABEL_APP_DOWNLOADS.windows.url} download class="text-primary-600 hover:underline">Windows</a>
+							or
+							<a href={DESKTOP_LABEL_APP_DOWNLOADS.linux.url} download class="text-primary-600 hover:underline">Linux</a>.
 						</div>
 					</form>
 				</div>

@@ -127,7 +127,6 @@ export const actions: Actions = {
 		const description = ((form.get('description') as string) ?? '').trim();
 		const priceCents = parsePriceCents(form.get('priceDollars'));
 		const quantity = parseInt10(form.get('quantity'));
-		const sendToPrinter = form.get('sendToPrinter') === 'on' || form.get('sendToPrinter') === 'true';
 
 		if (!description) return fail(400, { error: 'Description is required' });
 		if (priceCents === undefined) return fail(400, { error: 'Price is required' });
@@ -169,28 +168,32 @@ export const actions: Actions = {
 
 		const apply = await applyCreateViaApi(changeId, locals.user.id);
 
-		// Optionally queue the tag for the standalone desktop label printer.
-		// Non-fatal: the item already exists, so a queue failure is surfaced as a
-		// soft note rather than failing the whole submit.
-		let queuedForPrint = false;
+		// NRS is the source of truth. If the item didn't make it into NRS the whole
+		// add fails — period — and nothing is queued to print.
+		if (!apply.applied) {
+			return fail(502, {
+				error: `Couldn't add this item to NRS, so it was not created${apply.error ? `: ${apply.error}` : ''}. Nothing was queued to print.`
+			});
+		}
+
+		// Item is in NRS — every TeamTime add lands in the waiting-to-print queue.
+		// A queue failure is non-fatal: the item already exists in NRS (the source
+		// of truth), so staff can re-queue it for printing.
 		let queueError: string | null = null;
-		if (sendToPrinter) {
-			const { enqueuePrintJob } = await import('$lib/server/services/print-queue-service');
-			try {
-				await enqueuePrintJob({
-					vendorId: vendor.id,
-					partNumber,
-					copies: quantity ?? 1,
-					description,
-					priceCents,
-					pendingChangeId: changeId,
-					createdByUserId: locals.user.id,
-					source: 'web_portal'
-				});
-				queuedForPrint = true;
-			} catch (err) {
-				queueError = err instanceof Error ? err.message : 'Could not queue for the label printer';
-			}
+		const { enqueuePrintJob } = await import('$lib/server/services/print-queue-service');
+		try {
+			await enqueuePrintJob({
+				vendorId: vendor.id,
+				partNumber,
+				copies: quantity ?? 1,
+				description,
+				priceCents,
+				pendingChangeId: changeId,
+				createdByUserId: locals.user.id,
+				source: 'web_portal'
+			});
+		} catch (err) {
+			queueError = err instanceof Error ? err.message : 'Could not queue for the label printer';
 		}
 
 		return {
@@ -198,9 +201,7 @@ export const actions: Actions = {
 			partNumber,
 			description,
 			priceCents,
-			applied: apply.applied,
-			applyError: apply.error ?? null,
-			queuedForPrint,
+			queuedForPrint: !queueError,
 			queueError
 		};
 	},
