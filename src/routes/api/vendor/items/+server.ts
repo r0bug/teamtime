@@ -133,6 +133,15 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 	const apply = await applyCreateViaApi(changeId, locals.user.id);
 
+	// NRS is the source of truth: a failed NRS create fails the whole add, and
+	// nothing is queued to print.
+	if (!apply.applied) {
+		return json(
+			{ error: `Could not add to NRS: ${apply.error ?? 'unknown error'}`, applied: false },
+			{ status: 502 }
+		);
+	}
+
 	let queuedForPrint = false;
 	let queueError: string | null = null;
 	if (sendToPrinter) {
@@ -156,8 +165,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 	return json({
 		partNumber,
-		applied: apply.applied,
-		applyError: apply.error ?? null,
+		applied: true,
+		applyError: null,
 		queuedForPrint,
 		queueError
 	});
