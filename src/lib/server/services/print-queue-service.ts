@@ -1,5 +1,5 @@
 import { and, eq, desc } from 'drizzle-orm';
-import { db, vendorPrintJobs } from '$lib/server/db';
+import { db, vendorPrintJobs, vendors } from '$lib/server/db';
 
 /**
  * Print-queue service — the single trust boundary for vendor print jobs.
@@ -59,6 +59,30 @@ export async function listQueuedForVendor(vendorId: string) {
 		.select()
 		.from(vendorPrintJobs)
 		.where(and(eq(vendorPrintJobs.vendorId, vendorId), eq(vendorPrintJobs.status, 'queued')))
+		.orderBy(desc(vendorPrintJobs.createdAt));
+}
+
+/**
+ * Staff/admin view: every vendor's waiting-to-print jobs (status='queued'),
+ * joined to the vendor display name. NOT vendor-scoped — callers must be staff.
+ */
+export async function listQueuedAcrossVendors() {
+	return db
+		.select({
+			id: vendorPrintJobs.id,
+			vendorId: vendorPrintJobs.vendorId,
+			vendorName: vendors.displayName,
+			vendorPrefix: vendors.inventoryCodePrefix,
+			partNumber: vendorPrintJobs.partNumber,
+			copies: vendorPrintJobs.copies,
+			description: vendorPrintJobs.description,
+			priceCents: vendorPrintJobs.priceCents,
+			source: vendorPrintJobs.source,
+			createdAt: vendorPrintJobs.createdAt
+		})
+		.from(vendorPrintJobs)
+		.innerJoin(vendors, eq(vendors.id, vendorPrintJobs.vendorId))
+		.where(eq(vendorPrintJobs.status, 'queued'))
 		.orderBy(desc(vendorPrintJobs.createdAt));
 }
 
