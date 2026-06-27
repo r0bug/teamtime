@@ -9,8 +9,15 @@
 	function when(d: string | Date): string {
 		return new Date(d).toLocaleString();
 	}
-	function ownerLabel(t: string): string {
-		return t === 'shop' ? 'Shop / shared' : t === 'vendor_byo' ? 'Vendor (BYO)' : t;
+	function kindLabel(t: string): string {
+		return (
+			{
+				shop_network: 'Shop / network',
+				kiosk: 'Kiosk',
+				vendor_byo: 'Vendor (BYO)',
+				checked_out: 'Checked out'
+			}[t] ?? t
+		);
 	}
 </script>
 
@@ -97,26 +104,26 @@
 					<table class="min-w-full text-sm">
 						<thead class="bg-gray-50 text-left">
 							<tr>
-								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Kit ID</th>
-								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Owner</th>
-								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Vendor</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Name</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Kind</th>
 								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Model</th>
 								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">DPI</th>
-								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Backend</th>
-								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Lang</th>
-								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Preferred format</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Network address</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Location</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Assigned vendor</th>
+								<th class="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">Format</th>
 							</tr>
 						</thead>
 						<tbody class="divide-y divide-gray-100">
 							{#each data.printers as p (p.id)}
-								<tr>
-									<td class="px-4 py-2 font-mono whitespace-nowrap">{p.kitId ?? '—'}</td>
-									<td class="px-4 py-2 whitespace-nowrap">{ownerLabel(p.ownerType)}</td>
-									<td class="px-4 py-2 whitespace-nowrap">{p.vendorName ?? '—'}</td>
-									<td class="px-4 py-2 whitespace-nowrap">{p.printerModel}</td>
-									<td class="px-4 py-2 tabular-nums">{p.printerDpi}</td>
-									<td class="px-4 py-2 whitespace-nowrap">{p.backend}</td>
-									<td class="px-4 py-2 whitespace-nowrap">{p.commandLang}</td>
+								<tr class={p.active ? '' : 'opacity-50'}>
+									<td class="px-4 py-2 whitespace-nowrap font-medium">{p.name}</td>
+									<td class="px-4 py-2 whitespace-nowrap">{kindLabel(p.kind)}</td>
+									<td class="px-4 py-2 whitespace-nowrap">{p.model ?? '—'}</td>
+									<td class="px-4 py-2 tabular-nums">{p.dpi ?? '—'}</td>
+									<td class="px-4 py-2 font-mono whitespace-nowrap">{p.networkAddress ?? '—'}</td>
+									<td class="px-4 py-2 whitespace-nowrap">{p.location ?? '—'}</td>
+									<td class="px-4 py-2 whitespace-nowrap">{p.assignedVendorName ?? '—'}</td>
 									<td class="px-4 py-2 font-mono whitespace-nowrap">{p.preferredFormatCode ?? '—'}</td>
 								</tr>
 							{/each}

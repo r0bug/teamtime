@@ -3670,3 +3670,31 @@ export const kitProfiles = pgTable('kit_profiles', {
 
 export type KitProfile = typeof kitProfiles.$inferSelect;
 export type NewKitProfile = typeof kitProfiles.$inferInsert;
+
+// Managed label-printer registry: shop/network printers, the YF kiosk, and
+// checked-out vendor units. Distinct from kit_profiles (which is per-vendor
+// desktop-app kit CONFIG) — this is the asset list the staff Labels & Tags hub
+// shows and the standalone label app reads to know where it can print. Actual
+// printer connectivity + selection live in the app; this table is the catalog.
+export const printers = pgTable('printers', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),
+	kind: text('kind').notNull().default('shop_network'), // 'shop_network' | 'kiosk' | 'vendor_byo' | 'checked_out'
+	model: text('model'),
+	dpi: integer('dpi'),
+	networkAddress: text('network_address'), // 'host:port' for TCP/9100 printers; null for USB
+	macAddress: text('mac_address'),
+	serial: text('serial'),
+	location: text('location'),
+	// Who currently holds a checked-out unit; null = shared/unassigned.
+	assignedVendorId: uuid('assigned_vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+	commandLang: text('command_lang').notNull().default('zpl2'), // 'zpl2' | 'epl' | 'cpcl'
+	preferredFormatCode: text('preferred_format_code'), // soft FK to label_formats.code
+	lastSeenAt: timestamp('last_seen_at', { withTimezone: true }), // reserved for future heartbeat
+	active: boolean('active').notNull().default(true),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type Printer = typeof printers.$inferSelect;
+export type NewPrinter = typeof printers.$inferInsert;
