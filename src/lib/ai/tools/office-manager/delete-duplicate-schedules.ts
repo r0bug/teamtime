@@ -2,9 +2,10 @@
  * @module AI/Tools/DeleteDuplicateSchedules
  * @description AI tool for identifying and removing duplicate shift entries.
  *
- * This tool scans for shifts with identical user/date/time combinations and
- * removes duplicates while preserving the first entry. Supports dry-run mode
- * to preview deletions before executing.
+ * This tool scans for shifts with identical user/start time/end time/location
+ * combinations and removes the older copies while preserving the newest entry
+ * (the most recently created/edited shift). Supports dry-run mode to preview
+ * deletions before executing.
  *
  * Timezone: Uses Pacific timezone (America/Los_Angeles) for date boundary calculations.
  * Date inputs (startDate, endDate) are parsed as Pacific time.
@@ -43,7 +44,7 @@ interface DeleteDuplicateSchedulesResult {
 
 export const deleteDuplicateSchedulesTool: AITool<DeleteDuplicateSchedulesParams, DeleteDuplicateSchedulesResult> = {
 	name: 'delete_duplicate_schedules',
-	description: 'Find and delete duplicate scheduled shifts in a single batch operation. Duplicates are shifts for the same user with the same start time. Keeps the oldest shift (first created) and removes duplicates. Use this when you need to clean up multiple duplicate schedules at once.',
+	description: 'Find and delete duplicate scheduled shifts in a single batch operation. Duplicates are shifts for the same user with the same start time, end time, and location. Keeps the newest shift (most recently created/edited) and removes the older copies. Use this when you need to clean up multiple duplicate schedules at once.',
 	agent: 'office_manager',
 	parameters: {
 		type: 'object',
@@ -78,7 +79,7 @@ export const deleteDuplicateSchedulesTool: AITool<DeleteDuplicateSchedulesParams
 		if (params.dryRun) {
 			return 'Run duplicate schedule check (preview only)?';
 		}
-		return 'Delete all duplicate schedules found?\n\nThis will keep the oldest shift for each user/time combination and delete the duplicates.';
+		return 'Delete all duplicate schedules found?\n\nThis will keep the newest shift for each exact user/start/end/location combination and delete the older copies.';
 	},
 
 	validate(params: DeleteDuplicateSchedulesParams) {
@@ -112,6 +113,7 @@ export const deleteDuplicateSchedulesTool: AITool<DeleteDuplicateSchedulesParams
 					userName: users.name,
 					startTime: shifts.startTime,
 					endTime: shifts.endTime,
+					locationId: shifts.locationId,
 					createdAt: shifts.createdAt
 				})
 				.from(shifts)
@@ -122,10 +124,10 @@ export const deleteDuplicateSchedulesTool: AITool<DeleteDuplicateSchedulesParams
 				))
 				.orderBy(shifts.startTime, shifts.createdAt);
 
-			// Group by user + start time to find duplicates
+			// Group by user + start time + end time + location to find true duplicates
 			const groupedShifts = new Map<string, typeof allShifts>();
 			for (const shift of allShifts) {
-				const key = `${shift.userId}-${shift.startTime.toISOString()}`;
+				const key = `${shift.userId}-${shift.startTime.toISOString()}-${shift.endTime.toISOString()}-${shift.locationId ?? 'null'}`;
 				if (!groupedShifts.has(key)) {
 					groupedShifts.set(key, []);
 				}
@@ -138,10 +140,10 @@ export const deleteDuplicateSchedulesTool: AITool<DeleteDuplicateSchedulesParams
 
 			for (const [, shiftsGroup] of groupedShifts) {
 				if (shiftsGroup.length > 1) {
-					// Sort by createdAt to keep the oldest
-					shiftsGroup.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+					// Sort by createdAt descending to keep the newest (most recently created/edited)
+					shiftsGroup.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-					// Keep the first one, delete the rest
+					// Keep the first one (newest), delete the rest (older copies)
 					const duplicateIds = shiftsGroup.slice(1).map(s => s.id);
 					idsToDelete.push(...duplicateIds);
 

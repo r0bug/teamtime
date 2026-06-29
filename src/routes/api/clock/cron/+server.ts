@@ -136,7 +136,7 @@ export const GET: RequestHandler = async ({ request }) => {
 
 	// Schedule template auto-apply (gated to run at most once per 24 hours)
 	let scheduleTemplateResult:
-		| { weeksProcessed: number; shiftsCreated: number; errors: string[] }
+		| { weeksProcessed: number; shiftsCreated: number; weeksSkipped: number; errors: string[] }
 		| { skipped: true; reason: string }
 		| { error: string } = { skipped: true, reason: 'not due' };
 	try {
