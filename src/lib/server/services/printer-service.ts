@@ -1,5 +1,5 @@
 import { asc, eq } from 'drizzle-orm';
-import { db, printers, vendors } from '$lib/server/db';
+import { db, printers, vendors, labelFormats } from '$lib/server/db';
 import type { NewPrinter } from '$lib/server/db';
 import { getFormatByCode } from './label-format-service';
 
@@ -28,13 +28,56 @@ export async function listPrinters() {
 			assignedVendorName: vendors.displayName,
 			commandLang: printers.commandLang,
 			preferredFormatCode: printers.preferredFormatCode,
+			preferredFormatName: labelFormats.name,
 			lastSeenAt: printers.lastSeenAt,
 			active: printers.active,
 			updatedAt: printers.updatedAt
 		})
 		.from(printers)
 		.leftJoin(vendors, eq(vendors.id, printers.assignedVendorId))
+		.leftJoin(labelFormats, eq(labelFormats.code, printers.preferredFormatCode))
 		.orderBy(asc(printers.kind), asc(printers.name));
+}
+
+export interface PrinterInput {
+	name: string;
+	kind?: string; // 'shop_network' | 'kiosk' | 'vendor_byo' | 'checked_out'
+	model?: string | null;
+	dpi?: number | null;
+	networkAddress?: string | null;
+	preferredFormatCode?: string | null;
+	location?: string | null;
+	serial?: string | null;
+	active?: boolean;
+}
+
+function toPrinterRow(input: PrinterInput): Partial<NewPrinter> {
+	const row: Partial<NewPrinter> = { name: input.name.trim(), updatedAt: new Date() };
+	if (input.kind !== undefined) row.kind = input.kind;
+	if (input.model !== undefined) row.model = input.model || null;
+	if (input.dpi !== undefined) row.dpi = input.dpi ?? null;
+	if (input.networkAddress !== undefined) row.networkAddress = input.networkAddress?.trim() || null;
+	if (input.preferredFormatCode !== undefined) row.preferredFormatCode = input.preferredFormatCode || null;
+	if (input.location !== undefined) row.location = input.location || null;
+	if (input.serial !== undefined) row.serial = input.serial || null;
+	if (input.active !== undefined) row.active = input.active;
+	return row;
+}
+
+/** Create a printer registry row (staff Labels & Tags admin). */
+export async function createPrinter(input: PrinterInput): Promise<{ id: string }> {
+	if (!input.name?.trim()) throw new Error('Printer name is required');
+	const [row] = await db
+		.insert(printers)
+		.values({ kind: 'shop_network', ...toPrinterRow(input) } as NewPrinter)
+		.returning({ id: printers.id });
+	return { id: row.id };
+}
+
+/** Update a printer registry row by id. Only provided fields change. */
+export async function updatePrinter(id: string, input: PrinterInput): Promise<void> {
+	if (!input.name?.trim()) throw new Error('Printer name is required');
+	await db.update(printers).set(toPrinterRow(input)).where(eq(printers.id, id));
 }
 
 export interface PrinterReport {
