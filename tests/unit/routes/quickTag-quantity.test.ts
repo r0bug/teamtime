@@ -1,19 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockSubmitChange, mockGenerate, mockGetVendor } = vi.hoisted(() => ({
-	mockSubmitChange: vi.fn(),
-	mockGenerate: vi.fn(),
-	mockGetVendor: vi.fn()
-}));
+const { mockSubmitChange, mockApplyCreate, mockEnqueue, mockGenerate, mockGetVendor } = vi.hoisted(
+	() => ({
+		mockSubmitChange: vi.fn(),
+		mockApplyCreate: vi.fn(),
+		mockEnqueue: vi.fn(),
+		mockGenerate: vi.fn(),
+		mockGetVendor: vi.fn()
+	})
+);
 
 vi.mock('$lib/server/services/inventory-change-service', () => ({
 	submitChange: mockSubmitChange,
+	applyCreateViaApi: mockApplyCreate,
 	InventoryChangeError: class extends Error {}
 }));
 vi.mock('$lib/server/services/vendor-service', () => ({
 	getVendorForUser: mockGetVendor,
 	generatePartNumber: mockGenerate,
 	VendorServiceError: class extends Error {}
+}));
+vi.mock('$lib/server/services/print-queue-service', () => ({
+	enqueuePrintJob: mockEnqueue
 }));
 
 import { actions } from '../../../src/routes/(app)/vendor/inventory/+page.server';
@@ -26,7 +34,11 @@ function makeRequest(form: Record<string, string>) {
 
 describe('quickTag action — quantity', () => {
 	beforeEach(() => {
-		mockSubmitChange.mockReset();
+		// submitChange now returns the inserted row (code reads row.id); applyCreateViaApi
+		// must report success so the action proceeds past the NRS-first gate to enqueue.
+		mockSubmitChange.mockReset().mockResolvedValue({ id: 'c1' });
+		mockApplyCreate.mockReset().mockResolvedValue({ applied: true, error: null });
+		mockEnqueue.mockReset().mockResolvedValue(undefined);
 		mockGenerate.mockReset().mockResolvedValue('SR51626001');
 		mockGetVendor.mockReset().mockResolvedValue({ id: 'v1', inventoryCodePrefix: 'SR' });
 	});
