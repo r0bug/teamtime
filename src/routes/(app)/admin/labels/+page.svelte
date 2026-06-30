@@ -88,13 +88,17 @@
 
 	<!-- Printers -->
 	<section>
-		<h2 class="font-semibold text-gray-900 mb-2">
-			Printers
-			<span class="text-sm font-normal text-gray-500">({data.printers.length})</span>
+		<h2 class="font-semibold text-gray-900 mb-2 flex items-center justify-between">
+			<span>
+				Printers
+				<span class="text-sm font-normal text-gray-500">({data.printers.length})</span>
+			</span>
+			<a href="/admin/printers" class="btn btn-secondary btn-sm">Manage / add printers →</a>
 		</h2>
 		<p class="text-xs text-gray-500 mb-2">
-			Registered label printers (read-only). Vendor BYO units and shop/shared printers. Printer
-			connectivity and selection live in the standalone label app; this is the registry.
+			Registered label printers. Set each printer's friendly name, DPI, loaded label, and check
+			units out to vendors on the <a href="/admin/printers" class="text-primary-600 underline">Printers</a>
+			page. Each printer's DPI + loaded label drive how the label app renders and prints.
 		</p>
 		{#if data.printers.length === 0}
 			<div class="card"><div class="card-body text-sm text-gray-500">No printers registered yet.</div></div>
