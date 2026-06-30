@@ -31,6 +31,20 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const nameSource = url.searchParams.get('nameSource')?.trim();
 	const customHeader = url.searchParams.get('header')?.trim().slice(0, 64) || undefined;
 
+	// Optional render resolution — the selected printer's dpi (printer registry is
+	// the source of truth). Omitted falls back to the vendor's zebraDpi / 203.
+	const dpiRaw = url.searchParams.get('dpi');
+	let dpi: number | undefined = undefined;
+	if (dpiRaw !== null) {
+		if (!/^\d+$/.test(dpiRaw)) {
+			return json({ error: 'dpi must be a positive integer' }, { status: 400 });
+		}
+		dpi = parseInt(dpiRaw, 10);
+		if (dpi < 50 || dpi > 1200) {
+			return json({ error: 'dpi must be between 50 and 1200' }, { status: 400 });
+		}
+	}
+
 	const vendor = await getVendorForUser(locals.user.id);
 	if (!vendor) throw error(403, 'Vendor portal access not enabled');
 	const prefix = vendor.inventoryCodePrefix ?? '';
@@ -48,7 +62,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		// Header precedence: explicit custom title > store name (contact) > vendor name.
 		const headerOverride =
 			customHeader ?? (nameSource === 'contact' ? (vendor.contactName ?? undefined) : undefined);
-		const zpl = await renderVendorTagZpl(vendor, partNumber, { copies, formatCode, headerOverride });
+		const zpl = await renderVendorTagZpl(vendor, partNumber, { copies, formatCode, headerOverride, dpi });
 		return new Response(zpl, {
 			headers: {
 				'Content-Type': 'text/plain; charset=utf-8',

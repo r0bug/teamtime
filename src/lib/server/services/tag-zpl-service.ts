@@ -48,12 +48,14 @@ export async function assertThermalFormat(formatCode: string | undefined): Promi
  * Resolve item details for a vendor's part number — the vendor's pending
  * inventory change (freshest) preferred, NRS sales history as fallback — then
  * render the tag as ZPL II. `opts.formatCode` overrides the vendor's preferred
- * format (validate it with assertThermalFormat first).
+ * format (validate it with assertThermalFormat first). `opts.dpi` overrides the
+ * render resolution — the SELECTED PRINTER's dpi (the printer registry is the
+ * source of truth); falls back to the vendor's zebraDpi setting / 203 when unset.
  */
 export async function renderVendorTagZpl(
 	vendor: Vendor,
 	partNumber: string,
-	opts: { copies?: number; formatCode?: string; headerOverride?: string } = {}
+	opts: { copies?: number; formatCode?: string; headerOverride?: string; dpi?: number } = {}
 ): Promise<string> {
 	let name: string | null = null;
 	let description: string | null = null;
@@ -117,6 +119,7 @@ export async function renderVendorTagZpl(
 		item: { partNumber, name, description, priceCents },
 		copies: opts.copies,
 		formatCode: opts.formatCode,
+		dpi: opts.dpi,
 		edgeDate,
 		edgeDateSide: 'right'
 	});
