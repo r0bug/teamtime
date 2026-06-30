@@ -815,7 +815,7 @@ interface ScheduleTemplateConfig {
 
 const DEFAULT_CONFIG: ScheduleTemplateConfig = {
 	enabled: true,
-	weeksAhead: 4,
+	weeksAhead: 2,
 	cronLastRun: null
 };
 
@@ -865,11 +865,16 @@ function weekStartString(date: Date): string {
 export async function autoApplyDefaultTemplate(
 	weeksAhead: number,
 	actorId: string | null
-): Promise<{ weeksProcessed: number; shiftsCreated: number; errors: string[] }> {
+): Promise<{
+	weeksProcessed: number;
+	shiftsCreated: number;
+	weeksSkipped: number;
+	errors: string[];
+}> {
 	const def = await getDefaultTemplate();
 	if (!def) {
 		log.info('No default schedule template set — skipping auto-apply');
-		return { weeksProcessed: 0, shiftsCreated: 0, errors: [] };
+		return { weeksProcessed: 0, shiftsCreated: 0, weeksSkipped: 0, errors: [] };
 	}
 
 	const now = new Date();
@@ -877,6 +882,7 @@ export async function autoApplyDefaultTemplate(
 	const errors: string[] = [];
 	let weeksProcessed = 0;
 	let shiftsCreated = 0;
+	let weeksSkipped = 0;
 
 	// Process weeks 1..weeksAhead (skip the current week — preserve in-flight edits)
 	for (let i = 1; i <= weeksAhead; i++) {
@@ -886,6 +892,31 @@ export async function autoApplyDefaultTemplate(
 		const endDate = toPacificDateString(weekEnd);
 
 		try {
+			// Week-level guard: never seed or modify a week the manager is already curating.
+			// If the week already contains ANY shift, skip it entirely — preserve manager edits.
+			const weekStartUtc = createPacificDateTime(startDate, 0, 0);
+			const weekEndExclusiveUtc = new Date(
+				createPacificDateTime(endDate, 0, 0).getTime() + 24 * 60 * 60 * 1000
+			);
+			const [existingShift] = await db
+				.select({ id: shifts.id })
+				.from(shifts)
+				.where(
+					and(
+						gte(shifts.startTime, weekStartUtc),
+						lt(shifts.startTime, weekEndExclusiveUtc)
+					)
+				)
+				.limit(1);
+			if (existingShift) {
+				weeksSkipped++;
+				log.info(
+					{ week: startDate },
+					'Skipping week with existing shifts — preserving manager edits'
+				);
+				continue;
+			}
+
 			const plan = await planApplication({
 				templateId: def.id,
 				startDate,
@@ -910,5 +941,5 @@ export async function autoApplyDefaultTemplate(
 		}
 	}
 
-	return { weeksProcessed, shiftsCreated, errors };
+	return { weeksProcessed, shiftsCreated, weeksSkipped, errors };
 }

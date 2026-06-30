@@ -387,6 +387,26 @@ export async function runOfficeManager(config: RunConfig = {}): Promise<AIRunRes
 						}
 					}
 
+					// Confirmation/approval-required tools must never execute in the unattended autonomous run.
+					// (No chat session exists here to collect human confirmation.) Log as blocked and skip.
+					if (tool.requiresConfirmation || tool.requiresApproval) {
+						log.warn({ runId, toolName: toolCall.name }, 'Tool requires human confirmation — blocked in autonomous run');
+
+						await db.insert(aiActions).values({
+							agent: AGENT,
+							runId,
+							runStartedAt: startedAt,
+							provider: agentConfig.provider,
+							model: agentConfig.model,
+							toolName: toolCall.name,
+							toolParams: toolCall.params,
+							executed: false,
+							blockedReason: 'Requires human confirmation — not executed in autonomous run'
+						});
+						actionsLogged++;
+						continue;
+					}
+
 					// Execute the tool
 					const execContext: ToolExecutionContext = {
 						runId,
