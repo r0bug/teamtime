@@ -1,4 +1,3 @@
-import { partNumberMatchesPrefix } from '$lib/server/services/part-number';
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
 import { getVendorForUser } from '$lib/server/services/vendor-service';
@@ -47,15 +46,10 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	const vendor = await getVendorForUser(locals.user.id);
 	if (!vendor) throw error(403, 'Vendor portal access not enabled');
-	const prefix = vendor.inventoryCodePrefix ?? '';
-	if (!prefix) {
-		// startsWith('') is always true, so without a prefix the ownership
-		// check fails open. Refuse rather than render with no scope guard.
-		throw error(403, 'Vendor has no inventory code prefix configured');
-	}
-	if (!partNumberMatchesPrefix(partNumber, prefix)) {
-		throw error(403, 'Part number does not belong to this vendor');
-	}
+	// Ownership is enforced inside renderVendorTagZpl against NRS (source of truth):
+	// the item must be in this vendor's NRS inventory (or an unsynced pending change).
+	// Manufacturer UPCs/barcodes without the vendor prefix reprint fine; re-assigned
+	// items correctly stop resolving for the old owner. Yields TagZplError(403) below.
 
 	try {
 		await assertThermalFormat(formatCode);
