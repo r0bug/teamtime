@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
-import { and, eq, desc } from 'drizzle-orm';
-import { db, pendingInventoryChanges } from '$lib/server/db';
+import { and, eq, desc, max as sqlMax, sql } from 'drizzle-orm';
+import { db, pendingInventoryChanges, salesTransactions } from '$lib/server/db';
 import { getVendorForUser } from '$lib/server/services/vendor-service';
 
 /**
@@ -21,11 +21,20 @@ function parsePayload(raw: unknown): { description?: string; partName?: string; 
 	return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
 
+interface InvItem {
+	partNumber: string;
+	description: string | null;
+	priceCents: number | null;
+	sortDate: number; // ms; newest first
+}
+
 /**
  * GET /api/vendor/inventory?q=<text>&limit=<n>
- * The calling vendor's created items (pendingInventoryChanges, changeType='create'),
- * deduped by partNumber keeping the most recent, filtered by q (case-insensitive
- * substring over partNumber / description / partName), newest first.
+ * The calling vendor's FULL inventory — items created through the app/portal
+ * (pendingInventoryChanges) UNION the vendor's NRS parts (salesTransactions,
+ * grouped by partNumber). Deduped by partNumber (app-created wins so the freshest
+ * description/price shows), filtered by q (case-insensitive substring over
+ * partNumber / description), newest first.
  */
 export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
@@ -39,7 +48,15 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const limitParsed = limitRaw ? parseInt(limitRaw, 10) || 50 : 50;
 	const limit = Math.max(1, Math.min(200, limitParsed));
 
-	const rows = await db
+	const matches = (parts: (string | null | undefined)[]): boolean => {
+		if (!q) return true;
+		return parts.filter(Boolean).join(' ').toLowerCase().includes(q);
+	};
+
+	const byPart = new Map<string, InvItem>();
+
+	// 1) App/portal-created items (freshest — these win on dedupe).
+	const created = await db
 		.select()
 		.from(pendingInventoryChanges)
 		.where(
@@ -49,42 +66,53 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			)
 		)
 		.orderBy(desc(pendingInventoryChanges.submittedAt));
-
-	// Dedupe by partNumber, keeping the most-recent submittedAt (rows are already
-	// ordered newest-first, so the first occurrence wins).
-	const byPart = new Map<
-		string,
-		{ partNumber: string; description: string | null; priceCents: number | null; submittedAt: Date }
-	>();
-	for (const r of rows) {
-		if (byPart.has(r.partNumber)) continue;
+	for (const r of created) {
+		if (!r.partNumber || byPart.has(r.partNumber)) continue;
 		const p = parsePayload(r.payload);
 		const description =
 			typeof p.description === 'string' ? p.description : typeof p.partName === 'string' ? p.partName : null;
-		const priceCents = typeof p.priceCents === 'number' ? p.priceCents : null;
-
-		if (q) {
-			const haystack = [
-				r.partNumber,
-				typeof p.description === 'string' ? p.description : '',
-				typeof p.partName === 'string' ? p.partName : ''
-			]
-				.join(' ')
-				.toLowerCase();
-			if (!haystack.includes(q)) continue;
-		}
-
+		if (!matches([r.partNumber, description])) continue;
 		byPart.set(r.partNumber, {
 			partNumber: r.partNumber,
 			description,
-			priceCents,
-			submittedAt: r.submittedAt
+			priceCents: typeof p.priceCents === 'number' ? p.priceCents : null,
+			sortDate: r.submittedAt.getTime()
 		});
 	}
 
+	// 2) The vendor's NRS parts (all inventory synced from NRS), grouped by part.
+	if (vendor.nrsVendorId) {
+		const nrs = await db
+			.select({
+				partNumber: salesTransactions.partNumber,
+				partName: salesTransactions.partName,
+				lastPrice: sqlMax(salesTransactions.price),
+				lastSold: sqlMax(salesTransactions.invoiceDate)
+			})
+			.from(salesTransactions)
+			.where(
+				and(
+					eq(salesTransactions.vendorId, vendor.nrsVendorId),
+					sql`${salesTransactions.partNumber} IS NOT NULL`
+				)
+			)
+			.groupBy(salesTransactions.partNumber, salesTransactions.partName);
+		for (const r of nrs) {
+			if (!r.partNumber || byPart.has(r.partNumber)) continue; // app-created already won
+			if (!matches([r.partNumber, r.partName])) continue;
+			byPart.set(r.partNumber, {
+				partNumber: r.partNumber,
+				description: r.partName ?? null,
+				priceCents: r.lastPrice != null ? Math.round(Number(r.lastPrice) * 100) : null,
+				sortDate: r.lastSold ? new Date(r.lastSold).getTime() : 0
+			});
+		}
+	}
+
 	const items = Array.from(byPart.values())
-		.sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime())
-		.slice(0, limit);
+		.sort((a, b) => b.sortDate - a.sortDate)
+		.slice(0, limit)
+		.map(({ partNumber, description, priceCents }) => ({ partNumber, description, priceCents }));
 
 	return json({ items });
 };
