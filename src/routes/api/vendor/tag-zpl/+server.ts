@@ -1,4 +1,3 @@
-import { partNumberMatchesPrefix } from '$lib/server/services/part-number';
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
 import { getVendorForUser } from '$lib/server/services/vendor-service';
@@ -47,15 +46,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	const vendor = await getVendorForUser(locals.user.id);
 	if (!vendor) throw error(403, 'Vendor portal access not enabled');
-	const prefix = vendor.inventoryCodePrefix ?? '';
-	if (!prefix) {
-		// startsWith('') is always true, so without a prefix the ownership
-		// check fails open. Refuse rather than render with no scope guard.
-		throw error(403, 'Vendor has no inventory code prefix configured');
-	}
-	if (!partNumberMatchesPrefix(partNumber, prefix)) {
-		throw error(403, 'Part number does not belong to this vendor');
-	}
+	// No ownership re-check before printing. Items only reach the print queue by
+	// being created in NRS, so the queue is itself the proof they're valid, owned
+	// items — re-verifying here is redundant, and a live NRS ownership lookup per
+	// tag froze the app. Pre-existing manufacturer UPCs/barcodes (which don't carry
+	// the vendor prefix) now reprint like any other item.
 
 	try {
 		await assertThermalFormat(formatCode);

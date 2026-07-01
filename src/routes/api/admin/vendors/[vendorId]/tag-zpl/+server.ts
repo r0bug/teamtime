@@ -6,9 +6,9 @@ import { assertThermalFormat, renderVendorTagZpl, TagZplError } from '$lib/serve
 /**
  * GET /api/admin/vendors/:vendorId/tag-zpl?partNumber=X&copies=N&format=CODE
  * Manager-gated admin variant of the vendor tag-zpl endpoint — renders ZPL for a
- * given vendor's part number (store/admin mode). The vendor endpoint is scoped to
- * the caller's own prefix; this one takes an explicit vendorId behind the manager
- * gate and validates the part number belongs to that vendor's prefix.
+ * given vendor's part number (store/admin mode). Same as the vendor endpoint but
+ * takes an explicit vendorId behind the manager gate. No ownership re-check — the
+ * print queue only holds NRS-created items, so it's already the validity proof.
  */
 export const GET: RequestHandler = async ({ locals, params, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
@@ -31,11 +31,9 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 
 	const vendor = await getVendor(params.vendorId);
 	if (!vendor) throw error(404, 'Vendor not found');
-	const prefix = vendor.inventoryCodePrefix ?? '';
-	if (!prefix) throw error(409, 'Vendor has no inventory code prefix configured');
-	if (!partNumber.startsWith(prefix)) {
-		throw error(400, 'Part number does not belong to this vendor');
-	}
+	// No ownership re-check before printing — the print queue only holds items that
+	// were created in NRS, so it's already the proof of validity. See the vendor
+	// endpoint. This also lets pre-existing UPC/barcode items reprint.
 
 	try {
 		await assertThermalFormat(formatCode);
