@@ -1,4 +1,4 @@
-import { and, eq, desc } from 'drizzle-orm';
+import { and, eq, desc, inArray, ilike, or } from 'drizzle-orm';
 import { db, vendorPrintJobs, vendors } from '$lib/server/db';
 
 /**
@@ -48,6 +48,72 @@ export async function enqueuePrintJob(input: EnqueuePrintJobInput) {
 			priceCents: input.priceCents ?? null,
 			source: input.source ?? 'web_portal',
 			pendingChangeId: input.pendingChangeId ?? null,
+			createdByUserId: input.createdByUserId ?? null
+		})
+		.returning();
+	return row;
+}
+
+/**
+ * A vendor's full print history (every status, not just queued). Optional
+ * case-insensitive substring filter on partNumber OR description. Newest first.
+ * Vendor-scoped — callers pass the authenticated vendor's id. limit default 100,
+ * clamped 1..500.
+ */
+export async function listHistoryForVendor(
+	vendorId: string,
+	opts: { q?: string; limit?: number } = {}
+) {
+	const limit = Math.max(1, Math.min(500, opts.limit && opts.limit > 0 ? Math.floor(opts.limit) : 100));
+	const q = opts.q?.trim();
+
+	const conditions = [eq(vendorPrintJobs.vendorId, vendorId)];
+	if (q) {
+		const pattern = `%${q}%`;
+		conditions.push(
+			or(ilike(vendorPrintJobs.partNumber, pattern), ilike(vendorPrintJobs.description, pattern))!
+		);
+	}
+
+	return db
+		.select()
+		.from(vendorPrintJobs)
+		.where(and(...conditions))
+		.orderBy(desc(vendorPrintJobs.createdAt))
+		.limit(limit);
+}
+
+/**
+ * Record a tag that staff printed immediately client-side (via the admin
+ * tag-zpl endpoint) so it still lands in the vendor's print history. Inserts a
+ * row already marked printed (status 'printed', printedAt now, source 'staff') —
+ * unlike enqueuePrintJob, nothing polls or acks it. Mirrors enqueuePrintJob's
+ * validation: partNumber required, copies clamped to >=1 (default 1).
+ */
+export async function recordStaffPrintedJob(input: {
+	vendorId: string;
+	partNumber: string;
+	copies?: number;
+	description?: string | null;
+	priceCents?: number | null;
+	createdByUserId?: string | null;
+}) {
+	const partNumber = input.partNumber?.trim();
+	if (!partNumber) throw new PrintQueueError('partNumber is required');
+
+	const copies = input.copies && input.copies > 0 ? Math.floor(input.copies) : 1;
+
+	const [row] = await db
+		.insert(vendorPrintJobs)
+		.values({
+			vendorId: input.vendorId,
+			partNumber,
+			copies,
+			description: input.description ?? null,
+			priceCents: input.priceCents ?? null,
+			source: 'staff',
+			status: 'printed',
+			printedAt: new Date(),
 			createdByUserId: input.createdByUserId ?? null
 		})
 		.returning();
@@ -109,6 +175,58 @@ export async function ackPrintJob(
 	// exist or it belongs to another vendor. Same 404 either way (no enumeration).
 	if (!row) throw new PrintQueueError('Print job not found');
 	return row;
+}
+
+/**
+ * Batch variant of ackPrintJob — mark many of the vendor's jobs printed/failed
+ * in one UPDATE. Vendor-scoped: the WHERE also matches vendorId, so a vendor can
+ * never ack another vendor's jobs (unmatched ids are silently ignored). Returns
+ * the rows that were actually updated. Empty input is a no-op returning [].
+ */
+export async function batchAckPrintJobs(
+	jobIds: string[],
+	vendorId: string,
+	outcome: { status: 'printed' | 'failed'; failureReason?: string | null }
+) {
+	if (outcome.status !== 'printed' && outcome.status !== 'failed') {
+		throw new PrintQueueError('status must be "printed" or "failed"');
+	}
+	if (jobIds.length === 0) return [];
+
+	return db
+		.update(vendorPrintJobs)
+		.set({
+			status: outcome.status,
+			printedAt: outcome.status === 'printed' ? new Date() : null,
+			failureReason: outcome.status === 'failed' ? (outcome.failureReason ?? null) : null
+		})
+		.where(and(inArray(vendorPrintJobs.id, jobIds), eq(vendorPrintJobs.vendorId, vendorId)))
+		.returning();
+}
+
+/**
+ * Manager-gated batch ack of any vendor's jobs (store/admin mode). NOT
+ * vendor-scoped — the caller must already be authorized as a manager. Returns
+ * the rows that were updated. Empty input is a no-op returning [].
+ */
+export async function batchAdminAckPrintJobs(
+	jobIds: string[],
+	outcome: { status: 'printed' | 'failed'; failureReason?: string | null }
+) {
+	if (outcome.status !== 'printed' && outcome.status !== 'failed') {
+		throw new PrintQueueError('status must be "printed" or "failed"');
+	}
+	if (jobIds.length === 0) return [];
+
+	return db
+		.update(vendorPrintJobs)
+		.set({
+			status: outcome.status,
+			printedAt: outcome.status === 'printed' ? new Date() : null,
+			failureReason: outcome.status === 'failed' ? (outcome.failureReason ?? null) : null
+		})
+		.where(inArray(vendorPrintJobs.id, jobIds))
+		.returning();
 }
 
 /**
