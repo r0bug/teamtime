@@ -7,10 +7,8 @@ import { assertThermalFormat, renderVendorTagZpl, TagZplError } from '$lib/serve
  * GET /api/admin/vendors/:vendorId/tag-zpl?partNumber=X&copies=N&format=CODE
  * Manager-gated admin variant of the vendor tag-zpl endpoint — renders ZPL for a
  * given vendor's part number (store/admin mode). The vendor endpoint is scoped to
- * the caller's own session; this one takes an explicit vendorId behind the manager
- * gate. Ownership (the part belongs to the vendor) is enforced inside
- * renderVendorTagZpl against NRS — the source of truth — so re-assigned items and
- * pre-existing manufacturer UPCs/barcodes are handled correctly (403 if not owned).
+ * the caller's own prefix; this one takes an explicit vendorId behind the manager
+ * gate and validates the part number belongs to that vendor's prefix.
  */
 export const GET: RequestHandler = async ({ locals, params, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
@@ -33,6 +31,11 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 
 	const vendor = await getVendor(params.vendorId);
 	if (!vendor) throw error(404, 'Vendor not found');
+	const prefix = vendor.inventoryCodePrefix ?? '';
+	if (!prefix) throw error(409, 'Vendor has no inventory code prefix configured');
+	if (!partNumber.startsWith(prefix)) {
+		throw error(400, 'Part number does not belong to this vendor');
+	}
 
 	try {
 		await assertThermalFormat(formatCode);
