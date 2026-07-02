@@ -34,8 +34,7 @@ const RULES: { test: RegExp; os: InstallerFile['os']; label: string }[] = [
 
 const OS_ORDER: InstallerFile['os'][] = ['Windows', 'macOS', 'Linux'];
 
-export function listInstallers(): InstallerFile[] {
-	const dir = downloadsDir();
+function scanInstallers(dir: string): InstallerFile[] {
 	if (!existsSync(dir)) return [];
 	const out: InstallerFile[] = [];
 	for (const f of readdirSync(dir)) {
@@ -49,8 +48,30 @@ export function listInstallers(): InstallerFile[] {
 	);
 }
 
+export function listInstallers(): InstallerFile[] {
+	return scanInstallers(downloadsDir());
+}
+
+/**
+ * Alpha / test builds staged in the `alpha/` subfolder. They get their own
+ * clearly-marked section on the download page, shown only while staff have
+ * something staged there — an empty or missing folder hides the section.
+ */
+export function alphaDir(): string {
+	return join(downloadsDir(), 'alpha');
+}
+
+export function listAlphaInstallers(): InstallerFile[] {
+	return scanInstallers(alphaDir());
+}
+
 /** Guard: only serve a plain filename that is one of the listed installers. */
 export function isValidInstaller(file: string): boolean {
 	if (!file || basename(file) !== file) return false;
 	return listInstallers().some((i) => i.file === file);
+}
+
+export function isValidAlphaInstaller(file: string): boolean {
+	if (!file || basename(file) !== file) return false;
+	return listAlphaInstallers().some((i) => i.file === file);
 }

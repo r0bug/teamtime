@@ -51,6 +51,28 @@
 		</div>
 	{/if}
 
+	{#if data.alpha?.length}
+		<div class="mt-8 rounded-lg border border-amber-300 bg-amber-50 p-5">
+			<h2 class="font-semibold text-amber-900">Test build (alpha)</h2>
+			<p class="text-sm text-amber-800 mt-1">
+				A pre-release build staff asked specific vendors to try. Only install this if we
+				contacted you about it — everyone else should use the downloads above.
+			</p>
+			<div class="mt-3 flex flex-col gap-2">
+				{#each data.alpha as item (item.file)}
+					<a
+						class="block rounded-md border border-amber-400 bg-white hover:bg-amber-100 text-amber-900 text-sm font-medium px-3 py-2"
+						href={`/vendor/app/download/alpha/${encodeURIComponent(item.file)}`}
+						download
+					>
+						{item.label}
+						<span class="opacity-70">· {item.file} · {item.sizeMB} MB</span>
+					</a>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
 	<div class="mt-8 rounded-lg border border-gray-200 bg-gray-50 p-5">
 		<h2 class="font-semibold text-gray-900">First-time setup</h2>
 		<ol class="list-decimal list-inside text-sm text-gray-700 mt-2 space-y-1">
