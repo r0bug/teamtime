@@ -13,7 +13,12 @@
 <svelte:head><title>Get the App — Vendor Portal</title></svelte:head>
 
 <div class="p-4 lg:p-8 max-w-4xl mx-auto">
-	<h1 class="text-2xl font-bold text-gray-900">Get the label app</h1>
+	<div class="flex items-center gap-3 flex-wrap">
+		<h1 class="text-2xl font-bold text-gray-900">Get the label app</h1>
+		{#if data.version}
+			<span class="badge-primary">v{data.version}</span>
+		{/if}
+	</div>
 	<p class="text-gray-600 text-sm mt-1">
 		Install the TeamTime Label app on your computer to create items and print barcode labels on a
 		Zebra printer. Download the version for your operating system.

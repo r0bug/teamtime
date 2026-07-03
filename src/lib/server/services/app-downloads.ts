@@ -20,6 +20,31 @@ export interface InstallerFile {
 	os: 'Windows' | 'macOS' | 'Linux';
 	label: string;
 	sizeMB: number;
+	version: string | null;
+}
+
+/** Pull a semver (e.g. 0.11.0) out of an installer filename, if present. */
+export function parseVersion(file: string): string | null {
+	const m = file.match(/[_-](\d+\.\d+\.\d+)(?:[._-]|$)/);
+	return m ? m[1] : null;
+}
+
+function semverDesc(a: string, b: string): number {
+	const pa = a.split('.').map(Number);
+	const pb = b.split('.').map(Number);
+	for (let i = 0; i < 3; i++) {
+		if ((pb[i] ?? 0) !== (pa[i] ?? 0)) return (pb[i] ?? 0) - (pa[i] ?? 0);
+	}
+	return 0;
+}
+
+/** Highest version among the staged installers (they're normally all the same). */
+export function currentVersion(): string | null {
+	const versions = listInstallers()
+		.map((i) => i.version)
+		.filter((v): v is string => v !== null);
+	if (!versions.length) return null;
+	return versions.sort(semverDesc)[0];
 }
 
 const RULES: { test: RegExp; os: InstallerFile['os']; label: string }[] = [
@@ -42,7 +67,7 @@ export function listInstallers(): InstallerFile[] {
 		const rule = RULES.find((r) => r.test.test(f));
 		if (!rule) continue;
 		const sizeMB = Math.round((statSync(join(dir, f)).size / 1048576) * 10) / 10;
-		out.push({ file: f, os: rule.os, label: rule.label, sizeMB });
+		out.push({ file: f, os: rule.os, label: rule.label, sizeMB, version: parseVersion(f) });
 	}
 	return out.sort(
 		(a, b) => OS_ORDER.indexOf(a.os) - OS_ORDER.indexOf(b.os) || a.label.localeCompare(b.label)
