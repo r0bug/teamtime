@@ -93,7 +93,10 @@
 				Printers
 				<span class="text-sm font-normal text-gray-500">({data.printers.length})</span>
 			</span>
-			<a href="/admin/printers" class="btn btn-secondary btn-sm">Manage / add printers →</a>
+			<span class="flex gap-2">
+				<a href="/admin/app-versions" class="btn btn-secondary btn-sm">App versions →</a>
+				<a href="/admin/printers" class="btn btn-secondary btn-sm">Manage / add printers →</a>
+			</span>
 		</h2>
 		<p class="text-xs text-gray-500 mb-2">
 			Registered label printers. Set each printer's friendly name, DPI, loaded label, and check

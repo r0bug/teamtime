@@ -79,3 +79,59 @@ export function isValidInstaller(file: string): boolean {
 	if (!file || basename(file) !== file) return false;
 	return listInstallers().some((i) => i.file === file);
 }
+
+// ── Archived (older) versions ─────────────────────────────────────────────
+// Each ship moves the previous version's files into `archive-<version>/` under
+// the downloads dir. The vendor listing only reads the top level, so archives
+// are invisible to vendors; they're exposed only through the manager-gated
+// /admin/app-versions page for rollback / handing a vendor a specific old build.
+
+export interface ArchivedVersion {
+	/** Version string, e.g. "0.10.3". */
+	version: string;
+	/** Archive subdir name, e.g. "archive-0.10.3" — the download-URL path segment. */
+	dir: string;
+	files: InstallerFile[];
+}
+
+const ARCHIVE_DIR_RE = /^archive-[\w.\-]+$/;
+
+/** Archived versions (newest first), each with its installer files. */
+export function listArchivedVersions(): ArchivedVersion[] {
+	const base = downloadsDir();
+	if (!existsSync(base)) return [];
+	const out: ArchivedVersion[] = [];
+	for (const entry of readdirSync(base)) {
+		const m = entry.match(/^archive-(.+)$/);
+		if (!m) continue;
+		const sub = join(base, entry);
+		if (!statSync(sub).isDirectory()) continue;
+		const files: InstallerFile[] = [];
+		for (const f of readdirSync(sub)) {
+			const rule = RULES.find((r) => r.test.test(f));
+			if (!rule) continue;
+			const sizeMB = Math.round((statSync(join(sub, f)).size / 1048576) * 10) / 10;
+			files.push({ file: f, os: rule.os, label: rule.label, sizeMB, version: parseVersion(f) });
+		}
+		if (!files.length) continue;
+		files.sort(
+			(a, b) => OS_ORDER.indexOf(a.os) - OS_ORDER.indexOf(b.os) || a.label.localeCompare(b.label)
+		);
+		out.push({ version: m[1], dir: entry, files });
+	}
+	return out.sort((a, b) => semverDesc(a.version, b.version));
+}
+
+/** Guard for the admin archived-download endpoint — no path traversal. */
+export function isValidArchivedFile(dir: string, file: string): boolean {
+	if (!ARCHIVE_DIR_RE.test(dir)) return false;
+	if (!file || basename(file) !== file) return false;
+	return listArchivedVersions().some(
+		(v) => v.dir === dir && v.files.some((f) => f.file === file)
+	);
+}
+
+/** Absolute path of an archived installer (validate with isValidArchivedFile first). */
+export function archivedFilePath(dir: string, file: string): string {
+	return join(downloadsDir(), dir, file);
+}
