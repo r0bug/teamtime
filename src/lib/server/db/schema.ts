@@ -3698,3 +3698,23 @@ export const printers = pgTable('printers', {
 
 export type Printer = typeof printers.$inferSelect;
 export type NewPrinter = typeof printers.$inferInsert;
+
+// Vendor-facing announcements ("news"): staff post issues/updates for vendors
+// using the portal. Pinned rows also render as a sticky banner on every portal
+// page (dismissible client-side); the rest live on /vendor/news. Rows are
+// archived (active=false), never deleted, so past notices stay auditable.
+export const vendorAnnouncements = pgTable('vendor_announcements', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	title: text('title').notNull(),
+	body: text('body').notNull(), // plain text; line breaks preserved in the UI
+	pinned: boolean('pinned').notNull().default(false),
+	active: boolean('active').notNull().default(true),
+	publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
+	expiresAt: timestamp('expires_at', { withTimezone: true }), // null = never expires
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type VendorAnnouncement = typeof vendorAnnouncements.$inferSelect;
+export type NewVendorAnnouncement = typeof vendorAnnouncements.$inferInsert;
