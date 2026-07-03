@@ -7,6 +7,7 @@ import {
 	labelFormats
 } from '$lib/server/db';
 import { renderZpl } from './tag-render-service';
+import { getInvStockForVendorCached } from './nrs-api-client';
 import type { Vendor } from '$lib/server/db/schema';
 
 /**
@@ -97,6 +98,26 @@ export async function renderVendorTagZpl(
 			if (priceCents === null && sale.price !== null && sale.price !== undefined) {
 				priceCents = Math.round(Number(sale.price) * 100);
 			}
+		}
+	}
+
+	// NRS live inventory (cached 60s) — covers UNSOLD stock that has no sale and no
+	// pending change, so its tag still carries the item's name/price. The cache means
+	// a Print All of a whole inventory does one NRS pull, not one per tag.
+	if ((!name || priceCents === null) && vendor.nrsVendorId) {
+		try {
+			const want = partNumber.trim().toUpperCase();
+			const stock = await getInvStockForVendorCached(vendor.nrsVendorId);
+			const item = stock.find((i) => (i.partNumber ?? '').trim().toUpperCase() === want);
+			if (item) {
+				name = name ?? item.name ?? item.displayName ?? null;
+				if (!description) description = item.description ?? null;
+				if (priceCents === null && item.retailPrice !== null && item.retailPrice !== undefined) {
+					priceCents = Math.round(Number(item.retailPrice) * 100);
+				}
+			}
+		} catch {
+			// NRS unreachable — render with whatever we already have.
 		}
 	}
 
