@@ -1,6 +1,7 @@
 import type { LayoutServerLoad } from './$types';
 import { redirect, error } from '@sveltejs/kit';
 import { getVendorForUser } from '$lib/server/services/vendor-service';
+import { listPinnedAnnouncements } from '$lib/server/services/vendor-announcements-service';
 
 export const load: LayoutServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');
@@ -20,5 +21,9 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 		throw redirect(302, '/vendor/set-password');
 	}
 
-	return { vendor, mustChangePassword: locals.user.mustChangePassword === true };
+	return {
+		vendor,
+		mustChangePassword: locals.user.mustChangePassword === true,
+		pinnedAnnouncements: await listPinnedAnnouncements()
+	};
 };
