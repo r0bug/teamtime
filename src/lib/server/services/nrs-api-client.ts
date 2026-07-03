@@ -500,6 +500,22 @@ export async function getAllInvStockForVendor(nrsVendorId: number): Promise<NrsI
 	return all;
 }
 
+// Short-lived per-vendor cache for the full inventory pull. getAllInvStockForVendor
+// pages the whole inventory, so calling it per keystroke (inventory search) would be
+// slow and hammer NRS. 60s TTL keeps search responsive while staying near-current.
+const invStockCache = new Map<number, { items: NrsInvStockDetail[]; expires: number }>();
+const INV_STOCK_CACHE_MS = 60_000;
+
+/** Cached wrapper over getAllInvStockForVendor (60s TTL). */
+export async function getInvStockForVendorCached(nrsVendorId: number): Promise<NrsInvStockDetail[]> {
+	const now = Date.now();
+	const hit = invStockCache.get(nrsVendorId);
+	if (hit && hit.expires > now) return hit.items;
+	const items = await getAllInvStockForVendor(nrsVendorId);
+	invStockCache.set(nrsVendorId, { items, expires: now + INV_STOCK_CACHE_MS });
+	return items;
+}
+
 /** Single inventory item by NRS invStockId (returns null when not found, err 203 "Stock Id Expected"). */
 export async function getInvStock(invStockId: number): Promise<NrsInvStockDetail | null> {
 	try {

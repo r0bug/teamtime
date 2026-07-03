@@ -3,6 +3,7 @@ import { error, json } from '@sveltejs/kit';
 import { and, eq, desc, max as sqlMax, sql } from 'drizzle-orm';
 import { db, pendingInventoryChanges, salesTransactions } from '$lib/server/db';
 import { getVendorForUser } from '$lib/server/services/vendor-service';
+import { getInvStockForVendorCached } from '$lib/server/services/nrs-api-client';
 
 /**
  * The payload jsonb is stored DOUBLE-ENCODED — a JSON string of a JSON string.
@@ -30,11 +31,15 @@ interface InvItem {
 
 /**
  * GET /api/vendor/inventory?q=<text>&limit=<n>
- * The calling vendor's FULL inventory — items created through the app/portal
- * (pendingInventoryChanges) UNION the vendor's NRS parts (salesTransactions,
- * grouped by partNumber). Deduped by partNumber (app-created wins so the freshest
- * description/price shows), filtered by q (case-insensitive substring over
- * partNumber / description), newest first.
+ * The calling vendor's FULL inventory, merged from three sources and deduped by
+ * partNumber (first writer wins):
+ *   1. app/portal-created items (pendingInventoryChanges) — freshest, win on dedupe
+ *   2. the vendor's actual NRS stock (invstock/getall, cached) — every item, incl.
+ *      unsold; this is the bulk of a real inventory
+ *   3. sold parts from sales history (salesTransactions) — catches items sold and
+ *      no longer in stock
+ * Filtered by q (case-insensitive substring over partNumber / description), newest
+ * first (by change date, then partNumber).
  */
 export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
@@ -80,7 +85,36 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		});
 	}
 
-	// 2) The vendor's NRS parts (all inventory synced from NRS), grouped by part.
+	// 2) The vendor's ACTUAL current NRS inventory — every item in stock, sold or
+	//    not. This is the authoritative list and the whole point of the tab: most
+	//    items needing a tag are unsold, so a sales-only list hid the majority.
+	//    Cached 60s so search-as-you-type stays fast; on an NRS hiccup we degrade
+	//    to sales + pending (previous behaviour).
+	if (vendor.nrsVendorId) {
+		try {
+			const stock = await getInvStockForVendorCached(vendor.nrsVendorId);
+			for (const i of stock) {
+				const pn = i.partNumber;
+				if (!pn || byPart.has(pn)) continue; // app-created already won
+				const name = i.name ?? i.displayName ?? null;
+				if (!matches([pn, name])) continue;
+				const changed = i.latestChangeDateTime
+					? new Date(i.latestChangeDateTime).getTime()
+					: NaN;
+				byPart.set(pn, {
+					partNumber: pn,
+					description: name,
+					priceCents: i.retailPrice != null ? Math.round(Number(i.retailPrice) * 100) : null,
+					sortDate: Number.isFinite(changed) ? changed : 0
+				});
+			}
+		} catch {
+			// NRS unreachable — fall through to sales + pending below.
+		}
+	}
+
+	// 3) Sold parts from sales history — adds anything sold that's no longer in
+	//    current NRS stock (and supplies last-sold price when stock is absent).
 	if (vendor.nrsVendorId) {
 		const nrs = await db
 			.select({
@@ -110,7 +144,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	}
 
 	const items = Array.from(byPart.values())
-		.sort((a, b) => b.sortDate - a.sortDate)
+		.sort((a, b) => b.sortDate - a.sortDate || b.partNumber.localeCompare(a.partNumber))
 		.slice(0, limit)
 		.map(({ partNumber, description, priceCents }) => ({ partNumber, description, priceCents }));
 
