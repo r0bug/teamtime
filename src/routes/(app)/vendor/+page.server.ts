@@ -84,7 +84,10 @@ async function checkBaseItem(
 		return { hasBaseItem: false, checkable: false, expectedName: null };
 	}
 
-	// Sold items in NRS (via TT's mirror). Case-insensitive match on partName.
+	// Sold items in NRS (via TT's mirror). The base item's part NUMBER is the
+	// prefix — that's the POS "SR-30" convention (type SR-30, rings item SR at
+	// $30) — so match partNumber first; keep the partName match for vendors
+	// whose item is *named* after the prefix instead.
 	if (nrsVendorId) {
 		const sold = await db
 			.select({ partId: salesTransactions.partId })
@@ -92,7 +95,10 @@ async function checkBaseItem(
 			.where(
 				and(
 					eq(salesTransactions.vendorId, nrsVendorId),
-					sql`LOWER(${salesTransactions.partName}) = LOWER(${prefix})`
+					or(
+						sql`LOWER(${salesTransactions.partNumber}) = LOWER(${prefix})`,
+						sql`LOWER(${salesTransactions.partName}) = LOWER(${prefix})`
+					)
 				)
 			)
 			.limit(1);
@@ -101,14 +107,16 @@ async function checkBaseItem(
 		}
 	}
 
-	// Items submitted via portal (any non-cancelled/rejected status).
+	// Items submitted via portal (any non-cancelled/rejected status). Match the
+	// partNumber COLUMN — the payload jsonb is stored double-encoded, so
+	// `payload->>'partName'` reads empty in SQL and never matches anything.
 	const submitted = await db
 		.select({ id: pendingInventoryChanges.id })
 		.from(pendingInventoryChanges)
 		.where(
 			and(
 				eq(pendingInventoryChanges.vendorId, vendorId),
-				sql`LOWER(${pendingInventoryChanges.payload}->>'partName') = LOWER(${prefix})`,
+				sql`LOWER(${pendingInventoryChanges.partNumber}) = LOWER(${prefix})`,
 				sql`${pendingInventoryChanges.status} IN ('pending', 'applied')`
 			)
 		)
