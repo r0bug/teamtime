@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
 import { isManager } from '$lib/server/auth/roles';
+import { hasTechAccess, TECH } from '$lib/server/auth/tech';
 import { listQueuedForVendor } from '$lib/server/services/print-queue-service';
 
 /**
@@ -9,7 +10,7 @@ import { listQueuedForVendor } from '$lib/server/services/print-queue-service';
  */
 export const GET: RequestHandler = async ({ locals, params }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
-	if (!isManager(locals.user)) throw error(403, 'Forbidden');
+	if (!hasTechAccess(locals, TECH.printQueue, isManager)) throw error(403, 'Forbidden');
 
 	const jobs = await listQueuedForVendor(params.vendorId);
 

@@ -13,7 +13,8 @@ import { assertThermalFormat, renderVendorTagZpl, TagZplError } from '$lib/serve
 export const GET: RequestHandler = async ({ locals, params, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
 	const { isManager } = await import('$lib/server/auth/roles');
-	if (!isManager(locals.user)) throw error(403, 'Forbidden');
+	const { hasTechAccess, TECH } = await import('$lib/server/auth/tech');
+	if (!hasTechAccess(locals, TECH.printQueue, isManager)) throw error(403, 'Forbidden');
 
 	const partNumber = url.searchParams.get('partNumber')?.trim();
 	if (!partNumber) throw error(400, 'partNumber required');

@@ -8,11 +8,12 @@ import type { RequestHandler } from './$types';
 import { createReadStream } from 'fs';
 import { Readable } from 'stream';
 import { isManager } from '$lib/server/auth/roles';
+import { hasTechAccess, TECH } from '$lib/server/auth/tech';
 import { archivedFilePath, isValidArchivedFile } from '$lib/server/services/app-downloads';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
-	if (!isManager(locals.user)) throw error(403, 'Forbidden');
+	if (!hasTechAccess(locals, TECH.appReleases, isManager)) throw error(403, 'Forbidden');
 
 	const { dir, file } = params;
 	if (!isValidArchivedFile(dir, file)) throw error(404, 'Not found');

@@ -1,4 +1,5 @@
 import type { Actions, PageServerLoad } from './$types';
+import { hasTechAccess, TECH } from '$lib/server/auth/tech';
 import { fail, redirect } from '@sveltejs/kit';
 import { desc, eq, inArray } from 'drizzle-orm';
 import { db, vendors, vendorGroupMembers, vendorGroups } from '$lib/server/db';
@@ -100,6 +101,9 @@ export const actions: Actions = {
 
 	invite: async ({ locals, request }) => {
 		if (!locals.user) return fail(403, { error: 'Not authorized' });
+		if (!hasTechAccess(locals, TECH.vendorCredentials, () => true)) {
+			return fail(403, { error: 'Vendor credential management requires tech access' });
+		}
 		if (!locals.user) return fail(401, { error: 'Not signed in' });
 		const data = await request.formData();
 		const vendorId = data.get('vendorId') as string;

@@ -1,4 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
+import { seedTechPermissionsAndTypes } from '$lib/server/auth/tech';
 import { redirect, fail } from '@sveltejs/kit';
 import { isAdmin } from '$lib/server/auth/roles';
 import {
@@ -104,6 +105,7 @@ export const actions: Actions = {
 
 		try {
 			await seedSystemUserTypes();
+			await seedTechPermissionsAndTypes();
 			return { success: true, message: 'System user types seeded' };
 		} catch (error) {
 			log.error({ error }, 'Error seeding user types');

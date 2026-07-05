@@ -24,6 +24,7 @@ import { isUploadPath } from '$lib/uploads';
 import { listTemplates } from '$lib/server/services/agreement-template-service';
 import { listGroups } from '$lib/server/services/vendor-group-service';
 import { isAdmin } from '$lib/server/auth/roles';
+import { hasTechAccess, TECH } from '$lib/server/auth/tech';
 import { audit } from '$lib/server/services/audit-service';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
@@ -225,6 +226,9 @@ export const actions: Actions = {
 
 	enablePortal: async ({ locals, params, request }) => {
 		if (!locals.user) return fail(403, { error: 'Not authorized' });
+		if (!hasTechAccess(locals, TECH.vendorCredentials, () => true)) {
+			return fail(403, { error: 'Vendor credential management requires tech access' });
+		}
 		const data = await request.formData();
 		const email = ((data.get('email') as string) ?? '').trim();
 		const contactName = ((data.get('contactName') as string) ?? '').trim();
@@ -245,6 +249,9 @@ export const actions: Actions = {
 
 	inviteToPortal: async ({ locals, params, request }) => {
 		if (!locals.user) return fail(403, { error: 'Not authorized' });
+		if (!hasTechAccess(locals, TECH.vendorCredentials, () => true)) {
+			return fail(403, { error: 'Vendor credential management requires tech access' });
+		}
 		if (!locals.user) return fail(401, { error: 'Not signed in' });
 		const data = await request.formData();
 		const sendEmail = data.get('sendEmail') === 'on';
@@ -272,6 +279,9 @@ export const actions: Actions = {
 
 	resetPortalPassword: async ({ locals, params, request }) => {
 		if (!locals.user) return fail(403, { error: 'Not authorized' });
+		if (!hasTechAccess(locals, TECH.vendorCredentials, () => true)) {
+			return fail(403, { error: 'Vendor credential management requires tech access' });
+		}
 		const password = ((await request.formData()).get('password') as string) ?? '';
 		try {
 			await resetPortalPassword(params.id, password);
@@ -284,6 +294,9 @@ export const actions: Actions = {
 
 	disablePortal: async ({ locals, params }) => {
 		if (!locals.user) return fail(403, { error: 'Not authorized' });
+		if (!hasTechAccess(locals, TECH.vendorCredentials, () => true)) {
+			return fail(403, { error: 'Vendor credential management requires tech access' });
+		}
 		try {
 			await disablePortal(params.id);
 		} catch (err) {
@@ -295,6 +308,9 @@ export const actions: Actions = {
 
 	unlockPortal: async ({ locals, params }) => {
 		if (!locals.user) return fail(403, { error: 'Not authorized' });
+		if (!hasTechAccess(locals, TECH.vendorCredentials, () => true)) {
+			return fail(403, { error: 'Vendor credential management requires tech access' });
+		}
 		if (!locals.user) return fail(401, { error: 'Not signed in' });
 		try {
 			await unlockPortalAccount(params.id, locals.user.id);
