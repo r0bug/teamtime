@@ -97,6 +97,9 @@
 			<p class="text-gray-600 mt-1">Track sales, hours, and performance metrics</p>
 		</div>
 		<div class="flex gap-2">
+			<a href="/admin/metrics/staffing-analytics" class="btn-secondary text-sm">
+				Staffing Analytics
+			</a>
 			<a href="/admin/metrics/vendor-correlations" class="btn-secondary text-sm">
 				Vendor Correlations
 			</a>

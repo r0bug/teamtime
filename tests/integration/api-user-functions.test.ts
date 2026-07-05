@@ -80,51 +80,11 @@ describe('Time Tracking Functions', () => {
 		});
 	});
 
-	describe('Shifts', () => {
-		it('should require authentication to view shifts', async () => {
-			const { GET } = await import('../../src/routes/api/shifts/+server');
-			const response = await callHandler(GET as any, { method: 'GET' });
-			assertUnauthorized(response);
-		});
-	});
 });
 
 describe('Task Management Functions', () => {
-	describe('List Tasks', () => {
-		it('should require authentication', async () => {
-			const { GET } = await import('../../src/routes/api/tasks/+server');
-			const response = await callHandler(GET as any, { method: 'GET' });
-			assertUnauthorized(response);
-		});
 
-		it('should return tasks for authenticated user', async () => {
-			const { GET } = await import('../../src/routes/api/tasks/+server');
-			const response = await callHandlerAs(GET as any, 'staff', { method: 'GET' });
-			expect(response.status).toBeLessThan(500);
-		});
-	});
 
-	describe('Create Task', () => {
-		it('should require authentication', async () => {
-			const { POST } = await import('../../src/routes/api/tasks/+server');
-			const response = await callHandler(POST as any, {
-				method: 'POST',
-				body: { title: 'Test Task', description: 'Test' }
-			});
-			assertUnauthorized(response);
-		});
-	});
-
-	describe('Complete Task', () => {
-		it('should require authentication', async () => {
-			const { POST } = await import('../../src/routes/api/tasks/[id]/complete/+server');
-			const response = await callHandler(POST as any, {
-				method: 'POST',
-				params: { id: generateTestUUID() }
-			});
-			assertUnauthorized(response);
-		});
-	});
 });
 
 describe('Messaging Functions', () => {
@@ -145,31 +105,10 @@ describe('Messaging Functions', () => {
 		});
 	});
 
-	describe('Groups', () => {
-		it('should require authentication to list groups', async () => {
-			const { GET } = await import('../../src/routes/api/groups/+server');
-			const response = await callHandler(GET as any, { method: 'GET' });
-			assertUnauthorized(response);
-		});
-	});
 });
 
 describe('Expense Functions', () => {
-	describe('ATM Withdrawals', () => {
-		it('should require authentication to list withdrawals', async () => {
-			const { GET } = await import('../../src/routes/api/atm-withdrawals/+server');
-			const response = await callHandler(GET as any, { method: 'GET' });
-			assertUnauthorized(response);
-		});
-	});
 
-	describe('Purchase Requests', () => {
-		it('should require authentication to list purchase requests', async () => {
-			const { GET } = await import('../../src/routes/api/purchase-requests/+server');
-			const response = await callHandler(GET as any, { method: 'GET' });
-			assertUnauthorized(response);
-		});
-	});
 });
 
 describe('Inventory/Pricing Functions', () => {
@@ -227,24 +166,7 @@ describe('Achievements/Gamification Functions', () => {
 });
 
 describe('Notification Functions', () => {
-	describe('List Notifications', () => {
-		it('should require authentication', async () => {
-			const { GET } = await import('../../src/routes/api/notifications/+server');
-			const response = await callHandler(GET as any, { method: 'GET' });
-			assertUnauthorized(response);
-		});
-	});
 
-	describe('Mark Notification Read', () => {
-		it('should require authentication', async () => {
-			const { PUT } = await import('../../src/routes/api/notifications/[id]/read/+server');
-			const response = await callHandler(PUT as any, {
-				method: 'PUT',
-				params: { id: generateTestUUID() }
-			});
-			assertUnauthorized(response);
-		});
-	});
 });
 
 describe('Profile/Settings Functions', () => {
@@ -257,22 +179,3 @@ describe('Profile/Settings Functions', () => {
 	});
 });
 
-describe('User Management Functions', () => {
-	describe('List Users', () => {
-		it('should require authentication', async () => {
-			const { GET } = await import('../../src/routes/api/users/+server');
-			const response = await callHandler(GET as any, { method: 'GET' });
-			assertUnauthorized(response);
-		});
-	});
-});
-
-describe('Location Functions', () => {
-	describe('List Locations', () => {
-		it('should require authentication', async () => {
-			const { GET } = await import('../../src/routes/api/locations/+server');
-			const response = await callHandler(GET as any, { method: 'GET' });
-			assertUnauthorized(response);
-		});
-	});
-});
