@@ -89,7 +89,6 @@ export const smsStatusEnum = pgEnum('sms_status', [
 // Gamification Enums
 export const pointCategoryEnum = pgEnum('point_category', ['attendance', 'task', 'pricing', 'sales', 'bonus', 'achievement']);
 export const achievementTierEnum = pgEnum('achievement_tier', ['bronze', 'silver', 'gold', 'platinum']);
-export const leaderboardPeriodEnum = pgEnum('leaderboard_period', ['daily', 'weekly', 'monthly']);
 
 // Shoutout & Recognition Enums
 export const shoutoutCategoryEnum = pgEnum('shoutout_category', [
@@ -2479,49 +2478,6 @@ export const pricingGrades = pgTable('pricing_grades', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
-// Leaderboard ranking entry type for JSONB storage
-export interface LeaderboardRanking {
-	rank: number;
-	userId: string;
-	userName: string;
-	points: number;
-	breakdown: {
-		attendance: number;
-		tasks: number;
-		pricing: number;
-		sales: number;
-	};
-}
-
-// Leaderboard Snapshots - Historical leaderboard data
-export const leaderboardSnapshots = pgTable('leaderboard_snapshots', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	period: leaderboardPeriodEnum('period').notNull(),
-	periodStart: date('period_start').notNull(),
-	periodEnd: date('period_end').notNull(),
-	rankings: jsonb('rankings').$type<LeaderboardRanking[]>().notNull(),
-	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
-}, (table) => ({
-	uniquePeriod: unique().on(table.period, table.periodStart)
-}));
-
-// Team Goals - Collective team objectives
-export const teamGoals = pgTable('team_goals', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	name: text('name').notNull(),
-	description: text('description'),
-	targetValue: integer('target_value').notNull(),
-	currentValue: integer('current_value').notNull().default(0),
-	metricType: text('metric_type').notNull(), // 'total_sales', 'tasks_completed', 'pricing_decisions'
-	bonusPoints: integer('bonus_points').notNull(), // Points each member gets if goal met
-	startDate: date('start_date').notNull(),
-	endDate: date('end_date').notNull(),
-	isActive: boolean('is_active').notNull().default(true),
-	completedAt: timestamp('completed_at', { withTimezone: true }),
-	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
-	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
-});
-
 // ============================================
 // SHOUTOUTS & RECOGNITION
 // ============================================
@@ -2606,13 +2562,6 @@ export const pricingGradesRelations = relations(pricingGrades, ({ one }) => ({
 	})
 }));
 
-export const teamGoalsRelations = relations(teamGoals, ({ one }) => ({
-	creator: one(users, {
-		fields: [teamGoals.createdBy],
-		references: [users.id]
-	})
-}));
-
 // Shoutout Relations
 export const awardTypesRelations = relations(awardTypes, ({ many }) => ({
 	shoutouts: many(shoutouts)
@@ -2651,10 +2600,6 @@ export type UserAchievement = typeof userAchievements.$inferSelect;
 export type NewUserAchievement = typeof userAchievements.$inferInsert;
 export type PricingGrade = typeof pricingGrades.$inferSelect;
 export type NewPricingGrade = typeof pricingGrades.$inferInsert;
-export type LeaderboardSnapshot = typeof leaderboardSnapshots.$inferSelect;
-export type NewLeaderboardSnapshot = typeof leaderboardSnapshots.$inferInsert;
-export type TeamGoal = typeof teamGoals.$inferSelect;
-export type NewTeamGoal = typeof teamGoals.$inferInsert;
 export type AwardType = typeof awardTypes.$inferSelect;
 export type NewAwardType = typeof awardTypes.$inferInsert;
 export type Shoutout = typeof shoutouts.$inferSelect;

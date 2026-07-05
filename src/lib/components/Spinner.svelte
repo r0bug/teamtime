@@ -1,7 +1,6 @@
 <!--
   Spinner.svelte - Consistent inline loading spinner. Inherits the current text
-  color (use a text-* class on a wrapper to tint it). For skeleton placeholders of
-  known layouts, prefer SkeletonLoader.svelte instead.
+  color (use a text-* class on a wrapper to tint it).
 
   Props:
   - size: 'sm' | 'md' | 'lg'

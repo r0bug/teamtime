@@ -226,6 +226,18 @@
 				<div class="border-t pt-4 mt-4">
 					<div class="flex items-center justify-between">
 						<div>
+							<h3 class="font-medium">Data Visibility Rules</h3>
+							<p class="text-sm text-gray-500 mt-1">
+								Who can see whose data — visibility groups, rules, and per-user grants.
+							</p>
+						</div>
+						<a href="/admin/settings/visibility" class="btn btn-secondary">Manage</a>
+					</div>
+				</div>
+
+				<div class="border-t pt-4 mt-4">
+					<div class="flex items-center justify-between">
+						<div>
 							<h3 class="font-medium">Managers Can Reset PINs</h3>
 							<p class="text-sm text-gray-500 mt-1">
 								Allow managers to reset user PINs. Admins can always reset PINs.

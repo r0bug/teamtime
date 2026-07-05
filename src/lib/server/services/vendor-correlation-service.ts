@@ -831,64 +831,6 @@ export async function getTopCorrelations(
 }
 
 /**
- * Get correlation matrix showing employee vs vendor performance
- */
-export async function getCorrelationMatrix(
-	dateRange: DateRange,
-	periodType: PeriodType
-): Promise<CorrelationMatrixEntry[]> {
-	const startStr = toPacificDateString(dateRange.start);
-	const endStr = toPacificDateString(dateRange.end);
-
-	log.debug({ startStr, endStr, periodType }, 'Getting correlation matrix');
-
-	// Aggregate all correlations for the date range by user-vendor
-	const correlations = await db
-		.select({
-			userId: vendorEmployeeCorrelations.userId,
-			userName: users.name,
-			vendorId: vendorEmployeeCorrelations.vendorId,
-			vendorName: vendorEmployeeCorrelations.vendorName,
-			totalShifts: sql<number>`SUM(${vendorEmployeeCorrelations.shiftsCount})::int`,
-			totalHours: sql<number>`SUM(CAST(${vendorEmployeeCorrelations.hoursWorked} AS DECIMAL))`,
-			totalVendorSales: sql<number>`SUM(CAST(${vendorEmployeeCorrelations.vendorSales} AS DECIMAL))`,
-			avgDeltaPct: sql<number>`AVG(CAST(${vendorEmployeeCorrelations.salesDeltaPct} AS DECIMAL))`,
-			avgConfidence: sql<number>`AVG(CAST(${vendorEmployeeCorrelations.confidenceScore} AS DECIMAL))`
-		})
-		.from(vendorEmployeeCorrelations)
-		.leftJoin(users, eq(vendorEmployeeCorrelations.userId, users.id))
-		.where(
-			and(
-				eq(vendorEmployeeCorrelations.periodType, periodType),
-				gte(vendorEmployeeCorrelations.periodStart, startStr),
-				lte(vendorEmployeeCorrelations.periodStart, endStr)
-			)
-		)
-		.groupBy(
-			vendorEmployeeCorrelations.userId,
-			users.name,
-			vendorEmployeeCorrelations.vendorId,
-			vendorEmployeeCorrelations.vendorName
-		)
-		.orderBy(users.name, vendorEmployeeCorrelations.vendorName);
-
-	return correlations.map(c => ({
-		userId: c.userId,
-		userName: c.userName || 'Unknown',
-		vendorId: c.vendorId,
-		vendorName: c.vendorName,
-		totalShifts: c.totalShifts,
-		totalHours: Math.round(c.totalHours * 100) / 100,
-		totalVendorSales: Math.round(c.totalVendorSales * 100) / 100,
-		avgSalesPerHour: c.totalHours > 0
-			? Math.round((c.totalVendorSales / c.totalHours) * 100) / 100
-			: 0,
-		salesDeltaPct: Math.round(c.avgDeltaPct * 100) / 100,
-		confidenceScore: Math.round(c.avgConfidence * 10000) / 10000
-	}));
-}
-
-/**
  * Generic query for correlations with flexible filtering.
  */
 export async function queryCorrelations(params: {

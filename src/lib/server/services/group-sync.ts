@@ -261,33 +261,6 @@ export async function removeUserFromGroup(
 }
 
 /**
- * Handle user type change - remove from old group, add to new
- */
-export async function handleUserTypeChange(
-	userId: string,
-	oldTypeId: string | null,
-	newTypeId: string | null
-): Promise<void> {
-	// Remove from old type's group if exists
-	if (oldTypeId) {
-		const oldGroup = await getGroupByUserType(oldTypeId);
-		if (oldGroup?.isAutoSynced) {
-			await removeUserFromGroup(oldGroup.id, userId, true);
-		}
-	}
-
-	// Add to new type's group if exists
-	if (newTypeId) {
-		const newGroup = await getGroupByUserType(newTypeId);
-		if (newGroup?.isAutoSynced) {
-			await addUserToGroup(newGroup.id, userId, true);
-		}
-	}
-
-	log.info({ userId, oldTypeId, newTypeId }, 'User type changed, group membership updated');
-}
-
-/**
  * Get group by userType ID
  */
 export async function getGroupByUserType(userTypeId: string): Promise<GroupWithDetails | null> {
@@ -483,22 +456,6 @@ export async function isGroupMember(groupId: string, userId: string): Promise<bo
 		.limit(1);
 
 	return result.length > 0;
-}
-
-/**
- * Check if user is admin of a group
- */
-export async function isGroupAdmin(groupId: string, userId: string): Promise<boolean> {
-	const result = await db
-		.select({ role: groupMembers.role })
-		.from(groupMembers)
-		.where(and(
-			eq(groupMembers.groupId, groupId),
-			eq(groupMembers.userId, userId)
-		))
-		.limit(1);
-
-	return result.length > 0 && result[0].role === 'admin';
 }
 
 /**

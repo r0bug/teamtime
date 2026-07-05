@@ -184,7 +184,7 @@ Use the shared design system rather than hand-rolling raw Tailwind. This keeps U
 - **Destructive actions:** `ConfirmDialog.svelte` for any delete/irreversible action. **Do not** use native `confirm()`. Every destructive action must confirm.
 - **Status pills:** `StatusBadge.svelte` (`<StatusBadge status={x.status} />`) — auto-maps common statuses to `.badge-*`.
 - **Overlays/dialogs:** `Modal.svelte` (accessible: focus trap, Esc, backdrop, scroll lock). Don't hand-roll `fixed inset-0` backdrops.
-- **Empty states:** `EmptyState.svelte`. **Loading:** `Spinner.svelte` (inline) or `SkeletonLoader.svelte` (placeholder layouts).
+- **Empty states:** `EmptyState.svelte`. **Loading:** `Spinner.svelte`.
 
 **Data/mutation pattern:** prefer SvelteKit `load` functions + `<form>` actions with `use:enhance` over client-side `fetch('/api/...')` in `onMount`/handlers. Never swallow errors silently — surface them via `notify.error`.
 

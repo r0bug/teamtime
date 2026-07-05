@@ -181,37 +181,6 @@ function pickName(nrsId: number, fallback: string, tt: Map<number, { displayName
 
 // ---------- exported functions ---------------------------------------------
 
-/** Winner for a single day, by vendor portion. */
-export async function getTopDailySeller(date: string): Promise<DailySellerWinner | null> {
-	const rows = await db
-		.select({ vendors: salesSnapshots.vendors })
-		.from(salesSnapshots)
-		.where(eq(salesSnapshots.saleDate, date));
-
-	if (rows.length === 0) return null;
-	// Last write wins for that date
-	const dayVendors = rows[rows.length - 1].vendors as SnapshotVendor[];
-	if (!dayVendors || dayVendors.length === 0) return null;
-
-	let top: SnapshotVendor | null = null;
-	for (const v of dayVendors) {
-		const id = parseInt(v.vendor_id, 10);
-		if (!Number.isFinite(id) || id === 0) continue;
-		if (top === null || (v.vendor_amount ?? 0) > (top.vendor_amount ?? 0)) {
-			top = v;
-		}
-	}
-	if (!top) return null;
-	const nrsVendorId = parseInt(top.vendor_id, 10);
-	const tt = await resolveTtVendors([nrsVendorId]);
-	return {
-		nrsVendorId,
-		displayName: pickName(nrsVendorId, top.vendor_name, tt),
-		vendorPortion: round2(top.vendor_amount ?? 0),
-		gross: round2(top.total_sales ?? 0)
-	};
-}
-
 /** Winners for the last N days. Days with no sales data are simply omitted. */
 export async function getDailyWinners(daysBack = 7): Promise<DailyWinnerEntry[]> {
 	const end = todayPacific();

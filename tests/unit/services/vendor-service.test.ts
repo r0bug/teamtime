@@ -27,7 +27,6 @@ describe('vendor-service module', () => {
 		expect(typeof mod.listVendors).toBe('function');
 		expect(typeof mod.getVendor).toBe('function');
 		expect(typeof mod.getVendorAgreements).toBe('function');
-		expect(typeof mod.createVendor).toBe('function');
 		expect(typeof mod.updateVendor).toBe('function');
 		expect(typeof mod.signAgreement).toBe('function');
 		expect(typeof mod.syncFromNrs).toBe('function');
