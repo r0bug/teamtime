@@ -550,143 +550,9 @@ export async function awardTaskPoints(params: {
 // PRICING POINTS
 // ============================================================================
 
-/**
- * Award points for pricing decision submission
- */
-export async function awardPricingSubmitPoints(
-	userId: string,
-	pricingDecisionId: string
-): Promise<{ points: number }> {
-	await awardPoints({
-		userId,
-		basePoints: POINT_VALUES.PRICING_SUBMIT,
-		category: 'pricing',
-		action: 'pricing_submit',
-		description: 'Submitted pricing decision',
-		sourceType: 'pricing_decision',
-		sourceId: pricingDecisionId
-	});
-
-	// Update pricing decision count
-	await db
-		.update(userStats)
-		.set({
-			pricingDecisions: sql`${userStats.pricingDecisions} + 1`,
-			updatedAt: new Date()
-		})
-		.where(eq(userStats.userId, userId));
-
-	return { points: POINT_VALUES.PRICING_SUBMIT };
-}
-
-/**
- * Award points based on pricing grade
- */
-export async function awardPricingGradePoints(
-	userId: string,
-	pricingDecisionId: string,
-	overallGrade: number
-): Promise<{ points: number; tier: string }> {
-	let points: number;
-	let tier: string;
-
-	if (overallGrade >= 4.5) {
-		points = POINT_VALUES.PRICING_GRADE_EXCELLENT;
-		tier = 'excellent';
-	} else if (overallGrade >= 3.5) {
-		points = POINT_VALUES.PRICING_GRADE_GOOD;
-		tier = 'good';
-	} else if (overallGrade >= 2.5) {
-		points = POINT_VALUES.PRICING_GRADE_ACCEPTABLE;
-		tier = 'acceptable';
-	} else {
-		points = POINT_VALUES.PRICING_GRADE_POOR;
-		tier = 'poor';
-	}
-
-	await awardPoints({
-		userId,
-		basePoints: points,
-		category: 'pricing',
-		action: `pricing_grade_${tier}`,
-		description: `Pricing graded as ${tier} (${overallGrade.toFixed(1)})`,
-		sourceType: 'pricing_decision',
-		sourceId: pricingDecisionId,
-		metadata: { grade: overallGrade, tier }
-	});
-
-	// Update average pricing grade
-	const stats = await getOrCreateUserStats(userId);
-	const currentAvg = Number(stats.avgPricingGrade) || 0;
-	const count = stats.pricingDecisions || 1;
-	const newAvg = ((currentAvg * (count - 1)) + overallGrade) / count;
-
-	await db
-		.update(userStats)
-		.set({
-			avgPricingGrade: String(newAvg.toFixed(2)),
-			updatedAt: new Date()
-		})
-		.where(eq(userStats.userId, userId));
-
-	return { points, tier };
-}
-
 // ============================================================================
 // SALES POINTS
 // ============================================================================
-
-/**
- * Award points based on sales during shift
- */
-export async function awardSalesPoints(
-	userId: string,
-	date: string,
-	attributedRetained: number,
-	hoursWorked: number,
-	isTopSeller: boolean
-): Promise<{ points: number; breakdown: Record<string, number> }> {
-	const breakdown: Record<string, number> = {};
-
-	// Points per $100 retained
-	const retainedPoints = Math.floor(attributedRetained / 100) * POINT_VALUES.SALES_PER_100_RETAINED;
-	breakdown.retained = retainedPoints;
-
-	let totalPoints = retainedPoints;
-
-	// Check if beat personal average
-	const stats = await getOrCreateUserStats(userId);
-	const currentAvg = stats.salesPoints > 0 && stats.tasksCompleted > 0
-		? stats.salesPoints / stats.tasksCompleted // Rough approximation
-		: 0;
-	const todayRate = attributedRetained / Math.max(hoursWorked, 1);
-
-	// Top seller bonus
-	if (isTopSeller) {
-		totalPoints += POINT_VALUES.SALES_TOP_SELLER;
-		breakdown.topSeller = POINT_VALUES.SALES_TOP_SELLER;
-	}
-
-	if (totalPoints > 0) {
-		await awardPoints({
-			userId,
-			basePoints: totalPoints,
-			category: 'sales',
-			action: 'sales_daily',
-			description: `Sales attribution for ${date}`,
-			sourceType: 'sales_snapshot',
-			metadata: {
-				date,
-				attributedRetained,
-				hoursWorked,
-				isTopSeller,
-				breakdown
-			}
-		});
-	}
-
-	return { points: totalPoints, breakdown };
-}
 
 // ============================================================================
 // LEADERBOARD & STATS QUERIES
@@ -771,21 +637,6 @@ export async function getUserLeaderboardPosition(
 }
 
 /**
- * Get user's recent point transactions
- */
-export async function getRecentTransactions(
-	userId: string,
-	limit: number = 10
-): Promise<PointTransaction[]> {
-	return db
-		.select()
-		.from(pointTransactions)
-		.where(eq(pointTransactions.userId, userId))
-		.orderBy(desc(pointTransactions.earnedAt))
-		.limit(limit);
-}
-
-/**
  * Get today's points for a user
  */
 export async function getTodayPoints(userId: string): Promise<number> {
@@ -807,19 +658,3 @@ export async function getTodayPoints(userId: string): Promise<number> {
 // ============================================================================
 // RESET FUNCTIONS (for cron jobs)
 // ============================================================================
-
-/**
- * Reset weekly points for all users
- */
-export async function resetWeeklyPoints(): Promise<void> {
-	await db.update(userStats).set({ weeklyPoints: 0, updatedAt: new Date() });
-	log.info('Reset weekly points for all users');
-}
-
-/**
- * Reset monthly points for all users
- */
-export async function resetMonthlyPoints(): Promise<void> {
-	await db.update(userStats).set({ monthlyPoints: 0, updatedAt: new Date() });
-	log.info('Reset monthly points for all users');
-}

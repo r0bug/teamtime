@@ -244,32 +244,6 @@ export const DEFAULT_ACHIEVEMENTS: Omit<Achievement, 'id' | 'createdAt'>[] = [
 // SEEDING
 // ============================================================================
 
-/**
- * Seed default achievements into the database
- */
-export async function seedAchievements(): Promise<{ created: number; existing: number }> {
-	let created = 0;
-	let existing = 0;
-
-	for (const achievement of DEFAULT_ACHIEVEMENTS) {
-		const [exists] = await db
-			.select()
-			.from(achievements)
-			.where(eq(achievements.code, achievement.code))
-			.limit(1);
-
-		if (exists) {
-			existing++;
-		} else {
-			await db.insert(achievements).values(achievement);
-			created++;
-		}
-	}
-
-	log.info({ created, existing }, 'Achievement seeding complete');
-	return { created, existing };
-}
-
 // ============================================================================
 // CHECKING & AWARDING
 // ============================================================================

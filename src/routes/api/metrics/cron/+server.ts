@@ -16,7 +16,7 @@ import type { RequestHandler } from './$types';
 import { CRON_SECRET } from '$env/static/private';
 import { createLogger } from '$lib/server/logger';
 import { getPacificDateParts } from '$lib/server/utils/timezone';
-import { runMetricCollectors, cleanupOldMetrics } from '$lib/server/services/metrics-service';
+import { cleanupOldMetrics } from '$lib/server/services/metrics-service';
 import {
 	computeDailyCorrelations,
 	computeWeeklyCorrelations,
@@ -70,7 +70,6 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	yesterday.setDate(yesterday.getDate() - 1);
 
 	const results = {
-		metricCollection: { processed: false, metricsRecorded: 0, errors: [] as string[] },
 		dailyCorrelations: { processed: false, correlationsComputed: 0, error: null as string | null },
 		weeklyRollup: { processed: false, correlationsComputed: 0 },
 		monthlyRollup: { processed: false, correlationsComputed: 0 },
@@ -88,20 +87,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	const skipCleanup = url.searchParams.get('skipCleanup') === 'true';
 
 	try {
-		// 1. Run metric collectors
-		try {
-			log.info('Running metric collectors');
-			const collectorResult = await runMetricCollectors();
-			results.metricCollection.processed = true;
-			results.metricCollection.metricsRecorded = collectorResult.totalMetrics;
-			results.metricCollection.errors = collectorResult.errors;
-			log.info({ metricsRecorded: collectorResult.totalMetrics }, 'Metric collectors completed');
-		} catch (error) {
-			results.metricCollection.errors.push(error instanceof Error ? error.message : 'Unknown error');
-			log.error({ error }, 'Metric collectors failed');
-		}
-
-		// 2. Compute daily correlations for yesterday
+		// 1. Compute daily correlations for yesterday
 		if (!skipCorrelations) {
 			try {
 				log.info({ date: yesterday.toISOString().split('T')[0] }, 'Computing daily correlations');

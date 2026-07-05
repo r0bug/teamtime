@@ -9,7 +9,6 @@
  * - Aggregation support (sum, avg, min, max, count)
  * - Metric definition registry for self-documenting metrics
  *
- * @see {@link $lib/server/services/metric-collectors/types} for collector interfaces
  */
 
 import {
@@ -20,7 +19,9 @@ import {
 import { createLogger } from '$lib/server/logger';
 import { eq, and, gte, lte, sql, inArray } from 'drizzle-orm';
 import type { Metric, NewMetric, MetricDefinition, NewMetricDefinition } from '$lib/server/db/schema';
-import type { MetricPeriodType, CollectedMetric } from './metric-collectors/types';
+// Inlined from the removed metric-collectors framework — still the shape of
+// stored metric rows and query params.
+export type MetricPeriodType = 'hourly' | 'daily' | 'weekly' | 'monthly';
 
 const log = createLogger('server:metrics-service');
 
@@ -258,31 +259,6 @@ export async function recordMetricsBatch(
 	);
 
 	return inserted;
-}
-
-/**
- * Record metrics from collectors (convenience wrapper).
- *
- * @param collectedMetrics - Array of collected metrics from collectors
- * @returns Array of created metric records
- */
-export async function recordCollectedMetrics(
-	collectedMetrics: CollectedMetric[]
-): Promise<Metric[]> {
-	const params: RecordMetricParams[] = collectedMetrics.map((m) => ({
-		type: m.metricType,
-		key: m.metricKey,
-		value: m.value,
-		dimensions: m.dimensions,
-		periodType: m.periodType,
-		periodStart: m.periodStart,
-		periodEnd: m.periodEnd,
-		source: m.source as MetricSourceType,
-		sourceId: m.sourceId,
-		metadata: m.metadata
-	}));
-
-	return recordMetricsBatch(params);
 }
 
 // ============================================================================
@@ -785,67 +761,6 @@ export async function metricExists(
 // ============================================================================
 // METRIC COLLECTION & CLEANUP
 // ============================================================================
-
-/**
- * Run all registered metric collectors.
- * This function is called by the cron job to collect metrics from various sources.
- *
- * @returns Results of metric collection
- */
-export async function runMetricCollectors(): Promise<{
-	totalMetrics: number;
-	errors: string[];
-	collectorResults: Array<{ name: string; metricsRecorded: number; error?: string }>;
-}> {
-	log.info('Running all metric collectors');
-
-	const results = {
-		totalMetrics: 0,
-		errors: [] as string[],
-		collectorResults: [] as Array<{ name: string; metricsRecorded: number; error?: string }>
-	};
-
-	try {
-		// Import collectors dynamically to avoid circular deps
-		const { runAllCollectors } = await import('./metric-collectors');
-
-		const yesterday = new Date();
-		yesterday.setDate(yesterday.getDate() - 1);
-		yesterday.setHours(0, 0, 0, 0);
-
-		const today = new Date();
-		today.setHours(0, 0, 0, 0);
-
-		const collectionResult = await runAllCollectors({
-			start: yesterday,
-			end: today
-		});
-
-		// Record all collected metrics
-		if (collectionResult.metrics.length > 0) {
-			const recorded = await recordCollectedMetrics(collectionResult.metrics);
-			results.totalMetrics = recorded.length;
-		}
-
-		// Add error info from collectors
-		for (const [name, info] of Object.entries(collectionResult.byCollector)) {
-			results.collectorResults.push({
-				name,
-				metricsRecorded: info.metricsCount,
-				error: info.errors.length > 0 ? info.errors.join('; ') : undefined
-			});
-			results.errors.push(...info.errors);
-		}
-
-		log.info({ totalMetrics: results.totalMetrics }, 'Metric collectors completed');
-	} catch (error) {
-		const errorMsg = error instanceof Error ? error.message : 'Unknown collector error';
-		results.errors.push(errorMsg);
-		log.error({ error }, 'Error running metric collectors');
-	}
-
-	return results;
-}
 
 /**
  * Clean up old metrics based on retention policy.

@@ -225,18 +225,3 @@ export async function markRecentActionsRequirePin(chatId: string, sinceMs: numbe
 		.returning({ id: officeManagerPendingActions.id });
 	return updated.length;
 }
-
-/**
- * Format a session's messages for display.
- */
-export function formatMessagesForDisplay(messages: OfficeManagerMessage[]): Array<{
-	role: 'user' | 'assistant';
-	content: string;
-	timestamp: string;
-}> {
-	return messages.map((m) => ({
-		role: m.role,
-		content: m.content,
-		timestamp: m.timestamp
-	}));
-}

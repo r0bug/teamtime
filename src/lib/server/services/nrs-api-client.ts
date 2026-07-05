@@ -180,12 +180,6 @@ async function apiGet<T>(endpoint: string): Promise<T> {
 
 // ── Public Methods ───────────────────────────────────────────────────────────
 
-/** List available stores. */
-export async function getStores(): Promise<NrsStore[]> {
-	const data = await apiGet<{ list: NrsStore[] }>('posstore/list');
-	return data.list;
-}
-
 /** List vendors. */
 export async function getVendors(storeId?: number): Promise<{ vendorId: number; name: string }[]> {
 	const data = await apiGet<{ list: { vendorId: number; name: string }[] }>(`vendor/list?storeId=${storeId ?? getStoreId()}`);
@@ -459,12 +453,6 @@ export interface SaveInvStockInput {
 	categoryName?: string;
 	categoryCode?: string;
 	[key: string]: unknown;
-}
-
-/** Lightweight list of all inventory (no cost/qty). Filter client-side — params are ignored server-side. */
-export async function listInvStock(): Promise<NrsInvStockListItem[]> {
-	const data = await apiGet<{ list: NrsInvStockListItem[] }>('invstock/list');
-	return data.list ?? [];
 }
 
 /** All inventory categories (id/code/description), used to resolve `invCategoryId` on save. */

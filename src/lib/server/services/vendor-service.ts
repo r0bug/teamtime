@@ -128,18 +128,6 @@ export async function getVendorAgreements(vendorId: string): Promise<
 	return rows.map((r) => ({ ...r.vendor_agreements, template: r.agreement_templates }));
 }
 
-export async function createVendor(
-	input: Omit<NewVendor, 'id' | 'createdAt' | 'updatedAt'>,
-	createdByUserId?: string
-): Promise<Vendor> {
-	const [row] = await db
-		.insert(vendors)
-		.values({ ...input, createdByUserId: createdByUserId ?? null })
-		.returning();
-	log.info({ vendorId: row.id, displayName: row.displayName }, 'Created vendor');
-	return row;
-}
-
 export async function updateVendor(
 	id: string,
 	patch: Partial<Omit<NewVendor, 'id' | 'createdAt' | 'updatedAt'>>
