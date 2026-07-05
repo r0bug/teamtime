@@ -22,7 +22,8 @@ import {
 export const POST: RequestHandler = async ({ locals, params, request }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
 	const { isManager } = await import('$lib/server/auth/roles');
-	if (!isManager(locals.user)) throw error(403, 'Forbidden');
+	const { hasTechAccess, TECH } = await import('$lib/server/auth/tech');
+	if (!hasTechAccess(locals, TECH.printQueue, isManager)) throw error(403, 'Forbidden');
 
 	const vendor = await getVendor(params.vendorId);
 	if (!vendor) throw error(404, 'Vendor not found');

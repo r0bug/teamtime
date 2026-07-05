@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
 import { isManager } from '$lib/server/auth/roles';
+import { hasTechAccess, TECH } from '$lib/server/auth/tech';
 import {
 	checkoutPrinter,
 	returnPrinter,
@@ -17,7 +18,7 @@ import {
  */
 export const POST: RequestHandler = async ({ locals, params, request }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
-	if (!isManager(locals.user)) throw error(403, 'Forbidden');
+	if (!hasTechAccess(locals, TECH.printers, isManager)) throw error(403, 'Forbidden');
 
 	let body: { vendorId?: string; loadedFormatCode?: string };
 	try {
@@ -44,7 +45,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 
 export const DELETE: RequestHandler = async ({ locals, params }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
-	if (!isManager(locals.user)) throw error(403, 'Forbidden');
+	if (!hasTechAccess(locals, TECH.printers, isManager)) throw error(403, 'Forbidden');
 
 	try {
 		await returnPrinter(params.id);

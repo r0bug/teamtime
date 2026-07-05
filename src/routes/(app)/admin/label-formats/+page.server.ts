@@ -1,6 +1,7 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 import { isManager } from '$lib/server/auth/roles';
+import { hasTechAccess, TECH } from '$lib/server/auth/tech';
 import {
 	listFormats,
 	createFormat,
@@ -12,7 +13,7 @@ import {
 } from '$lib/server/services/label-format-service';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	if (!isManager(locals.user)) throw redirect(302, '/dashboard');
+	if (!hasTechAccess(locals, TECH.labelFormats, isManager)) throw redirect(302, '/dashboard');
 	const formats = await listFormats({ includeInactive: true });
 	return { formats };
 };
@@ -61,7 +62,7 @@ function readInput(data: FormData): LabelFormatInput {
 
 export const actions: Actions = {
 	create: async ({ locals, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!hasTechAccess(locals, TECH.labelFormats, isManager)) return fail(403, { error: 'Not authorized' });
 		const input = readInput(await request.formData());
 		try {
 			await createFormat(input);
@@ -72,7 +73,7 @@ export const actions: Actions = {
 		return { success: 'create' };
 	},
 	update: async ({ locals, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!hasTechAccess(locals, TECH.labelFormats, isManager)) return fail(403, { error: 'Not authorized' });
 		const data = await request.formData();
 		const id = data.get('id') as string;
 		if (!id) return fail(400, { error: 'id required' });
@@ -85,14 +86,14 @@ export const actions: Actions = {
 		return { success: 'update' };
 	},
 	archive: async ({ locals, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!hasTechAccess(locals, TECH.labelFormats, isManager)) return fail(403, { error: 'Not authorized' });
 		const id = (await request.formData()).get('id') as string;
 		if (!id) return fail(400, { error: 'id required' });
 		await archiveFormat(id);
 		return { success: 'archive' };
 	},
 	unarchive: async ({ locals, request }) => {
-		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
+		if (!hasTechAccess(locals, TECH.labelFormats, isManager)) return fail(403, { error: 'Not authorized' });
 		const id = (await request.formData()).get('id') as string;
 		if (!id) return fail(400, { error: 'id required' });
 		await unarchiveFormat(id);

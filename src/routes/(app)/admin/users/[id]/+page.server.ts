@@ -4,6 +4,7 @@ import { db, users, locations } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { hashPin, validatePinFormat } from '$lib/server/auth/pin';
 import { isManager } from '$lib/server/auth/roles';
+import { hasTechAccess, TECH } from '$lib/server/auth/tech';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!isManager(locals.user)) {
@@ -110,7 +111,7 @@ export const actions: Actions = {
 	},
 
 	resetPin: async ({ request, params, locals }) => {
-		if (!isManager(locals.user)) {
+		if (!hasTechAccess(locals, TECH.credentials, isManager)) {
 			return fail(403, { error: 'Unauthorized' });
 		}
 

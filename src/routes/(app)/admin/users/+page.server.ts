@@ -3,6 +3,7 @@ import { redirect, fail } from '@sveltejs/kit';
 import { db, users, appSettings, userExtraRoles } from '$lib/server/db';
 import { eq, inArray } from 'drizzle-orm';
 import { isManager, isAdmin, EXTRA_ROLES } from '$lib/server/auth/roles';
+import { hasTechAccess, TECH } from '$lib/server/auth/tech';
 import { hashPin, validatePinFormat, generatePin } from '$lib/server/auth/pin';
 import { createLogger } from '$lib/server/logger';
 
@@ -60,7 +61,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		users: usersWithExtras,
 		extraRoleOptions: EXTRA_ROLES,
 		showLaborCost: settingsMap['show_labor_cost'] === 'true',
-		canResetPins: isAdmin(locals.user) || settingsMap['managers_can_reset_pins'] === 'true',
+		canResetPins: hasTechAccess(locals, TECH.credentials, (u) => isAdmin(u) || settingsMap['managers_can_reset_pins'] === 'true'),
 		pinOnlyLogin: settingsMap['pin_only_login'] !== 'false' // Default to true
 	};
 };
@@ -230,7 +231,7 @@ export const actions: Actions = {
 	},
 
 	resetPin: async ({ request, locals }) => {
-		if (!isManager(locals.user)) {
+		if (!hasTechAccess(locals, TECH.credentials, isManager)) {
 			return fail(403, { error: 'Not authorized' });
 		}
 
@@ -244,7 +245,9 @@ export const actions: Actions = {
 		const managersCanReset = setting?.value === 'true';
 		const userIsAdmin = isAdmin(locals.user);
 
-		if (!userIsAdmin && !managersCanReset) {
+		// An explicit tech:credentials grant (Tech Support type) bypasses the managers-can-reset toggle.
+		const techGranted = hasTechAccess(locals, TECH.credentials, () => false);
+		if (!userIsAdmin && !managersCanReset && !techGranted) {
 			return fail(403, { error: 'PIN reset is not enabled for managers' });
 		}
 
