@@ -324,51 +324,6 @@ CREATE TABLE password_reset_tokens (
 
 ---
 
-## Shift Requests Schema
-
-### Shift Request Status Enum
-
-```sql
-CREATE TYPE shift_request_status AS ENUM ('open', 'filled', 'cancelled');
-CREATE TYPE shift_response_status AS ENUM ('accepted', 'declined');
-```
-
-### Shift Requests Table
-
-```sql
-CREATE TABLE shift_requests (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  shift_id UUID REFERENCES shifts(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT,
-  requested_date DATE NOT NULL,
-  start_time TIMESTAMPTZ NOT NULL,
-  end_time TIMESTAMPTZ NOT NULL,
-  location_id UUID REFERENCES locations(id) ON DELETE SET NULL,
-  status shift_request_status NOT NULL DEFAULT 'open',
-  filled_by UUID REFERENCES users(id) ON DELETE SET NULL,
-  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-### Shift Request Responses Table
-
-```sql
-CREATE TABLE shift_request_responses (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  request_id UUID NOT NULL REFERENCES shift_requests(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  status shift_response_status NOT NULL,
-  note TEXT,
-  responded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(request_id, user_id)
-);
-```
-
----
-
 ## Staffing Analytics Schema
 
 ### Worker Pair Performance Table
@@ -878,6 +833,50 @@ CREATE TABLE nrs_inventory_api_log (
   success BOOLEAN NOT NULL,
   error_message TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+### Printers Table
+
+Managed label-printer registry: shop/network printers, the kiosk, and checked-out vendor units. Distinct from per-vendor desktop-app kit config — this is the asset catalog the staff "Labels & Tags" hub shows and the standalone label app reads to know where it can print. Actual printer connectivity + selection live in the app.
+
+```sql
+CREATE TABLE printers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'shop_network',    -- 'shop_network' | 'kiosk' | 'vendor_byo' | 'checked_out'
+  model TEXT,
+  dpi INTEGER,
+  network_address TEXT,                         -- 'host:port' for TCP/9100 printers; NULL for USB
+  mac_address TEXT,
+  serial TEXT,
+  location TEXT,
+  assigned_vendor_id UUID REFERENCES vendors(id) ON DELETE SET NULL,  -- holder of a checked-out unit
+  command_lang TEXT NOT NULL DEFAULT 'zpl2',    -- 'zpl2' | 'epl' | 'cpcl'
+  preferred_format_code TEXT,                   -- soft FK to label_formats.code
+  last_seen_at TIMESTAMPTZ,                     -- reserved for future heartbeat
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+### Vendor Announcements Table
+
+Vendor-facing announcements ("Vendor News"): staff post issues/updates for vendors using the portal. Pinned rows also render as a dismissible banner on every portal page; the rest live on `/vendor/news`. Rows are archived (`active=false`), never deleted, so past notices stay auditable. Managed at `/admin/vendors/announcements`.
+
+```sql
+CREATE TABLE vendor_announcements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,                            -- plain text; line breaks preserved in the UI
+  pinned BOOLEAN NOT NULL DEFAULT false,
+  active BOOLEAN NOT NULL DEFAULT true,
+  published_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ,                        -- NULL = never expires
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
 

@@ -222,7 +222,7 @@ ATM withdrawals & allocations
 
 Location-capturing events
 
-Broadcast shift messages
+Broadcast messages
 
 Role-based access controls tied to Admin / Manager / Purchaser / Staff roles
 
@@ -265,8 +265,6 @@ Configure:
 Recurring task templates
 
 Event-triggered tasks (e.g., tied to clock-in/clock-out)
-
-Send broadcast shift requests to staff
 
 Communicate with any employee (1:1 or broadcast)
 
@@ -327,8 +325,6 @@ With managers
 With other employees
 
 Send/receive photos
-
-Respond to broadcast shift requests
 
 5. Scheduling System
 5.1 Manager Scheduling Tools (Desktop & Mobile)
@@ -460,8 +456,6 @@ New task assigned
 Task due/overdue
 
 Schedule changes
-
-Broadcast shift requests
 
 New messages
 
@@ -1202,3 +1196,47 @@ staff_notes table:
 - body, photo_path, photo_original_name, photo_mime_type, photo_size_bytes
 - status ('active' | 'deleted'), deleted_by_user_id, deleted_at
 - created_at, updated_at
+
+22. Vendor Announcements ("Vendor News")
+
+22.1 Purpose
+
+A staff-to-vendor communication channel for portal users: shop notices, policy updates, and issues that every booth vendor should see.
+
+22.2 Behavior
+
+- Admins create, edit, pin, and archive announcements at /admin/vendors/announcements, with an optional expiry date.
+- Vendors read announcements at /vendor/news (the "News" tab in the portal navigation).
+- Pinned announcements also render as a dismissible banner on every vendor portal page.
+- Announcements are archived (active = false) rather than deleted, so past notices remain auditable.
+
+22.3 Data Model
+
+vendor_announcements table:
+
+- id, title, body
+- pinned, active
+- published_at, expires_at (nullable — never expires)
+- created_by, created_at, updated_at
+
+23. Managed Label Printers
+
+23.1 Purpose
+
+A registry of the label printers the operation owns or tracks: shop network printers, the kiosk unit, vendor-owned ("BYO") printers, and shop units checked out to vendors.
+
+23.2 Behavior
+
+- Staff manage the registry from the "Labels & Tags" hub in the admin area.
+- Printers can be checked out to a vendor; the checkout records which label format is loaded in the unit.
+- A Print Bridge ingest endpoint (POST /api/printers/report, authenticated with a bearer PRINTER_BRIDGE_SECRET) lets external print-bridge software report printer status.
+
+23.3 Data Model
+
+printers table:
+
+- id, name, kind ('shop_network' | 'kiosk' | 'vendor_byo' | 'checked_out')
+- model, dpi, network_address, mac_address, serial, location
+- assigned_vendor_id (holder of a checked-out unit)
+- command_lang ('zpl2' | 'epl' | 'cpcl'), preferred_format_code
+- last_seen_at, active, created_at, updated_at

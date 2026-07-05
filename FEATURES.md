@@ -27,14 +27,13 @@ This document provides detailed information about TeamTime features, their imple
 21. [Global Search](#global-search)
 22. [Keyboard Shortcuts](#keyboard-shortcuts)
 23. [Connection Status Indicator](#connection-status-indicator)
-24. [CSV Export](#csv-export)
-25. [Shift Requests](#shift-requests)
-26. [Bulk Operations](#bulk-operations)
-27. [Module System](#module-system)
-28. [AI Token Usage Dashboard](#ai-token-usage-dashboard)
-29. [Gamification Admin Config](#gamification-admin-config)
-30. [Dashboard Enhancements](#dashboard-enhancements)
-31. [Customer Holds & Staff Notes](#customer-holds--staff-notes)
+24. [Bulk Operations](#bulk-operations)
+25. [Module System](#module-system)
+26. [AI Token Usage Dashboard](#ai-token-usage-dashboard)
+27. [Dashboard Enhancements](#dashboard-enhancements)
+28. [Customer Holds & Staff Notes](#customer-holds--staff-notes)
+29. [Vendor Announcements (Vendor News)](#vendor-announcements-vendor-news)
+30. [Managed Printers & Labels Hub](#managed-printers--labels-hub)
 
 ---
 
@@ -276,16 +275,14 @@ Managers and Admins can access pricing analytics at `/admin/pricing`:
 |----------|--------|-------------|
 | `/api/pricing-decisions` | GET | List pricing decisions |
 | `/api/pricing-decisions` | POST | Create pricing decision |
-| `/api/pricing-decisions/[id]` | GET | Get single decision |
-| `/api/ebay-tasks` | GET | List eBay tasks |
-| `/api/ebay-tasks/[id]/claim` | POST | Claim an eBay task |
-| `/api/ebay-tasks/[id]/complete` | POST | Mark task completed |
+
+Pricing decision detail views and the eBay task queue (view/claim/complete) are handled by their pages' server loads + form actions; there is no public REST API for them.
 
 ### Implementation Files
 
 - **Schema**: `src/lib/server/db/schema.ts` — `pricingDecisions`, `pricingDecisionPhotos` tables
 - **Migration**: `migrations/add-item-pricing-system.sql`
-- **API**: `src/routes/api/pricing-decisions/`, `src/routes/api/ebay-tasks/`
+- **API**: `src/routes/api/pricing-decisions/`
 - **UI**: `src/routes/(app)/pricing/`, `src/routes/(app)/ebay/tasks/`, `src/routes/(app)/admin/pricing/`
 
 ---
@@ -1127,8 +1124,8 @@ This section only appears if the user has at least one graded pricing decision.
 | `achievements` | Achievement definitions |
 | `user_achievements` | Earned achievements per user |
 | `pricing_grades` | Admin grades for pricing decisions |
-| `leaderboard_snapshots` | Historical rankings (optional) |
-| `team_goals` | Collective team goals (optional) |
+
+Leaderboards are computed live from `point_transactions` / `user_stats` (and sales snapshots for sales attribution) — there is no historical snapshot table.
 
 ### Files
 
@@ -1238,19 +1235,9 @@ Requires transaction-level data from the NRS API (stored in `sales_transactions`
 
 **Import Endpoint**: `POST /api/sales/import` — Accepts scraper JSON output
 
-#### Transactions Query API
+#### Querying Sales Data
 
-`GET /api/sales/transactions` — Flexible query API for transaction-level data:
-- **Filters**: `?date=`, `?startDate=`, `?endDate=`, `?vendorId=`
-- **Group modes**:
-  - `?group=hourly` — Aggregate by hour (sales, retained, item count, vendor count)
-  - `?group=vendor` — Aggregate by vendor (sales, payout, retained, item count)
-  - `?group=vendor-hourly` — Vendor x hour cross-tabulation (heatmap data)
-  - `?group=item` — Individual items (paginated with `?limit=` and `?offset=`)
-
-**Query API** (aggregates):
-- `GET /api/sales` — Query daily snapshots
-- Supports `?date=`, `?startDate=`, `?endDate=`, `?latest=true`, `?limit=`
+The `/sales` and `/sales/detail` pages load snapshot and transaction data through their SvelteKit server loads; there is no public REST query API for sales data. Only the two import endpoints above are exposed.
 
 ### Validation
 
@@ -1307,8 +1294,6 @@ Per-user admin-controlled flag determines whether an employee's clocked hours co
 - `src/routes/(app)/sales/+page.server.ts` — Server data loading (snapshots)
 - `src/routes/(app)/sales/detail/+page.svelte` — Transaction drill-down UI
 - `src/routes/(app)/sales/detail/+page.server.ts` — Server data loading (transactions)
-- `src/routes/api/sales/+server.ts` — Snapshot query API
-- `src/routes/api/sales/transactions/+server.ts` — Transaction query API
 - `src/routes/api/sales/import-nrs/+server.ts` — NRS API import endpoint
 - `src/routes/api/sales/import/+server.ts` — Legacy scraper import endpoint
 - `src/lib/server/services/nrs-api-client.ts` — NRS REST API client
@@ -1397,17 +1382,12 @@ When a user's user type changes:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/groups` | GET | List groups (user's groups or all for admin) |
-| `/api/groups` | POST | Create custom group |
-| `/api/groups/[id]` | GET | Get group details |
-| `/api/groups/[id]` | PATCH | Update group |
-| `/api/groups/[id]` | DELETE | Delete group |
 | `/api/groups/[id]/members` | GET | List group members |
 | `/api/groups/[id]/members` | POST | Add member |
-| `/api/groups/[id]/members/[userId]` | DELETE | Remove member |
-| `/api/groups/sync` | POST | Sync all user type groups |
 | `/api/conversations/[id]/messages/[messageId]/thread` | GET | Get thread replies |
 | `/api/conversations/[id]/messages/[messageId]/thread` | POST | Reply to thread |
+
+Group create/update/delete, member removal, and the user-type sync are managed through the admin UI at `/admin/groups` (server loads + form actions); there is no public REST API for those operations.
 
 ### Database Schema
 
@@ -1443,11 +1423,7 @@ When a user's user type changes:
 - `src/lib/server/services/group-sync.ts` — All group operations
 
 **API Routes**:
-- `src/routes/api/groups/+server.ts` — List and create
-- `src/routes/api/groups/[id]/+server.ts` — CRUD operations
-- `src/routes/api/groups/[id]/members/+server.ts` — Member management
-- `src/routes/api/groups/[id]/members/[userId]/+server.ts` — Remove member
-- `src/routes/api/groups/sync/+server.ts` — Sync trigger
+- `src/routes/api/groups/[id]/members/+server.ts` — Member list/add
 - `src/routes/api/conversations/[id]/messages/[messageId]/thread/+server.ts` — Thread API
 
 **Admin UI**:
@@ -1507,13 +1483,9 @@ The Shoutouts & Recognition system enables peer recognition and manager awards, 
 
 ### Workflow Integration
 
-Recognition is embedded into existing workflows rather than a standalone page:
-
-1. **After Task Completion** — Option to recognize the person who completed a task
-2. **Pricing Grading** — Suggest shoutout when grading excellent work (5.0)
-3. **Messages** — Quick shoutout button in conversation headers
-4. **User Lists** — Shoutout icon next to each user in admin views
-5. **Dashboard** — "Recent Recognition" widget shows public shoutouts
+- **Dashboard** — "Recent Recognition" widget shows public shoutouts
+- **Manager queue** — nominations are reviewed and awarded at `/admin/shoutouts`
+- **AI** — the Office Manager creates recognition proactively via `give_shoutout`
 
 ### Manager Approval Queue
 
@@ -1547,22 +1519,13 @@ The Office Manager AI has full access to the points system:
 |----------|--------|-------------|
 | `/api/shoutouts` | GET | List shoutouts (with status filter) |
 | `/api/shoutouts` | POST | Create shoutout/nomination |
-| `/api/shoutouts/[id]` | GET | Get shoutout details |
 | `/api/shoutouts/[id]/approve` | POST | Manager approves (awards points) |
 | `/api/shoutouts/[id]/reject` | POST | Manager rejects |
-| `/api/shoutouts/pending` | GET | Get pending approval queue |
 | `/api/award-types` | GET | List available award types |
 
+The pending-approval queue is loaded server-side on `/admin/shoutouts`.
+
 ### Components
-
-**`ShoutoutButton.svelte`** — Compact trigger button
-- Props: `userId`, `userName`, `variant` (icon/text/full)
-- Opens ShoutoutModal on click
-
-**`ShoutoutModal.svelte`** — Recognition creation form
-- Award type selector with point preview
-- Title and optional description
-- Shows approval requirement for peer nominations
 
 **`RecentShoutouts.svelte`** — Recognition feed widget
 - Props: `limit`, `compact`
@@ -1596,7 +1559,7 @@ Shoutout points use the existing gamification system:
 
 **API Routes**: `src/routes/api/shoutouts/`, `src/routes/api/award-types/`
 
-**Components**: `src/lib/components/ShoutoutButton.svelte`, `ShoutoutModal.svelte`, `RecentShoutouts.svelte`
+**Components**: `src/lib/components/RecentShoutouts.svelte`
 
 **Admin**: `src/routes/(app)/admin/shoutouts/`
 
@@ -1629,6 +1592,7 @@ Admin analytics at `/admin/metrics`:
 - Vendor performance rankings
 - Employee sales attribution
 - Profitability analysis (retained vs labor costs)
+- Links to the sub-dashboards: Sales Trends, Vendor Correlations, Staffing Analytics (`/admin/metrics/staffing-analytics`), and NRS Data Sources
 
 ### Data Export
 
@@ -1659,12 +1623,9 @@ Two new tools for the Office Manager AI:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/metrics` | GET | Query metrics with filters |
-| `/api/metrics/definitions` | GET | List metric definitions |
-| `/api/metrics/reports` | GET | Get metric reports |
-| `/api/metrics/vendor-correlations` | GET | Query vendor correlations |
-| `/api/metrics/vendor-correlations/top` | GET | Get top correlations |
-| `/api/metrics/cron` | POST | Trigger metric computation |
+| `/api/metrics/cron` | POST | Trigger metric computation (cron, `CRON_SECRET` bearer auth) |
+
+The cron runs daily/weekly/monthly vendor-correlation computation, the staffing analytics compute, and cleanup of old metric data. The metrics dashboards load their data server-side; there is no public REST query API for metrics.
 
 ### Database Schema
 
@@ -1673,15 +1634,12 @@ Two new tools for the Office Manager AI:
 | `sales_snapshots` | Daily sales aggregates imported from NRS (API or scraper) |
 | `sales_transactions` | Individual POS line items from NRS API (hourly/item drill-down) |
 | `vendor_employee_correlations` | Computed correlations by period |
-| `metric_definitions` | Configurable metric definitions |
-| `metric_data_points` | Time-series metric data |
-| `metric_reports` | Saved report configurations |
 
 ### Files
 
 **Services**:
 - `src/lib/server/services/vendor-correlation-service.ts` — Correlation computation
-- `src/lib/server/services/metrics-service.ts` — Metrics aggregation
+- `src/lib/server/services/metrics-service.ts` — Metrics cleanup/aggregation helpers
 - `src/lib/server/services/sales-attribution-service.ts` — Sales attribution
 
 **AI Tools**:
@@ -1689,7 +1647,7 @@ Two new tools for the Office Manager AI:
 - `src/lib/ai/tools/office-manager/get-vendor-correlations.ts`
 
 **API Routes**:
-- `src/routes/api/metrics/` — Metrics API endpoints
+- `src/routes/api/metrics/cron/` — Metrics cron endpoint
 
 **Admin UI**:
 - `src/routes/(app)/admin/metrics/` — Metrics dashboard
@@ -1745,7 +1703,7 @@ Automatically generates scheduling recommendations:
 
 ### Admin Dashboard
 
-**URL**: `/admin/metrics/staffing-analytics`
+**URL**: `/admin/metrics/staffing-analytics` (linked from the Metrics dashboard at `/admin/metrics`)
 
 **Features**:
 - Date range filter with quick range buttons (7/30/90 days)
@@ -1774,23 +1732,9 @@ Automatically generates scheduling recommendations:
 - "What's our best day of the week for sales?"
 - "How many workers should we have on shift?"
 
-### API Endpoints
+### Data Access
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/metrics/staffing-analytics` | GET | Overview/summary |
-| `/api/metrics/staffing-analytics/pairs` | GET | Top worker pairs |
-| `/api/metrics/staffing-analytics/efficiency` | GET | Worker efficiency |
-| `/api/metrics/staffing-analytics/impact` | GET | Worker impact analysis |
-| `/api/metrics/staffing-analytics/staffing-levels` | GET | Staffing optimization |
-| `/api/metrics/staffing-analytics/day-of-week` | GET | Day patterns |
-| `/api/metrics/staffing-analytics/insights` | GET | Generated insights |
-| `/api/metrics/staffing-analytics/compute` | POST | Trigger recomputation |
-
-**Query Parameters**:
-- `startDate`, `endDate` — Date range (default: 30 days)
-- `limit` — Results limit
-- `minDays`, `minHours` — Minimum thresholds
+The dashboard loads all analytics server-side (SvelteKit server loads + form actions); there is no public REST API for staffing analytics. Recomputation happens via the weekly metrics cron or the dashboard's recompute button.
 
 ### Database Schema
 
@@ -1817,9 +1761,6 @@ Staffing analytics computation runs weekly (Sundays) as part of the metrics cron
 
 **AI Tool**:
 - `src/lib/ai/tools/office-manager/analyze-staffing-patterns.ts`
-
-**API Routes**:
-- `src/routes/api/metrics/staffing-analytics/` — 8 endpoints
 
 **Admin UI**:
 - `src/routes/(app)/admin/metrics/staffing-analytics/` — Dashboard
@@ -2387,74 +2328,6 @@ Uses browser `navigator.onLine` API with `online`/`offline` event listeners.
 
 ---
 
-## CSV Export
-
-### Overview
-
-Managers and admins can export data to CSV or JSON format for payroll integration and external analysis.
-
-### Supported Export Types
-
-| Type | Description | Access |
-|------|-------------|--------|
-| `time-entries` | Clock in/out records with hours worked | Manager+ |
-| `tasks` | Task completion records | Manager+ |
-
-### Usage
-
-**API**: `GET /api/export/{type}?format=csv&start=YYYY-MM-DD&end=YYYY-MM-DD`
-
-**Parameters**:
-- `type` — Export type (`time-entries`, `tasks`)
-- `format` — Output format (`csv` or `json`, default: `csv`)
-- `start` — Start date filter
-- `end` — End date filter
-
-**Response**: File download with appropriate Content-Type and Content-Disposition headers.
-
-### Files
-
-**API**: `src/routes/api/export/[type]/+server.ts`
-
-**Service**: `src/lib/server/services/export-service.ts`
-
----
-
-## Shift Requests
-
-### Overview
-
-Shift Requests enable managers to broadcast open shifts to all staff. Employees can accept or decline available shifts, and the first acceptance fills the request.
-
-### Workflow
-
-1. Manager creates a shift request with date, time, and location
-2. Request appears as "open" to all staff
-3. Employees view open requests and respond (accept/decline) with optional note
-4. First acceptance fills the request; status changes to "filled"
-5. Manager can cancel unfilled requests
-
-### API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/shifts/requests` | GET | List shift requests (filter by status) |
-| `/api/shifts/requests` | POST | Create shift request (Manager+) |
-| `/api/shifts/requests/[id]/respond` | POST | Accept or decline a request |
-
-### Database Schema
-
-- `shift_requests` — Request metadata with status tracking
-- `shift_request_responses` — Individual user responses (unique per request+user)
-
-### Files
-
-**API**: `src/routes/api/shifts/requests/+server.ts`, `src/routes/api/shifts/requests/[id]/respond/+server.ts`
-
-**Schema**: `src/lib/server/db/schema.ts` — `shiftRequests`, `shiftRequestResponses` tables
-
----
-
 ## Schedule Templates
 
 ### Overview
@@ -2508,20 +2381,9 @@ On the main `/admin/schedule` page, the server calls `validateRange` for the def
 
 The system prompt instructs the agent to prefer `apply_schedule_template` over building shift-by-shift with `create_schedule` when a default exists.
 
-### API Endpoints
+### Data Access
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/schedule-templates` | GET | List templates (optional `?include=shifts`) |
-| `/api/schedule-templates` | POST | Create a template |
-| `/api/schedule-templates/[id]` | GET/PUT/DELETE | Get / update (full replace of shifts) / delete (409 if default) |
-| `/api/schedule-templates/[id]/set-default` | POST | Mark as active default |
-| `/api/schedule-templates/[id]/plan-apply` | POST | `{startDate, endDate}` → `ApplicationPlan`, no writes |
-| `/api/schedule-templates/[id]/commit-apply` | POST | Re-plans server-side, then executes per-slot decisions |
-| `/api/schedule-templates/[id]/validate` | POST | `{startDate, endDate}` → drift report |
-| `/api/schedule-templates/save-from-week` | POST | Snapshot an existing week into a new template |
-
-All endpoints are manager-gated via the shared `isManager` check.
+Templates are managed through the manager-gated admin UI at `/admin/schedule/templates` (server loads + form actions) and the AI Office Manager tools; there is no public REST API for schedule templates.
 
 ### Database Schema
 
@@ -2532,8 +2394,6 @@ All endpoints are manager-gated via the shared `isManager` check.
 ### Files
 
 **Service**: `src/lib/server/services/schedule-template-service.ts` — `listTemplates`, `createTemplate`, `updateTemplate`, `deleteTemplate`, `setDefaultTemplate`, `saveWeekAsTemplate`, `planApplication`, `commitApplication`, `commitGapFillOnly`, `validateRange`, `autoApplyDefaultTemplate`
-
-**API**: `src/routes/api/schedule-templates/`
 
 **Admin UI**: `src/routes/(app)/admin/schedule/templates/+page.svelte` (list + inline editor), `src/routes/(app)/admin/schedule/templates/[id]/apply/+page.svelte` (per-conflict resolution)
 
@@ -2612,7 +2472,7 @@ Both endpoints write to `audit_logs` with `action = break_start` / `break_end`.
 
 **Timesheet**: `src/routes/(app)/admin/timesheet/+page.svelte` + `+page.server.ts`
 
-**Shared allowance helper**: `src/lib/server/utils/break-allowance.ts` (+ tests `tests/unit/utils/break-allowance.test.ts`). Consumed by payroll export, `/api/reports/time`, admin reports/dashboard, all metrics pages (`metrics`, `metrics/sales-trends`, `metrics/vendor-correlations`), the sales-attribution / staffing-analytics / vendor-correlation services, the sales metric collector, and the `view_sales` AI tool.
+**Shared allowance helper**: `src/lib/server/utils/break-allowance.ts` (+ tests `tests/unit/utils/break-allowance.test.ts`). Consumed by payroll export, admin reports/dashboard, all metrics pages (`metrics`, `metrics/sales-trends`, `metrics/vendor-correlations`), the sales-attribution / staffing-analytics / vendor-correlation services, and the `view_sales` AI tool.
 
 **Audit**: `src/lib/server/services/audit-service.ts` (`auditClockEvent` extended action types)
 
@@ -2626,16 +2486,6 @@ Admin bulk operations allow managers to perform actions on multiple records simu
 
 ### Available Bulk Operations
 
-#### Bulk User Management
-- **API**: `POST /api/admin/users/bulk`
-- Perform batch operations on multiple users (activate, deactivate, change role)
-- Requires admin permissions
-
-#### Bulk Task Operations
-- **API**: `POST /api/tasks/bulk`
-- Assign, cancel, or update multiple tasks at once
-- Requires manager+ permissions
-
 #### Bulk Pricing Grading
 - **API**: `POST /api/admin/pricing/bulk-grade`
 - Grade up to 50 pricing decisions at once with shared grade values
@@ -2644,7 +2494,7 @@ Admin bulk operations allow managers to perform actions on multiple records simu
 
 ### Files
 
-**API Routes**: `src/routes/api/admin/users/bulk/+server.ts`, `src/routes/api/tasks/bulk/+server.ts`, `src/routes/api/admin/pricing/bulk-grade/+server.ts`
+**API Routes**: `src/routes/api/admin/pricing/bulk-grade/+server.ts`
 
 ---
 
@@ -2699,30 +2549,6 @@ The AI Token Usage Dashboard provides visibility into AI agent costs, run freque
 **Page**: `src/routes/(app)/admin/ai/usage/+page.svelte`, `src/routes/(app)/admin/ai/usage/+page.server.ts`
 
 **Schema**: `src/lib/server/db/schema.ts` — `aiTokenUsage`, `aiActions` tables
-
----
-
-## Gamification Admin Config
-
-### Overview
-
-The Gamification Config page allows administrators to tune game mechanics (point values, streak thresholds, level requirements) from the database without code changes.
-
-### Access
-
-**URL**: Admin → Gamification (`/admin/gamification`)
-
-### Features
-
-- View and edit gamification parameters grouped by category (points, streaks, levels, achievements)
-- Changes take effect immediately
-- Key-value configuration stored in `gamification_config` table
-
-### Files
-
-**Page**: `src/routes/(app)/admin/gamification/+page.svelte`, `src/routes/(app)/admin/gamification/+page.server.ts`
-
-**Schema**: `src/lib/server/db/schema.ts` — `gamificationConfig` table
 
 ---
 
@@ -2803,9 +2629,8 @@ Admins and managers can text the TeamTime Twilio number and have a full multi-tu
 - `src/routes/(app)/admin/sms/+page.svelte` — AI Conversations + How to Use tabs
 - Schema: `office_manager_chats.channel`, `office_manager_pending_actions.requires_pin` / `pin_attempts`, `users.sms_locked_until`
 
-### Job Processing Fix
-- Scheduled SMS jobs are now processed every 15 minutes via the clock cron endpoint
-- Previously, the `/api/jobs/process` endpoint was never called by any cron job
+### Job Processing
+- Scheduled SMS jobs are processed every 15 minutes as part of the clock cron endpoint (`/api/clock/cron`)
 
 ### Files
 
@@ -2813,7 +2638,6 @@ Admins and managers can text the TeamTime Twilio number and have a full multi-tu
 
 **API Endpoints**:
 - `src/routes/api/sms/test/+server.ts` — Test SMS endpoint
-- `src/routes/api/sms/status/+server.ts` — Status API
 - `src/routes/api/sms/webhook/status/+server.ts` — Delivery status callback
 - `src/routes/api/sms/webhook/inbound/+server.ts` — Inbound message webhook
 
@@ -2845,11 +2669,11 @@ Slide-out panel showing detailed information about a staff member:
 
 **Component**: `src/lib/components/StaffDetailPanel.svelte`
 
-### Skeleton Loader
+### Loading States
 
-Loading placeholder component used across dashboard widgets for a polished loading experience.
+Loading feedback across the app uses the shared `Spinner.svelte` component.
 
-**Component**: `src/lib/components/SkeletonLoader.svelte`
+**Component**: `src/lib/components/Spinner.svelte`
 
 ### Swipeable Cards
 
@@ -2893,7 +2717,7 @@ The vendor page then shows a "next steps" banner:
   - **Agreements** — current primary + current add-ons (signature thumbnail or "Paper on file" badge, signed-by, witnessed-by, expandable body + terms snapshot). Voided/historical collapsed below.
   - **Sales & Performance** — live NRS API call filtered by `nrsVendorId` with 7d / 30d / 90d / YTD range selector. Headline metrics (gross, vendor portion, retained, transactions, avg) and three charts (sales over time, top items, prior-period delta). Read-only — no DB writes.
   - **Notes**
-- **New vendor** (`/admin/vendors/new`) — single-card form
+- **New vendors** are created through the onboarding wizard at `/admin/vendors/onboard` (above)
 - **NRS sync** — admin action pulls the NRS vendor list and creates inactive stubs for unknown `nrsVendorId`s. Idempotent — never duplicates and never overwrites filled-in stubs.
 
 #### Templated agreements (`/admin/vendor-agreements/templates`)
@@ -2980,10 +2804,10 @@ Cards: pending change count, link to sales, link to profile, plus a "Your booth"
 
 #### `/vendor/inventory`
 
-- **Section A — Items I've sold**: distinct `(partId, partNumber, partName)` from `salesTransactions` filtered by `vendorId = vendor.nrsVendorId`. Last sold date, units, last price. Each row has "Propose update" and "Remove" buttons.
-- **Section B — My pending changes**: rows from `pending_inventory_changes` for this vendor with status badges (`pending` / `applied` / `rejected` / `cancelled`). Pending rows have a Cancel button. Rejected rows show the reason; applied rows show NRS apply notes.
-- **Add new item** modal — collects `{ partNumber, partName, description, priceDollars, quantity }`. Server validates `partNumber.startsWith(vendor.inventoryCodePrefix)`.
-- **New items auto-apply to NRS** on submit via the `invstock/save` API (attributed by `passThroughApVendorId = vendor.nrsVendorId`); the change flips to `applied`, or stays `pending` for the staff retry if the call fails. **Updates/deletes** still queue as `pending` for staff (NRS has no confirmed update endpoint; delete needs an externalCode/externalId mapping). See the [NRS Inventory Write API](#nrs-inventory-write-api--journal) section below.
+- **Full inventory listing** — the vendor's inventory is merged from three sources and deduped by `partNumber` (via `GET /api/vendor/inventory`, used by the portal and the desktop label app): portal/app-created items (`pending_inventory_changes`), the vendor's **actual NRS stock** (`invstock/getall`, cached — includes unsold items, the bulk of a real inventory), and sold parts from `salesTransactions` (catches items sold and no longer in stock).
+- **"Make a tag"** — the only add-an-item path: the vendor enters a description + price and the part number is always auto-generated after the vendor's code (`{prefix}{MDDYY}{NNN}`, atomic per-vendor/day sequence — manual part-number entry was removed because it let vendors save bare prefixes that collide). The item auto-applies to NRS via the `invstock/save` API (attributed by `passThroughApVendorId = vendor.nrsVendorId`) and is queued for tag printing; if the NRS call fails the change stays `pending` for the staff retry. See the [NRS Inventory Write API](#nrs-inventory-write-api--journal) section below.
+- **Removal requests** — item rows can request removal with a required reason; staff confirm the item is off the sales floor before removing it from NRS.
+- **My pending changes** — rows from `pending_inventory_changes` for this vendor with status badges (`pending` / `applied` / `rejected` / `cancelled`). Pending rows have a Cancel button. Rejected rows show the reason; applied rows show NRS apply notes.
 
 #### `/vendor/sales`
 
@@ -3018,7 +2842,7 @@ Vendor sees the applied/rejected status (and notes/reason) on their `/vendor/inv
   - `src/lib/server/services/nrs-api-client.ts` — `getVendorSales(opts)` for per-vendor fetch, plus the inventory read/write methods (`listInvStock`, `getAllInvStockForVendor`, `getInvStock`, `saveInvStock`, `getInvCategories`)
 - Admin routes: `src/routes/(app)/admin/vendors/`, `src/routes/(app)/admin/vendor-agreements/templates/`, `src/routes/(app)/admin/vendor-groups/`
 - Vendor portal: `src/routes/(app)/vendor/`
-- API: `src/routes/api/vendors/`, `src/routes/api/agreement-templates/`
+- API: `src/routes/api/vendors/[id]/nrs-sales/`, `src/routes/api/vendor/` (inventory, tags, print queue). Vendor CRUD and agreement templates are managed via admin-page form actions.
 
 ### Portal invitation flow (Stage 2b)
 
@@ -3056,8 +2880,8 @@ Admin UI on `/admin/vendors/onboarding`:
 
 ### Vendor sidebar + dashboard polish
 
-Vendor users now see a vendor-specific sidebar (Home / Inventory / Print Sheet /
-Leaderboard / Sales / Profile) instead of the staff sidebar. `(app)/+layout.server.ts`
+Vendor users now see a vendor-specific nav (Home / News / Inventory / Notes /
+Get the App / Leaderboard / Sales / Profile) instead of the staff sidebar. `(app)/+layout.server.ts`
 returns `isVendor: boolean`; `(app)/+layout.svelte` swaps `navItems` accordingly
 and never picks up admin/manager elevation for vendor users.
 
@@ -3065,10 +2889,10 @@ The `/vendor` home stats panel now displays both **gross** and **vendor portion*
 side by side (`Gross $X · Yours $Y`) — important for pass-through vendors where
 vendor portion is always zero.
 
-A **base-item check** card warns the vendor (and prompts staff) if no item with
-`partName = vendor.inventoryCodePrefix` exists in either `salesTransactions` or
-`pendingInventoryChanges` — the catch-all SKU staff use to ring up unmarked
-booth merchandise.
+A **base-item check** card warns the vendor (and prompts staff) if no item whose
+**part number** matches `vendor.inventoryCodePrefix` (the POS "SR-30" convention)
+exists in either `salesTransactions` or `pendingInventoryChanges` — the catch-all
+SKU staff use to ring up unmarked booth merchandise.
 
 ### Login picker
 
@@ -3193,4 +3017,81 @@ All four endpoints re-check vendor-portal status server-side (shared `isVendorPo
 
 ---
 
-*Last updated: June 2026*
+## Vendor Announcements (Vendor News)
+
+### Overview
+
+A staff→vendor communication channel for portal users: shop notices, policy updates, and issues every booth vendor should see. Replaces ad-hoc emails/texts with a single auditable feed.
+
+### Admin Side (`/admin/vendors/announcements`)
+
+- **Create / edit** announcements (title + plain-text body, line breaks preserved)
+- **Pin** — pinned announcements also render as a **dismissible banner on every vendor portal page** (dismissal is client-side)
+- **Optional expiry** — `expires_at` hides an announcement after a date without archiving it
+- **Archive** — rows are archived (`active = false`), never deleted, so past notices stay auditable
+
+### Vendor Side (`/vendor/news`)
+
+- The **News** tab in the vendor portal nav lists active announcements, newest first
+- Pinned announcements appear both in the list and as the portal-wide banner
+
+### Database Schema
+
+`vendor_announcements` — `id`, `title`, `body`, `pinned`, `active`, `published_at`, `expires_at` (nullable), `created_by`, `created_at`, `updated_at`
+
+### Files
+
+- **Service**: `src/lib/server/services/vendor-announcements-service.ts`
+- **Admin UI**: `src/routes/(app)/admin/vendors/announcements/`
+- **Vendor UI**: `src/routes/(app)/vendor/news/` + the banner in `src/routes/(app)/vendor/+layout.svelte`
+- **Schema**: `src/lib/server/db/schema.ts` — `vendorAnnouncements` table
+
+---
+
+## Managed Printers & Labels Hub
+
+### Overview
+
+A registry of the label printers the operation owns or tracks — shop network printers, the kiosk unit, vendor-owned ("BYO") printers, and shop units checked out to vendors. The registry is the catalog the staff **Labels & Tags** hub shows and the standalone desktop label app reads to know where it can print; actual printer connectivity and selection live in the app.
+
+### Staff UI
+
+- **Labels & Tags hub** (`/admin/labels`) — overview of label formats, printers, and print activity
+- **Printer registry** (`/admin/printers`) — create/edit printers (name, kind, model, dpi, network address, command language, preferred label format, active flag)
+- **Printer checkout** — assign a `checked_out` unit to a vendor, recording which label format is loaded in the unit; check-in clears the assignment
+
+### Printer Kinds
+
+| Kind | Meaning |
+|------|---------|
+| `shop_network` | Shop-owned network (TCP/9100) printer |
+| `kiosk` | The in-store kiosk unit |
+| `vendor_byo` | Vendor-owned printer |
+| `checked_out` | Shop unit checked out to a vendor (`assigned_vendor_id`) |
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/printers` | GET | List printers (read by the desktop label app) |
+| `/api/printers/[id]/checkout` | POST/DELETE | Check a unit out to a vendor (records loaded label format) / check it back in |
+| `/api/printers/report` | POST | Print Bridge status ingest — `Authorization: Bearer $PRINTER_BRIDGE_SECRET` (or `X-Bridge-Secret`) |
+
+### Desktop Label App
+
+The standalone label app (v0.11+) also offers a persistent **"Local printer"** option that prints through the OS driver, with label-size and dpi selectors, so vendors can print without a registered network printer.
+
+### Database Schema
+
+`printers` — `id`, `name`, `kind`, `model`, `dpi`, `network_address`, `mac_address`, `serial`, `location`, `assigned_vendor_id`, `command_lang` (`zpl2` | `epl` | `cpcl`), `preferred_format_code` (soft FK to `label_formats.code`), `last_seen_at`, `active`, timestamps
+
+### Files
+
+- **Service**: `src/lib/server/services/printer-service.ts`
+- **Admin UI**: `src/routes/(app)/admin/labels/`, `src/routes/(app)/admin/printers/`
+- **API**: `src/routes/api/printers/`
+- **Schema**: `src/lib/server/db/schema.ts` — `printers` table
+
+---
+
+*Last updated: July 2026*

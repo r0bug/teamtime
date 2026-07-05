@@ -57,7 +57,7 @@ src/
 │   │   └── providers/         # LLM integrations
 │   │
 │   ├── server/
-│   │   ├── db/schema.ts       # 96 tables, all data models (2800+ lines)
+│   │   ├── db/schema.ts       # 115 tables, all data models (3600+ lines)
 │   │   ├── auth/              # Lucia + granular permissions
 │   │   ├── services/          # Business logic layer
 │   │   └── jobs/              # Background task processing
@@ -73,7 +73,7 @@ src/
 │   │   ├── inventory/         # AI inventory drops
 │   │   └── ...
 │   │
-│   ├── api/                   # REST API (100+ endpoints)
+│   ├── api/                   # REST API (88 endpoints)
 │   └── login/, logout/, etc.  # Public auth routes
 
 tests/
@@ -84,7 +84,7 @@ tests/
 
 ### Key Patterns
 
-1. **Schema-First Development:** `src/lib/server/db/schema.ts` defines all 93 tables - read this to understand the data model
+1. **Schema-First Development:** `src/lib/server/db/schema.ts` defines all 115 tables - read this to understand the data model
 
 2. **Permission System:** Beyond roles, uses custom user types with granular action-level permissions. See `src/lib/server/auth/permissions.ts`
 
@@ -118,7 +118,7 @@ PostgreSQL with Drizzle ORM. Schema file is the source of truth:
 - `drizzle/` - Generated migrations
 - `drizzle.config.ts` - ORM configuration
 
-96 tables covering: users, sessions, time entries, tasks, inventory, pricing, expenses, messaging (with group chats and threads), gamification (10 levels, 17 achievement types, DB-configurable), AI system (token usage tracking), shift requests, audit logs, security (login attempts, account lockouts).
+115 tables covering: users, sessions, time entries, tasks, inventory, pricing, expenses, messaging (with group chats and threads), gamification (10 levels, 17 achievement types, DB-configurable), AI system (token usage tracking), vendors (agreements, announcements, printers), audit logs, security (login attempts, account lockouts).
 
 ### Group Chat & Threads
 
@@ -130,8 +130,7 @@ The messaging system supports:
 
 Key files:
 - `src/lib/server/services/group-sync.ts` - Group synchronization service
-- `src/routes/(app)/admin/groups/` - Admin group management UI
-- `src/routes/api/groups/` - Groups REST API
+- `src/routes/(app)/admin/groups/` - Admin group management UI (server loads + form actions)
 - Database tables: `groups`, `group_members`, `thread_participants`
 
 ## Environment Variables
@@ -190,7 +189,7 @@ Use the shared design system rather than hand-rolling raw Tailwind. This keeps U
 
 ## Key Files to Understand First
 
-1. `src/lib/server/db/schema.ts` - Complete data model (93 tables)
+1. `src/lib/server/db/schema.ts` - Complete data model (115 tables)
 2. `src/hooks.server.ts` - Request lifecycle, auth, permissions, security headers
 3. `src/lib/ai/types.ts` - AI system interfaces
 4. `src/lib/server/error-handler.ts` - Centralized error handling
