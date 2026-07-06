@@ -8,6 +8,8 @@
 	$: vendors = data.vendors;
 
 	const KINDS = ['shop_network', 'kiosk', 'vendor_byo', 'checked_out'];
+	// A printer with a shop network IP is a Shop printer (not loanable); USB = Loaner.
+	const isShopPrinter = (addr: string | null | undefined) => /\d+\.\d+\.\d+\.\d+/.test(addr ?? '');
 </script>
 
 <svelte:head><title>Printers — TeamTime</title></svelte:head>
@@ -61,6 +63,7 @@
 					<div>
 						<span class="font-semibold text-gray-900">{p.name}</span>
 						{#if !p.active}<span class="badge-gray ml-2">inactive</span>{/if}
+						{#if isShopPrinter(p.networkAddress)}<span class="badge-gray ml-2">🏪 Shop</span>{:else}<span class="badge-gray ml-2">🔄 Loaner</span>{/if}
 						{#if p.assignedVendorName}<span class="badge-primary ml-2">checked out → {p.assignedVendorName}</span>{/if}
 					</div>
 					<div class="text-xs text-gray-500">
@@ -99,10 +102,12 @@
 							<span class="text-sm text-gray-600">Checked out to <strong>{p.assignedVendorName}</strong></span>
 							<button class="btn-secondary btn-sm" type="submit">Check in (return to pool)</button>
 						</form>
+					{:else if isShopPrinter(p.networkAddress)}
+						<p class="text-sm text-gray-500">🏪 Shop printer — not loanable (network {p.networkAddress}).</p>
 					{:else}
 						<form method="POST" action="?/checkout" use:enhance class="flex flex-wrap items-end gap-2">
 							<input type="hidden" name="id" value={p.id} />
-							<label class="label">Check out to vendor
+							<label class="label">Loan out to vendor
 								<select class="input" name="vendorId" required>
 									<option value="">— pick vendor —</option>
 									{#each vendors as v}<option value={v.id}>{v.name}</option>{/each}
@@ -114,7 +119,7 @@
 									{#each formats as f}<option value={f.code} selected={p.preferredFormatCode === f.code}>{f.name}</option>{/each}
 								</select>
 							</label>
-							<button class="btn-secondary btn-sm" type="submit">Check out</button>
+							<button class="btn-secondary btn-sm" type="submit">Loan out</button>
 						</form>
 					{/if}
 				</div>

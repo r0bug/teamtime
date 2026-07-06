@@ -155,11 +155,18 @@ export async function checkoutPrinter(
 	opts: { vendorId: string; loadedFormatCode: string }
 ): Promise<void> {
 	const [printer] = await db
-		.select({ id: printers.id })
+		.select({ id: printers.id, networkAddress: printers.networkAddress })
 		.from(printers)
 		.where(eq(printers.id, printerId))
 		.limit(1);
 	if (!printer) throw new PrinterCheckoutError('Printer not found', 404);
+	// Only USB printers can be loaned out; a shop/network printer (has an IP) is not loanable.
+	if (/\d+\.\d+\.\d+\.\d+/.test(printer.networkAddress ?? '')) {
+		throw new PrinterCheckoutError(
+			'This is a shop (network) printer — only USB printers can be loaned out.',
+			409
+		);
+	}
 
 	const [vendor] = await db
 		.select({ id: vendors.id })
