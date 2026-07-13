@@ -127,7 +127,10 @@ export const POST: RequestHandler = async ({ request, url }) => {
 					partNumber: r.partNumber || null,
 					partName: r.partName || null,
 					itemDescription: r.itemDescription || '',
-					quantity: r.quantity || 1,
+					// quantity is an integer column; direct-sale service lines can be
+					// fractional (e.g. 0.4). total_price is authoritative for sales, so
+					// round quantity for storage (min 1) rather than lose the line.
+					quantity: Math.round(Number(r.quantity)) || 1,
 					price: String(r.price || 0),
 					totalPrice: String(r.totalPrice || 0),
 					tax: String(r.tax || 0),
