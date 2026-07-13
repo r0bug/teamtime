@@ -63,12 +63,18 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		// Fetch and aggregate from NRS API
 		const result = await getDailyVendorSales(date, storeId);
 
-		if (result.vendors.length === 0) {
-			log.info({ date }, 'No vendor sales data from NRS API');
+		// Nothing to store. For the primary (consignment) store, "no sales" means
+		// no vendor rows. Secondary stores (e.g. Yakima Networking) are direct
+		// sales with no consignment vendor (vendorId 0), so gate on raw records.
+		const nothingToStore =
+			storeId === primaryStoreId ? result.vendors.length === 0 : result.records.length === 0;
+		if (nothingToStore) {
+			log.info({ date, storeId }, 'No sales data from NRS API');
 			return json({
 				success: true,
 				message: 'No sales data found for this date',
 				date,
+				storeId,
 				vendorCount: 0
 			});
 		}
@@ -102,9 +108,12 @@ export const POST: RequestHandler = async ({ request, url }) => {
 				.delete(salesTransactions)
 				.where(and(eq(salesTransactions.invoiceDate, date), eq(salesTransactions.storeId, storeId)));
 
-			// Insert in batches of 100
+			// Insert in batches of 100. The primary consignment store keeps only
+			// real vendor line items (vendorId 0 = house/tax rows are excluded, as
+			// before). Secondary direct-sale stores (Yakima Networking) keep ALL
+			// rows — their sales are vendorId 0 by nature.
 			const txRows = result.records
-				.filter(r => r.vendorId && r.vendorId !== 0)
+				.filter(r => (storeId === primaryStoreId ? r.vendorId && r.vendorId !== 0 : true))
 				.map(r => ({
 					arCashRegId: r.arCashRegId,
 					arCashRegDetailId: r.arCashRegDetailId,
