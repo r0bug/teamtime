@@ -157,6 +157,9 @@
 			<div>
 				<h1 class="text-2xl font-bold text-gray-900">Sales Dashboard</h1>
 				<p class="text-gray-600">Track daily and weekly sales performance</p>
+				{#if data.user?.role === 'manager' || data.user?.role === 'admin'}
+					<a href="/sales/networking" class="inline-block mt-1 text-sm text-primary-600 hover:underline">Yakima Networking sales →</a>
+				{/if}
 			</div>
 			<label class="flex items-center gap-2 text-sm text-gray-700">
 				<span class="whitespace-nowrap">Range:</span>
