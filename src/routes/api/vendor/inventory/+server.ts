@@ -90,6 +90,9 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	//    items needing a tag are unsold, so a sales-only list hid the majority.
 	//    Cached 60s so search-as-you-type stays fast; on an NRS hiccup we degrade
 	//    to sales + pending (previous behaviour).
+	// True when the NRS leg couldn't be included (slow/unreachable) — the client
+	// shows "partial" and retries, by which time the background fill has landed.
+	let partial = false;
 	if (vendor.nrsVendorId) {
 		try {
 			const stock = await getInvStockForVendorCached(vendor.nrsVendorId);
@@ -110,6 +113,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			}
 		} catch {
 			// NRS unreachable — fall through to sales + pending below.
+			partial = true;
 		}
 	}
 
@@ -148,5 +152,5 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		.slice(0, limit)
 		.map(({ partNumber, description, priceCents }) => ({ partNumber, description, priceCents }));
 
-	return json({ items });
+	return json({ items, partial });
 };
