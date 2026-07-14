@@ -488,20 +488,56 @@ export async function getAllInvStockForVendor(nrsVendorId: number): Promise<NrsI
 	return all;
 }
 
-// Short-lived per-vendor cache for the full inventory pull. getAllInvStockForVendor
-// pages the whole inventory, so calling it per keystroke (inventory search) would be
-// slow and hammer NRS. 60s TTL keeps search responsive while staying near-current.
-const invStockCache = new Map<number, { items: NrsInvStockDetail[]; expires: number }>();
-const INV_STOCK_CACHE_MS = 60_000;
+// Per-vendor cache for the full inventory pull, serving STALE data while a
+// refresh runs. getAllInvStockForVendor pages the whole inventory (30s timeout
+// per page), so a slow NRS could exceed the desktop app's HTTP timeout and the
+// Inventory tab errored out ("sometimes shows, sometimes doesn't"). Now:
+//   - fresh (<60s):    return immediately
+//   - stale:           return the old list immediately, refresh in background
+//   - cold first load: wait up to 12s, then give up (caller degrades to DB
+//     sources) — the fetch keeps running and fills the cache for the next click
+const invStockCache = new Map<number, { items: NrsInvStockDetail[]; fetchedAt: number }>();
+const invStockInflight = new Map<number, Promise<NrsInvStockDetail[]>>();
+const INV_STOCK_FRESH_MS = 60_000;
+const INV_STOCK_FIRST_LOAD_WAIT_MS = 12_000;
 
-/** Cached wrapper over getAllInvStockForVendor (60s TTL). */
+/** Cached wrapper over getAllInvStockForVendor (60s TTL, stale-while-revalidate). */
 export async function getInvStockForVendorCached(nrsVendorId: number): Promise<NrsInvStockDetail[]> {
-	const now = Date.now();
 	const hit = invStockCache.get(nrsVendorId);
-	if (hit && hit.expires > now) return hit.items;
-	const items = await getAllInvStockForVendor(nrsVendorId);
-	invStockCache.set(nrsVendorId, { items, expires: now + INV_STOCK_CACHE_MS });
-	return items;
+	if (hit && Date.now() - hit.fetchedAt < INV_STOCK_FRESH_MS) return hit.items;
+
+	let refresh = invStockInflight.get(nrsVendorId);
+	if (!refresh) {
+		refresh = getAllInvStockForVendor(nrsVendorId)
+			.then((items) => {
+				invStockCache.set(nrsVendorId, { items, fetchedAt: Date.now() });
+				return items;
+			})
+			.finally(() => invStockInflight.delete(nrsVendorId));
+		invStockInflight.set(nrsVendorId, refresh);
+		// A caller may stop waiting (stale hit / cold-load deadline) — this side
+		// branch keeps a late failure from becoming an unhandled rejection.
+		refresh.catch(() => {});
+	}
+
+	if (hit) return hit.items; // stale-while-revalidate
+
+	// Cold first load: bounded wait so the endpoint (and the desktop app's own
+	// HTTP timeout) never hangs on NRS; the refresh continues past the deadline.
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			refresh,
+			new Promise<never>((_, reject) => {
+				timer = setTimeout(
+					() => reject(new Error('NRS inventory fetch timed out (still loading in background)')),
+					INV_STOCK_FIRST_LOAD_WAIT_MS
+				);
+			})
+		]);
+	} finally {
+		clearTimeout(timer);
+	}
 }
 
 /** Single inventory item by NRS invStockId (returns null when not found, err 203 "Stock Id Expected"). */
