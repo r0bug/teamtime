@@ -48,13 +48,18 @@
 		return activeValue === '' ? null : activeValue;
 	}
 
+	let skipped = 0; // cells dropped from the current stroke (not sellable)
+
 	// Stage one op, skipping cells the server would reject: vendor
 	// assignments only land on sellable cells, so a rect/fill that clips a
-	// structure paints around it instead of failing the whole batch.
+	// structure paints around it instead of failing the whole batch. Skips
+	// are counted and reported — a silently-dropped stroke reads as "paint
+	// is broken".
 	function stage(x: number, y: number): void {
 		if (!session) return;
 		const value = paintValue();
 		if (activeKey === 'vendor_id' && value !== null && cells.get(cellKey(x, y))?.kind !== 'sellable') {
+			skipped++;
 			return;
 		}
 		session.apply(x, y, activeKey, value);
@@ -69,6 +74,7 @@
 	function onPaintDown(e: CustomEvent<{ x: number; y: number }>): void {
 		if (!ready() || !data.plan) return;
 		session = new PaintSession(cells, data.plan.gridW, data.plan.gridH);
+		skipped = 0;
 		anchor = { x: e.detail.x, y: e.detail.y };
 		if (tool === 'cell') {
 			stage(e.detail.x, e.detail.y);
@@ -115,6 +121,9 @@
 		if (!session || !data.plan) return;
 		const ops = session.ops();
 		if (ops.length === 0) {
+			if (skipped > 0) {
+				notify.error(`Nothing painted — all ${skipped} cells in that stroke are structure or void, not sellable floor`);
+			}
 			session = null;
 			return;
 		}
@@ -127,7 +136,8 @@
 			});
 			if (res.ok) {
 				session.commit();
-				notify.success(`Saved ${ops.length} cell change${ops.length === 1 ? '' : 's'}`);
+				const skipNote = skipped > 0 ? ` (skipped ${skipped} non-sellable)` : '';
+				notify.success(`Saved ${ops.length} cell change${ops.length === 1 ? '' : 's'}${skipNote}`);
 				if (unreachable.size > 0) runReachability(false);
 			} else {
 				const body = await res.json().catch(() => ({}));
