@@ -48,6 +48,18 @@
 		return activeValue === '' ? null : activeValue;
 	}
 
+	// Stage one op, skipping cells the server would reject: vendor
+	// assignments only land on sellable cells, so a rect/fill that clips a
+	// structure paints around it instead of failing the whole batch.
+	function stage(x: number, y: number): void {
+		if (!session) return;
+		const value = paintValue();
+		if (activeKey === 'vendor_id' && value !== null && cells.get(cellKey(x, y))?.kind !== 'sellable') {
+			return;
+		}
+		session.apply(x, y, activeKey, value);
+	}
+
 	function ready(): boolean {
 		if (mode === 'view' || !data.plan) return false;
 		if (paintValue() === null) return true; // erase
@@ -59,7 +71,7 @@
 		session = new PaintSession(cells, data.plan.gridW, data.plan.gridH);
 		anchor = { x: e.detail.x, y: e.detail.y };
 		if (tool === 'cell') {
-			session.apply(e.detail.x, e.detail.y, activeKey, paintValue());
+			stage(e.detail.x, e.detail.y);
 			cells = cells;
 		} else if (tool === 'rect' || tool === 'wall') {
 			preview = new Set([cellKey(e.detail.x, e.detail.y)]);
@@ -69,7 +81,7 @@
 	function onPaintMove(e: CustomEvent<{ x: number; y: number }>): void {
 		if (!session || !anchor) return;
 		if (tool === 'cell') {
-			session.apply(e.detail.x, e.detail.y, activeKey, paintValue());
+			stage(e.detail.x, e.detail.y);
 			cells = cells;
 		} else if (tool === 'rect') {
 			preview = new Set(rectCells(anchor.x, anchor.y, e.detail.x, e.detail.y).map((c) => cellKey(c.x, c.y)));
@@ -82,15 +94,15 @@
 		if (!session || !anchor || !data.plan) return;
 		if (tool === 'rect') {
 			for (const c of rectCells(anchor.x, anchor.y, e.detail.x, e.detail.y)) {
-				session.apply(c.x, c.y, activeKey, paintValue());
+				stage(c.x, c.y);
 			}
 		} else if (tool === 'wall') {
 			for (const c of lineCells(anchor.x, anchor.y, e.detail.x, e.detail.y)) {
-				session.apply(c.x, c.y, activeKey, paintValue());
+				stage(c.x, c.y);
 			}
 		} else if (tool === 'fill') {
 			for (const c of floodCells(cells, anchor.x, anchor.y, activeKey, data.plan.gridW, data.plan.gridH)) {
-				session.apply(c.x, c.y, activeKey, paintValue());
+				stage(c.x, c.y);
 			}
 		}
 		preview = new Set();
