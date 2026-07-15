@@ -17,7 +17,7 @@
 	let tool: Tool = 'cell';
 	let overlayKey = 'kind';
 	let activeKey = 'vendor_id';
-	let activeValue: string | null = null;
+	let activeValue: string | null = ''; // '' = pick-a-value; null = erase mode
 	let canvas: FloorplanCanvas;
 	let saving = false;
 

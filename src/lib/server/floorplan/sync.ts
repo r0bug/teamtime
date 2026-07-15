@@ -6,7 +6,7 @@
 // (Vendor identity itself is auto-mirrored by the pre-existing syncFromNrs();
 // this job only watches the floorplan-relevant intersection.)
 
-import { and, eq, inArray, isNull, not, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, not, or, sql } from 'drizzle-orm';
 import { db, users, vendors, notifications, floorplanPlans, floorplanCellAttrs } from '$lib/server/db';
 import { createLogger } from '$lib/server/logger';
 
@@ -85,11 +85,13 @@ export async function computeSyncFlags(): Promise<FloorplanSyncFlag[]> {
 		}
 
 		// 3. Active vendors with no floor space — informational digest.
+		// Activeness = NOT nrsInactive and NOT terminated; the status column
+		// stays at its 'inactive' default on sync-created rows.
 		const paintedSet = new Set(paintedIds);
 		const unplaced = await db
 			.select({ nrsVendorId: vendors.nrsVendorId, displayName: vendors.displayName })
 			.from(vendors)
-			.where(and(eq(vendors.status, 'active'), eq(vendors.nrsInactive, false), not(isNull(vendors.nrsVendorId))));
+			.where(and(ne(vendors.status, 'terminated'), eq(vendors.nrsInactive, false), not(isNull(vendors.nrsVendorId))));
 		const missing = unplaced.filter((v) => !paintedSet.has(String(v.nrsVendorId)));
 		if (missing.length > 0) {
 			flags.push({

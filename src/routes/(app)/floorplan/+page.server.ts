@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { error, redirect } from '@sveltejs/kit';
-import { and, asc, eq, not, isNull } from 'drizzle-orm';
+import { and, asc, eq, ne, not, isNull } from 'drizzle-orm';
 import { db, vendors } from '$lib/server/db';
 import { listPlans, getAttrDefs, queryCells } from '$lib/server/floorplan/core';
 import { canView, canBuild, viewerRank, visibleDefs, filterAttrsByRank, defsByKey } from '$lib/server/floorplan/permissions';
@@ -29,11 +29,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		.map((c) => ({ ...c, attrs: filterAttrsByRank(c.attrs, byKey, rank) }))
 		.filter((c) => Object.keys(c.attrs).length > 0);
 
-	// Vendor picker options for Edit mode (active, NRS-linked).
+	// Vendor picker options for Edit mode: NRS-linked and not gone. NOTE:
+	// vendors.status stays at its 'inactive' default for sync-created rows —
+	// real activeness lives in nrsInactive, so don't require status='active'.
 	const vendorOptions = await db
 		.select({ nrsVendorId: vendors.nrsVendorId, displayName: vendors.displayName })
 		.from(vendors)
-		.where(and(eq(vendors.status, 'active'), eq(vendors.nrsInactive, false), not(isNull(vendors.nrsVendorId))))
+		.where(and(ne(vendors.status, 'terminated'), eq(vendors.nrsInactive, false), not(isNull(vendors.nrsVendorId))))
 		.orderBy(asc(vendors.displayName));
 
 	return {
