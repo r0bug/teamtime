@@ -36,6 +36,10 @@
 
 	$: modes = (['view', ...(data.canEdit ? ['edit'] : []), ...(data.canBuild ? ['build'] : [])] as Mode[]);
 
+	// Paint must be visible: while editing, the overlay follows the key being
+	// painted (painting vendor_id with the kind overlay looks like a no-op).
+	$: if (mode !== 'view' && activeKey) overlayKey = activeKey;
+
 	function switchPlan(e: Event): void {
 		goto(`/floorplan?plan=${(e.target as HTMLSelectElement).value}`);
 	}
