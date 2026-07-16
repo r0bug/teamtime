@@ -198,25 +198,33 @@
 			ctx.lineWidth = 1;
 		}
 
-		// Grid lines only when cells are big enough to matter.
-		if (s >= 10) {
-			ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-			ctx.beginPath();
+		// Grid lines only when cells are big enough to matter; every 5th line
+		// (a 5 ft survey square) is brighter for counting distance.
+		if (s >= 6) {
 			const x0 = Math.max(0, Math.floor(wMinX));
 			const x1 = Math.min(gridW, Math.ceil(wMaxX));
 			const y0 = Math.max(0, Math.floor(wMinY));
 			const y1 = Math.min(gridH, Math.ceil(wMaxY));
-			for (let x = x0; x <= x1; x++) {
-				const p = worldToScreen(x, 0);
-				ctx.moveTo(p.sx + 0.5, 0);
-				ctx.lineTo(p.sx + 0.5, cssH);
+			for (const [minor, style] of [
+				[true, 'rgba(255,255,255,0.16)'],
+				[false, 'rgba(255,255,255,0.32)']
+			] as [boolean, string][]) {
+				ctx.strokeStyle = style;
+				ctx.beginPath();
+				for (let x = x0; x <= x1; x++) {
+					if (x % 5 === 0 === minor) continue;
+					const p = worldToScreen(x, 0);
+					ctx.moveTo(p.sx + 0.5, 0);
+					ctx.lineTo(p.sx + 0.5, cssH);
+				}
+				for (let y = y0; y <= y1; y++) {
+					if (y % 5 === 0 === minor) continue;
+					const p = worldToScreen(0, y);
+					ctx.moveTo(0, p.sy + 0.5);
+					ctx.lineTo(cssW, p.sy + 0.5);
+				}
+				ctx.stroke();
 			}
-			for (let y = y0; y <= y1; y++) {
-				const p = worldToScreen(0, y);
-				ctx.moveTo(0, p.sy + 0.5);
-				ctx.lineTo(cssW, p.sy + 0.5);
-			}
-			ctx.stroke();
 		}
 	}
 
