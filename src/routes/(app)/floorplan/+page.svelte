@@ -217,7 +217,14 @@
 					</select>
 				</label>
 
-				<button type="button" class="btn-ghost btn-sm" on:click={() => canvas.fit()}>Fit</button>
+				<div class="flex items-center gap-1">
+					<button type="button" class="btn-ghost btn-sm" title="Zoom out" on:click={() => canvas.zoomBy(1 / 1.4)}>−</button>
+					<button type="button" class="btn-ghost btn-sm" title="Zoom in" on:click={() => canvas.zoomBy(1.4)}>+</button>
+					<button type="button" class="btn-ghost btn-sm" on:click={() => canvas.fit()}>Fit</button>
+				</div>
+				<span class="text-xs text-gray-400 hidden lg:inline">
+					scroll to move · ctrl+wheel or +/− to zoom{mode !== 'view' ? ' · hold Space to drag-pan' : ''}
+				</span>
 
 				{#if mode === 'build'}
 					<button type="button" class="btn-secondary btn-sm" on:click={() => runReachability()}>
