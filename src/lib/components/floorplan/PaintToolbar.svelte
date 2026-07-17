@@ -8,6 +8,7 @@
 	export let tool: Tool = 'cell';
 	export let defs: AttrDef[] = [];
 	export let vendors: { nrsVendorId: number; displayName: string }[] = [];
+	export let pools: { id: string; name: string; color: string }[] = [];
 	export let activeKey = 'vendor_id';
 	/** null = erase (delete the key at painted cells) */
 	export let activeValue: string | null = null;
@@ -63,6 +64,13 @@
 			<option value="" disabled>pick vendor…</option>
 			{#each vendors as v}
 				<option value={String(v.nrsVendorId)}>{v.displayName} ({v.nrsVendorId})</option>
+			{/each}
+		</select>
+	{:else if activeKey === 'pool'}
+		<select class="input !w-auto !py-1.5" bind:value={activeValue} aria-label="Pool">
+			<option value="" disabled>pick pool…</option>
+			{#each pools as p}
+				<option value={p.name}>{p.name}</option>
 			{/each}
 		</select>
 	{:else if paletteValues}

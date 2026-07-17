@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { notify } from '$lib/notify';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Modal from '$lib/components/Modal.svelte';
 	import FloorplanCanvas from '$lib/components/floorplan/FloorplanCanvas.svelte';
 	import CellPopover from '$lib/components/floorplan/CellPopover.svelte';
 	import PaintToolbar from '$lib/components/floorplan/PaintToolbar.svelte';
@@ -40,6 +41,122 @@
 	// painted (painting vendor_id with the kind overlay looks like a no-op).
 	$: if (mode !== 'view' && activeKey) overlayKey = activeKey;
 
+	// ---- vendor picker curation + custom colors (stored on the vendor_id
+	// attr def's renderHint: { picker: { include: [...] }, palette: {...} })
+	$: vendorDef = data.attrDefs.find((d) => d.key === 'vendor_id');
+	$: pickerInclude = (vendorDef?.renderHint as { picker?: { include?: string[] } } | null)?.picker?.include;
+	$: pickerVendors =
+		pickerInclude && pickerInclude.length > 0
+			? data.vendorOptions.filter((v) => pickerInclude.includes(String(v.nrsVendorId)))
+			: data.vendorOptions;
+	$: vendorPalette = (() => {
+		const palette = (vendorDef?.renderHint as { palette?: Record<string, string> | 'auto' } | null)?.palette;
+		return palette && palette !== 'auto' ? palette : {};
+	})();
+
+	let showPicker = false;
+	let pickerSelected: Set<string> = new Set();
+	let showPools = false;
+	let poolForm = { id: '', name: '', color: '#7C3AED', members: [] as string[] };
+	let savingConfig = false;
+
+	function openPicker(): void {
+		pickerSelected = new Set(pickerInclude?.length ? pickerInclude : data.vendorOptions.map((v) => String(v.nrsVendorId)));
+		showPicker = true;
+	}
+
+	async function saveVendorDef(renderHint: Record<string, unknown>): Promise<boolean> {
+		if (!data.plan || !vendorDef) return false;
+		savingConfig = true;
+		try {
+			const res = await fetch(`/api/floorplan/${data.plan.id}/attrs`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					key: 'vendor_id',
+					type: vendorDef.type,
+					ownerSystem: vendorDef.ownerSystem,
+					visibility: vendorDef.visibility,
+					renderHint
+				})
+			});
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({}));
+				notify.error(body.error ?? 'Save failed');
+				return false;
+			}
+			await invalidateAll();
+			return true;
+		} finally {
+			savingConfig = false;
+		}
+	}
+
+	async function savePicker(): Promise<void> {
+		const all = data.vendorOptions.map((v) => String(v.nrsVendorId));
+		const include = all.filter((id) => pickerSelected.has(id));
+		const rh = { ...((vendorDef?.renderHint as Record<string, unknown>) ?? {}) };
+		if (include.length === all.length) delete rh.picker;
+		else rh.picker = { include };
+		if (await saveVendorDef(rh)) {
+			showPicker = false;
+			notify.success(include.length === all.length ? 'Picker shows all vendors' : `Picker limited to ${include.length} vendors`);
+		}
+	}
+
+	async function saveVendorColor(e: Event): Promise<void> {
+		const color = (e.target as HTMLInputElement).value;
+		if (!activeValue) return;
+		const rh = { ...((vendorDef?.renderHint as Record<string, unknown>) ?? {}) };
+		rh.mode = 'fill';
+		rh.palette = { ...vendorPalette, [activeValue]: color };
+		if (await saveVendorDef(rh)) notify.success('Vendor color saved');
+	}
+
+	function editPool(pool?: { id: string; name: string; color: string; vendorIds: string[] }): void {
+		poolForm = pool
+			? { id: pool.id, name: pool.name, color: pool.color, members: [...pool.vendorIds] }
+			: { id: '', name: '', color: '#7C3AED', members: [] };
+	}
+
+	async function savePool(): Promise<void> {
+		if (!data.plan) return;
+		savingConfig = true;
+		try {
+			const res = await fetch(`/api/floorplan/${data.plan.id}/pools`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					id: poolForm.id || undefined,
+					name: poolForm.name,
+					color: poolForm.color,
+					vendorIds: poolForm.members
+				})
+			});
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({}));
+				notify.error(body.error ?? 'Pool save failed');
+				return;
+			}
+			await invalidateAll();
+			editPool();
+			notify.success('Pool saved');
+		} finally {
+			savingConfig = false;
+		}
+	}
+
+	async function deletePool(id: string): Promise<void> {
+		if (!data.plan) return;
+		const res = await fetch(`/api/floorplan/${data.plan.id}/pools?id=${id}`, { method: 'DELETE' });
+		if (res.ok) {
+			await invalidateAll();
+			notify.success('Pool deleted (painted cells kept — erase them if needed)');
+		} else {
+			notify.error('Delete failed');
+		}
+	}
+
 	function switchPlan(e: Event): void {
 		goto(`/floorplan?plan=${(e.target as HTMLSelectElement).value}`);
 	}
@@ -58,7 +175,7 @@
 	function stage(x: number, y: number): void {
 		if (!session) return;
 		const value = paintValue();
-		if (activeKey === 'vendor_id' && value !== null && cells.get(cellKey(x, y))?.kind !== 'sellable') {
+		if ((activeKey === 'vendor_id' || activeKey === 'pool') && value !== null && cells.get(cellKey(x, y))?.kind !== 'sellable') {
 			skipped++;
 			return;
 		}
@@ -236,8 +353,18 @@
 				{/if}
 
 				{#if mode !== 'view'}
-					<div class="w-full">
-						<PaintToolbar {mode} bind:tool bind:activeKey bind:activeValue defs={data.attrDefs} vendors={data.vendorOptions} />
+					<div class="w-full flex flex-wrap items-center gap-2">
+						<PaintToolbar {mode} bind:tool bind:activeKey bind:activeValue defs={data.attrDefs} vendors={pickerVendors} pools={data.pools} />
+						{#if data.canBuild && activeKey === 'vendor_id' && activeValue}
+							<label class="flex items-center gap-1.5 text-sm text-gray-600" title="Color for this vendor on the map">
+								color
+								<input type="color" value={vendorPalette[activeValue] ?? '#888888'} on:change={saveVendorColor} disabled={savingConfig} />
+							</label>
+						{/if}
+						{#if data.canBuild && activeKey === 'vendor_id'}
+							<button type="button" class="btn-ghost btn-sm" on:click={openPicker}>Picker vendors…</button>
+						{/if}
+						<button type="button" class="btn-ghost btn-sm" on:click={() => { editPool(); showPools = true; }}>Pools…</button>
 					</div>
 				{/if}
 			</div>
@@ -278,5 +405,78 @@
 				clientY={hover.clientY}
 			/>
 		{/if}
+
+		<Modal bind:open={showPicker} title="Vendors shown in the picker" size="md" on:close={() => (showPicker = false)}>
+			<p class="text-sm text-gray-600 mb-3">
+				Untick vendors to hide them from the Edit-mode dropdown. This only affects the picker — existing paint is untouched.
+			</p>
+			<div class="max-h-80 overflow-y-auto space-y-1">
+				{#each data.vendorOptions as v}
+					<label class="flex items-center gap-2 text-sm">
+						<input
+							type="checkbox"
+							checked={pickerSelected.has(String(v.nrsVendorId))}
+							on:change={(e) => {
+								const id = String(v.nrsVendorId);
+								if (e.currentTarget.checked) pickerSelected.add(id);
+								else pickerSelected.delete(id);
+								pickerSelected = pickerSelected;
+							}}
+						/>
+						{v.displayName} ({v.nrsVendorId})
+					</label>
+				{/each}
+			</div>
+			<div slot="footer" class="flex justify-end gap-2">
+				<button type="button" class="btn-secondary btn-sm" on:click={() => (showPicker = false)}>Cancel</button>
+				<button type="button" class="btn-primary btn-sm" disabled={savingConfig} on:click={savePicker}>Save</button>
+			</div>
+		</Modal>
+
+		<Modal bind:open={showPools} title="Vendor pools (shared / in-store spaces)" size="lg" on:close={() => (showPools = false)}>
+			<p class="text-sm text-gray-600 mb-3">
+				A pool is a named group of vendors sharing space. Paint it by picking the <span class="font-mono">pool</span> attribute
+				in the toolbar; the floor shows the pool's name and color, and booth counts stay per-pool.
+			</p>
+
+			{#if data.pools.length > 0}
+				<div class="space-y-1 mb-4">
+					{#each data.pools as pool}
+						<div class="flex items-center gap-2 text-sm">
+							<span class="inline-block w-4 h-4 rounded" style="background:{pool.color}"></span>
+							<span class="font-medium">{pool.name}</span>
+							<span class="text-gray-500">{pool.vendorIds.length} vendor{pool.vendorIds.length === 1 ? '' : 's'}</span>
+							<button type="button" class="btn-ghost btn-sm" on:click={() => editPool(pool)}>edit</button>
+							<button type="button" class="btn-ghost btn-sm !text-red-600" on:click={() => deletePool(pool.id)}>delete</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+
+			<div class="border-t border-gray-200 pt-3 space-y-2">
+				<div class="font-medium text-sm">{poolForm.id ? `Edit "${poolForm.name}"` : 'New pool'}</div>
+				<div class="flex flex-wrap items-center gap-2">
+					<input class="input !w-56" placeholder="Pool name (e.g. Shared Case 1)" bind:value={poolForm.name} />
+					<label class="flex items-center gap-1.5 text-sm text-gray-600">
+						color <input type="color" bind:value={poolForm.color} />
+					</label>
+				</div>
+				<label class="label !mb-0" for="pool-members">Member vendors (ctrl-click for several)</label>
+				<select id="pool-members" class="input" multiple size="8" bind:value={poolForm.members}>
+					{#each data.vendorOptions as v}
+						<option value={String(v.nrsVendorId)}>{v.displayName} ({v.nrsVendorId})</option>
+					{/each}
+				</select>
+			</div>
+			<div slot="footer" class="flex justify-between">
+				<button type="button" class="btn-secondary btn-sm" on:click={() => editPool()}>Clear form</button>
+				<div class="flex gap-2">
+					<button type="button" class="btn-secondary btn-sm" on:click={() => (showPools = false)}>Close</button>
+					<button type="button" class="btn-primary btn-sm" disabled={savingConfig || !poolForm.name} on:click={savePool}>
+						{poolForm.id ? 'Save changes' : 'Create pool'}
+					</button>
+				</div>
+			</div>
+		</Modal>
 	{/if}
 </div>

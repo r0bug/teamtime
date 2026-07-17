@@ -13,11 +13,16 @@ export const KIND_FALLBACK: Record<string, string> = {
 export const VOID_BG = '#0d1117';
 export const UNKNOWN_VALUE_COLOR = '#555f6a';
 
-/** Deterministic hash → HSL, so a vendor keeps its color across sessions. */
+/**
+ * Deterministic hash → HSL, so a vendor keeps its color across sessions.
+ * MUST stay legacy comma syntax: canvas fillStyle in older Chrome rejects
+ * space-separated hsl() silently, which paints cells in the last-used color
+ * (the background) — i.e. invisibly.
+ */
 export function autoColor(value: string): string {
 	let h = 0;
 	for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) >>> 0;
-	return `hsl(${h % 360} 55% 42%)`;
+	return `hsl(${h % 360}, 60%, 48%)`;
 }
 
 /** Color for a cell under the selected overlay key (null = not painted for that key). */

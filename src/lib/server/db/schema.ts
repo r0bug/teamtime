@@ -3768,6 +3768,29 @@ export const floorplanCellCountCache = pgTable(
 	})
 );
 
+// Named vendor pools for shared/in-store spaces: a pool has a display name,
+// a color, and member vendors. Cells are painted with key 'pool' and the
+// pool NAME as value (readable in hovers/aggregates); the pool's color is
+// mirrored into the 'pool' attr def palette on save.
+export const floorplanPools = pgTable(
+	'floorplan_pools',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		planId: uuid('plan_id')
+			.notNull()
+			.references(() => floorplanPlans.id, { onDelete: 'cascade' }),
+		name: text('name').notNull(),
+		vendorIds: jsonb('vendor_ids').$type<string[]>().notNull(),
+		color: text('color').notNull().default('#7C3AED'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => ({
+		uniquePlanPoolName: unique().on(table.planId, table.name)
+	})
+);
+
+export type FloorplanPool = typeof floorplanPools.$inferSelect;
 export type FloorplanPlan = typeof floorplanPlans.$inferSelect;
 export type NewFloorplanPlan = typeof floorplanPlans.$inferInsert;
 export type FloorplanCellAttr = typeof floorplanCellAttrs.$inferSelect;

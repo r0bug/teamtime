@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { error, redirect } from '@sveltejs/kit';
 import { and, asc, eq, ne, not, isNull } from 'drizzle-orm';
-import { db, vendors } from '$lib/server/db';
+import { db, vendors, floorplanPools, type FloorplanPool } from '$lib/server/db';
 import { listPlans, getAttrDefs, queryCells } from '$lib/server/floorplan/core';
 import { canView, canBuild, viewerRank, visibleDefs, filterAttrsByRank, defsByKey } from '$lib/server/floorplan/permissions';
 
@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	if (planId && !plan) throw error(404, 'Plan not found');
 
 	if (!plan) {
-		return { plans: [], plan: null, cells: [], attrDefs: [], vendorOptions: [], canEdit: false, canBuild: false };
+		return { plans: [], plan: null, cells: [], attrDefs: [], vendorOptions: [], pools: [], canEdit: false, canBuild: false };
 	}
 
 	const rank = viewerRank(locals.user);
@@ -38,13 +38,31 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		.where(and(ne(vendors.status, 'terminated'), eq(vendors.nrsInactive, false), not(isNull(vendors.nrsVendorId))))
 		.orderBy(asc(vendors.displayName));
 
+	const poolRows = await db.select().from(floorplanPools).where(eq(floorplanPools.planId, plan.id));
+
 	return {
 		plans: plans.map((p) => ({ id: p.id, name: p.name, gridW: p.gridW, gridH: p.gridH })),
 		plan: { id: plan.id, name: plan.name, gridW: plan.gridW, gridH: plan.gridH },
 		cells,
 		attrDefs,
 		vendorOptions: vendorOptions as { nrsVendorId: number; displayName: string }[],
+		pools: poolRows.map((p) => ({ id: p.id, name: p.name, color: p.color, vendorIds: normalizeIds(p) })),
 		canEdit: true, // any staff-side user (vendor-portal users never reach here)
 		canBuild: canBuild(locals.user)
 	};
 };
+
+// drizzle 0.29 + postgres-js may return jsonb as a JSON string.
+function normalizeIds(pool: FloorplanPool): string[] {
+	const raw = pool.vendorIds as unknown;
+	if (Array.isArray(raw)) return raw.map(String);
+	if (typeof raw === 'string') {
+		try {
+			const parsed = JSON.parse(raw);
+			return Array.isArray(parsed) ? parsed.map(String) : [];
+		} catch {
+			return [];
+		}
+	}
+	return [];
+}
