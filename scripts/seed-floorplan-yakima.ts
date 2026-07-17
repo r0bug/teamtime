@@ -28,11 +28,13 @@ if (!url) {
 	process.exit(1);
 }
 
-// Canvas extent (ft). Larger than the 104.5×69 building on purpose: the North
-// Warehouse / parking lot are void until rented, and painting them later must
-// not require a grid grow.
-const GRID_W = 140;
-const GRID_H = 100;
+// Canvas layout: the building floats with a uniform void margin on all
+// sides (elbow room for painting outward — future warehouse/parking are
+// void until rented). ORIGIN_OFFSET translates the survey frame (origin =
+// west/south wall lines) onto the canvas: canvas = survey + OFFSET.
+const ORIGIN_OFFSET = 20;
+const GRID_W = 144; // 104-cell building span + 2 × 20 margin
+const GRID_H = 109; // 69-cell building span + 2 × 20 margin
 
 // Render/visibility config (spec §2.3). The survey file is geometry-only.
 const ATTR_DEFS = [
@@ -110,7 +112,7 @@ async function main() {
 	}
 
 	const cells = rasterizeSurvey(survey);
-	const rows = cellMapToRows(cells);
+	const rows = cellMapToRows(cells).map((r) => ({ ...r, x: r.x + ORIGIN_OFFSET, y: r.y + ORIGIN_OFFSET }));
 	console.log(`Rasterized ${cells.size} painted cells → ${rows.length} attr rows`);
 
 	await sql.begin(async (tx) => {
