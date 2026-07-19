@@ -10,6 +10,8 @@ interface EmailOptions {
 	subject: string;
 	html: string;
 	text?: string;
+	/** Inline/attached files; use `cid` + `<img src="cid:...">` for inline images. */
+	attachments?: { filename: string; content: Buffer; cid?: string }[];
 }
 
 // Create transporter singleton
@@ -60,7 +62,8 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
 			to: options.to,
 			subject: options.subject,
 			html: options.html,
-			text: options.text || options.html.replace(/<[^>]*>/g, '') // Strip HTML as fallback
+			text: options.text || options.html.replace(/<[^>]*>/g, ''), // Strip HTML as fallback
+			attachments: options.attachments
 		});
 
 		log.info({

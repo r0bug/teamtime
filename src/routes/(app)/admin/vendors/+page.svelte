@@ -39,6 +39,7 @@
 			<a href="/admin/vendors/inventory-changes" class="btn btn-secondary">Changes Queue</a>
 			<a href="/admin/vendors/inventory-journal" class="btn btn-secondary">NRS Journal</a>
 			<a href="/admin/vendors/announcements" class="btn btn-secondary">📣 News</a>
+			<a href="/admin/vendors/newsletters" class="btn btn-secondary">📰 Newsletters</a>
 			<!-- Web Avery "Bulk tags" sheet unlinked — printing goes through the desktop
 			     app. Route /admin/tags/bulk + renderer kept intact for re-linking later. -->
 			<a href="/admin/vendor-groups" class="btn btn-secondary">Groups</a>

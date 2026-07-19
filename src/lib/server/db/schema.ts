@@ -3664,3 +3664,55 @@ export const vendorAnnouncements = pgTable('vendor_announcements', {
 
 export type VendorAnnouncement = typeof vendorAnnouncements.$inferSelect;
 export type NewVendorAnnouncement = typeof vendorAnnouncements.$inferInsert;
+
+// Vendor newsletters: periodic staff→vendor mailings composed from ordered
+// content blocks (markdown text, tips, store sales chart, leaderboard,
+// shoutouts, events — see NewsletterBlock in vendor-newsletter-service).
+// Blocks are JSONB because the set of block types is expected to grow and
+// each type has its own shape; rendering happens server-side for both the
+// portal view and the outgoing email. Draft → sent; sent rows are immutable
+// in the editor and (when publishToPortal) appear at /vendor/newsletters.
+export const vendorNewsletterStatusEnum = pgEnum('vendor_newsletter_status', ['draft', 'sent']);
+
+export const vendorNewsletters = pgTable('vendor_newsletters', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	title: text('title').notNull(),
+	subject: text('subject'), // email subject; null = use title
+	// Inclusive reporting window the data-driven blocks (chart/leaderboard)
+	// aggregate over. Kept on the newsletter, not per block, so every block
+	// tells the same story.
+	periodStart: date('period_start').notNull(),
+	periodEnd: date('period_end').notNull(),
+	blocks: jsonb('blocks').notNull().default([]),
+	status: vendorNewsletterStatusEnum('status').notNull().default('draft'),
+	publishToPortal: boolean('publish_to_portal').notNull().default(true),
+	sentAt: timestamp('sent_at', { withTimezone: true }),
+	sentByUserId: uuid('sent_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// One row per delivery attempt (including test sends), kept for auditability —
+// "did booth 12 get the July issue?" is answerable from here.
+export const vendorNewsletterSends = pgTable(
+	'vendor_newsletter_sends',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		newsletterId: uuid('newsletter_id')
+			.notNull()
+			.references(() => vendorNewsletters.id, { onDelete: 'cascade' }),
+		vendorId: uuid('vendor_id').references(() => vendors.id, { onDelete: 'set null' }), // null = test send
+		email: text('email').notNull(),
+		status: text('status').notNull(), // 'sent' | 'failed' | 'test'
+		error: text('error'),
+		sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => ({
+		idxNewsletter: index('idx_vendor_newsletter_sends_newsletter').on(table.newsletterId)
+	})
+);
+
+export type VendorNewsletter = typeof vendorNewsletters.$inferSelect;
+export type NewVendorNewsletter = typeof vendorNewsletters.$inferInsert;
+export type VendorNewsletterSend = typeof vendorNewsletterSends.$inferSelect;
