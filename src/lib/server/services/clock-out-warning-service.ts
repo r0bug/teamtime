@@ -2,7 +2,8 @@
  * Clock-Out Warning Service
  *
  * Handles clock-out warnings, demerit escalation, and related notifications.
- * Implements the policy: 2 warnings in 30 days = automatic demerit.
+ * Implements the policy: 2 warnings in 30 days = pending demerit for manager
+ * review (nothing punitive happens until a manager approves it).
  */
 
 import {
@@ -19,6 +20,7 @@ import { createLogger } from '$lib/server/logger';
 import { eq, and, gte, lte, isNull, count, desc } from 'drizzle-orm';
 import { awardPoints, POINT_VALUES } from './points-service';
 import { sendSMS, formatPhoneToE164 } from '$lib/server/twilio';
+import { notifyManagersOfPendingDemerit } from './demerit-review-service';
 import { toPacificTimeString, getPacificDayBounds } from '$lib/server/utils/timezone';
 import type { ClockOutWarning, Demerit } from '$lib/server/db/schema';
 
@@ -58,8 +60,6 @@ export const SMS_MESSAGES = {
 	autoReminder: 'Reminder: You are still clocked in. Please clock out at the end of your shift.',
 	forceClockout: (managerName: string) =>
 		`${managerName} has clocked you out. Please remember to clock out at the end of your shift.`,
-	demeritIssued: (warningCount: number) =>
-		`You have received a demerit for repeated clock-out violations (${warningCount} warnings in 30 days). ${CLOCK_OUT_WARNING_CONFIG.DEMERIT_POINTS_DEDUCTED} points have been deducted.`,
 	timeConfirmed: (time: string) =>
 		`Got it — clocked you out at ${time}. Thanks!`,
 	timeParseError: 'Sorry, couldn\'t understand that time. Reply with a time like "5:30 PM" or "17:30", or YES to clock out now.',
@@ -224,7 +224,7 @@ export async function checkAndEscalateToDemerit(
 		return null;
 	}
 
-	// Get user info for SMS
+	// Get user info for the manager notification
 	const [user] = await db
 		.select({ id: users.id, name: users.name, phone: users.phone })
 		.from(users)
@@ -240,16 +240,17 @@ export async function checkAndEscalateToDemerit(
 	const expiresAt = new Date();
 	expiresAt.setDate(expiresAt.getDate() + CLOCK_OUT_WARNING_CONFIG.DEMERIT_EXPIRY_DAYS);
 
-	// Create demerit
+	// Create the demerit as PENDING: no points deducted and no SMS to the
+	// employee until a manager approves it at /admin/demerits.
 	const [demerit] = await db
 		.insert(demerits)
 		.values({
 			userId,
 			type: 'clock_out_violation',
-			status: 'active',
+			status: 'pending',
 			issuedBy,
 			title: 'Repeated Clock-Out Violations',
-			description: `Received ${warningCount} clock-out warnings within ${CLOCK_OUT_WARNING_CONFIG.WARNING_LOOKBACK_DAYS} days. Automatic demerit issued per policy.`,
+			description: `Received ${warningCount} clock-out warnings within ${CLOCK_OUT_WARNING_CONFIG.WARNING_LOOKBACK_DAYS} days. Auto-detected, awaiting manager review.`,
 			pointsDeducted: CLOCK_OUT_WARNING_CONFIG.DEMERIT_POINTS_DEDUCTED,
 			smsNotified: false,
 			expiresAt
@@ -257,13 +258,8 @@ export async function checkAndEscalateToDemerit(
 		.returning();
 
 	log.info(
-		{
-			userId,
-			demeritId: demerit.id,
-			warningCount,
-			pointsDeducted: CLOCK_OUT_WARNING_CONFIG.DEMERIT_POINTS_DEDUCTED
-		},
-		'Demerit created for repeated clock-out violations'
+		{ userId, demeritId: demerit.id, warningCount },
+		'Pending demerit created for repeated clock-out violations, awaiting manager review'
 	);
 
 	// Update warning to reference demerit
@@ -275,41 +271,7 @@ export async function checkAndEscalateToDemerit(
 		})
 		.where(eq(clockOutWarnings.id, warningId));
 
-	// Deduct points
-	try {
-		await awardPoints({
-			userId,
-			basePoints: -CLOCK_OUT_WARNING_CONFIG.DEMERIT_POINTS_DEDUCTED,
-			category: 'attendance',
-			action: 'demerit_clock_out_violation',
-			description: `Demerit issued: ${warningCount} clock-out violations in ${CLOCK_OUT_WARNING_CONFIG.WARNING_LOOKBACK_DAYS} days`,
-			sourceType: 'demerit',
-			sourceId: demerit.id,
-			metadata: { warningCount, demeritId: demerit.id }
-		});
-	} catch (err) {
-		log.error({ error: err, demeritId: demerit.id }, 'Failed to deduct points for demerit');
-	}
-
-	// Send SMS notification
-	let smsResult: { success: boolean; sid?: string; error?: string } | undefined;
-	if (user.phone) {
-		const formatted = formatPhoneToE164(user.phone);
-		if (formatted) {
-			smsResult = await sendSMS(formatted, SMS_MESSAGES.demeritIssued(warningCount));
-		}
-	}
-
-	// Update demerit with SMS result
-	if (smsResult) {
-		await db
-			.update(demerits)
-			.set({
-				smsNotified: smsResult.success,
-				smsResult
-			})
-			.where(eq(demerits.id, demerit.id));
-	}
+	await notifyManagersOfPendingDemerit(demerit, user.name);
 
 	return demerit;
 }

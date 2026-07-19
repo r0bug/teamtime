@@ -4,6 +4,7 @@ import { db, shifts, users, locations } from '$lib/server/db';
 import { eq, gte, lte, and, desc } from 'drizzle-orm';
 import { parsePacificDatetime } from '$lib/server/utils/timezone';
 import { isManager } from '$lib/server/auth/roles';
+import { audit } from '$lib/server/services/audit-service';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user || !isManager(locals.user)) {
@@ -98,7 +99,20 @@ export const actions: Actions = {
 			return fail(400, { error: 'Shift ID required' });
 		}
 
-		await db.delete(shifts).where(eq(shifts.id, shiftId));
+		const [deleted] = await db.delete(shifts).where(eq(shifts.id, shiftId)).returning();
+		if (deleted) {
+			await audit({
+				userId: locals.user.id,
+				action: 'schedule_deleted',
+				entityType: 'schedule',
+				entityId: shiftId,
+				beforeData: {
+					userId: deleted.userId,
+					startTime: deleted.startTime.toISOString(),
+					endTime: deleted.endTime.toISOString()
+				}
+			});
+		}
 
 		return { success: true };
 	}

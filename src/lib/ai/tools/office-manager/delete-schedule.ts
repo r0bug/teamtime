@@ -3,6 +3,7 @@ import { db, shifts, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { audit } from '$lib/server/services/audit-service';
 import { isValidUUID } from '../utils/validation';
 
 const log = createLogger('ai:tools:delete-schedule');
@@ -130,6 +131,22 @@ export const deleteScheduleTool: AITool<DeleteScheduleParams, DeleteScheduleResu
 
 			// Delete the shift
 			await db.delete(shifts).where(eq(shifts.id, params.shiftId));
+
+			// Deleting a shift cascade-deletes its late-arrival warnings, so keep
+			// a durable record of what was removed and why
+			await audit({
+				userId: null,
+				action: 'schedule_deleted',
+				entityType: 'schedule',
+				entityId: params.shiftId,
+				beforeData: {
+					userId: shift[0].userId,
+					userName,
+					startTime: shift[0].startTime.toISOString(),
+					endTime: shift[0].endTime.toISOString()
+				},
+				metadata: { deletedBy: 'ai:office_manager', reason: params.reason }
+			});
 
 			log.info({
 				shiftId: params.shiftId,

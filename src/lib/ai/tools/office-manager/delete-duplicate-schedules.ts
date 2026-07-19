@@ -16,6 +16,7 @@ import { db, shifts, users } from '$lib/server/db';
 import { eq, sql, and, gte, lte, inArray } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { audit } from '$lib/server/services/audit-service';
 import { parsePacificDate, parsePacificEndOfDay } from '$lib/server/utils/timezone';
 
 const log = createLogger('ai:tools:delete-duplicate-schedules');
@@ -193,6 +194,15 @@ export const deleteDuplicateSchedulesTool: AITool<DeleteDuplicateSchedulesParams
 
 			// Delete all duplicates in one batch
 			await db.delete(shifts).where(inArray(shifts.id, idsToDelete));
+
+			await audit({
+				userId: null,
+				action: 'schedule_deleted',
+				entityType: 'schedule',
+				entityId: null,
+				beforeData: { deletedShiftIds: idsToDelete },
+				metadata: { deletedBy: 'ai:office_manager', reason: 'duplicate cleanup', count: idsToDelete.length }
+			});
 
 			log.info({
 				deletedCount: idsToDelete.length,
