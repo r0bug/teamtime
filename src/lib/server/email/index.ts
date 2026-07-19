@@ -59,6 +59,10 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
 
 		const info = await transport.sendMail({
 			from: SMTP_FROM,
+			// Explicit Reply-To: when SMTP_FROM is an alias the SMTP account
+			// isn't verified to send as, Gmail rewrites the From header — this
+			// keeps replies routed to the intended address regardless.
+			replyTo: SMTP_FROM,
 			to: options.to,
 			subject: options.subject,
 			html: options.html,
