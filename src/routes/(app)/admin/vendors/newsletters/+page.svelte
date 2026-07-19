@@ -12,6 +12,9 @@
 
 	const fmtDate = (d: string | Date | null) =>
 		d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+	// For date-only strings: anchor to local midnight so the day doesn't shift.
+	const fmtDay = (d: string) =>
+		new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 </script>
 
 <svelte:head><title>Vendor Newsletters — Admin</title></svelte:head>
@@ -50,7 +53,7 @@
 							{/if}
 						</div>
 						<p class="text-xs text-gray-500 mt-1">
-							Covers {fmtDate(n.periodStart)} – {fmtDate(n.periodEnd)} · created {fmtDate(n.createdAt)}
+							Covers {fmtDay(n.periodStart)} – {fmtDay(n.periodEnd)} · created {fmtDate(n.createdAt)}
 						</p>
 					</div>
 					<div class="flex gap-2 shrink-0">

@@ -170,6 +170,14 @@ export function normalizeBlocks(raw: unknown): NewsletterBlock[] {
 	return out;
 }
 
+/**
+ * postgres-js returns `date` columns as JS Date at runtime (see the same
+ * gotcha documented in vendor-leaderboard-service), while inserts/params use
+ * 'YYYY-MM-DD' strings. Normalize before doing any string date math.
+ */
+export const isoDateString = (v: string | Date): string =>
+	typeof v === 'string' ? v.slice(0, 10) : v.toISOString().slice(0, 10);
+
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 const strList = (v: unknown): string[] =>
 	Array.isArray(v) ? v.map(str).filter(Boolean) : [];
@@ -371,7 +379,10 @@ export async function renderNewsletter(
 	const blocks = normalizeBlocks(newsletter.blocks);
 	const chartMode = opts.chartMode ?? (target === 'portal' ? 'svg' : 'cid');
 	const personal = opts.personal ?? 'sample';
-	const period = { start: newsletter.periodStart, end: newsletter.periodEnd };
+	const period = {
+		start: isoDateString(newsletter.periodStart),
+		end: isoDateString(newsletter.periodEnd)
+	};
 
 	// Fetch data once even if a block type appears twice.
 	const needsChart = blocks.some((b) => b.type === 'salesChart');
@@ -742,8 +753,8 @@ export async function sendNewsletterToVendors(
  * own, so an untouched clone still sends fresh charts/leaderboard/stats.
  */
 async function cloneForwardOneMonth(sent: VendorNewsletter): Promise<VendorNewsletter> {
-	const shiftDate = (iso: string) => {
-		const d = new Date(iso + 'T00:00:00Z');
+	const shiftDate = (v: string | Date) => {
+		const d = new Date(isoDateString(v) + 'T00:00:00Z');
 		d.setUTCMonth(d.getUTCMonth() + 1);
 		return d.toISOString().slice(0, 10);
 	};

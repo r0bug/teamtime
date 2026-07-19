@@ -3,6 +3,7 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { isManager } from '$lib/server/auth/roles';
 import {
 	deleteDraft,
+	isoDateString,
 	listNewsletters,
 	saveNewsletter,
 	starterBlocks
@@ -12,7 +13,13 @@ import { resolvePeriod } from '$lib/server/services/vendor-leaderboard-service';
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user) throw redirect(302, '/dashboard');
 	if (!isManager(locals.user)) throw error(403, 'Managers only');
-	return { newsletters: await listNewsletters() };
+	// date columns arrive as JS Dates from postgres-js — hand the UI strings.
+	const newsletters = (await listNewsletters()).map((n) => ({
+		...n,
+		periodStart: isoDateString(n.periodStart),
+		periodEnd: isoDateString(n.periodEnd)
+	}));
+	return { newsletters };
 };
 
 export const actions: Actions = {

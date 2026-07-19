@@ -6,6 +6,7 @@ import { db } from '$lib/server/db';
 import { vendors } from '$lib/server/db/schema';
 import {
 	getNewsletter,
+	isoDateString,
 	listSends,
 	normalizeBlocks,
 	saveNewsletter,
@@ -25,7 +26,12 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		.where(and(eq(vendors.status, 'active'), isNotNull(vendors.contactEmail)));
 
 	return {
-		newsletter,
+		// date columns arrive as JS Dates from postgres-js — hand the UI strings.
+		newsletter: {
+			...newsletter,
+			periodStart: isoDateString(newsletter.periodStart),
+			periodEnd: isoDateString(newsletter.periodEnd)
+		},
 		sends: await listSends(params.id),
 		recipientCount,
 		myEmail: locals.user.email ?? ''
