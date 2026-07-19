@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { registerHandler } from './processor';
 import type { JobPayload, JobResult } from './queue';
 import { sendSMS, formatPhoneToE164 } from '$lib/server/twilio';
+import { getBroadcastStaff } from '$lib/server/services/user-classification-service';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('jobs:scheduled-sms');
@@ -17,16 +18,12 @@ async function processScheduledSMS(
 
 	log.info({ toUserId, toPhone, toAllStaff, scheduledBy }, 'Processing scheduled SMS');
 
-	// Handle sending to all staff
+	// Handle sending to all staff (vendors and admins are excluded)
 	if (toAllStaff) {
-		const allStaff = await db
-			.select({ id: users.id, name: users.name, phone: users.phone, role: users.role })
-			.from(users)
-			.where(eq(users.isActive, true));
+		const allStaff = await getBroadcastStaff();
 
-		// Filter to non-admin users with valid phone numbers
+		// Filter to users with valid phone numbers
 		const staffWithPhones = allStaff.filter((u) => {
-			if (u.role === 'admin') return false;
 			if (!u.phone) return false;
 			return formatPhoneToE164(u.phone) !== null;
 		});
