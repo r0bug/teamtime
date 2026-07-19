@@ -4,12 +4,16 @@ import { getNewsletter, renderNewsletter } from '$lib/server/services/vendor-new
 
 // Vendor gate lives in the /vendor layout. Only sent + portal-published
 // newsletters are visible here — drafts stay admin-only.
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, parent }) => {
 	const newsletter = await getNewsletter(params.id);
 	if (!newsletter || newsletter.status !== 'sent' || !newsletter.publishToPortal)
 		throw error(404, 'Newsletter not found');
 
-	const rendered = await renderNewsletter(newsletter, 'portal');
+	// Personal-stats blocks show the signed-in vendor's own numbers.
+	const { vendor } = await parent();
+	const rendered = await renderNewsletter(newsletter, 'portal', {
+		personal: { nrsVendorId: vendor.nrsVendorId ?? null }
+	});
 	return {
 		title: newsletter.title,
 		sentAt: newsletter.sentAt,

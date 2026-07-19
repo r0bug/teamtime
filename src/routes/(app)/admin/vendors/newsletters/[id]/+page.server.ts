@@ -60,6 +60,18 @@ export const actions: Actions = {
 			return fail(400, { error: 'Malformed blocks payload' });
 		}
 
+		// datetime-local string, interpreted in server time (TZ=America/Los_Angeles
+		// in prod — matches how the rest of the app treats wall-clock input).
+		let scheduledSendAt: Date | null = null;
+		const scheduleRaw = String(form.get('scheduledSendAt') || '').trim();
+		if (scheduleRaw) {
+			scheduledSendAt = new Date(scheduleRaw);
+			if (isNaN(scheduledSendAt.getTime())) return fail(400, { error: 'Invalid scheduled send time' });
+		}
+		const recurrence = String(form.get('recurrence') || '') === 'monthly' ? 'monthly' as const : null;
+		if (recurrence && !scheduledSendAt)
+			return fail(400, { error: 'Monthly recurrence needs a scheduled send time' });
+
 		await saveNewsletter(
 			{
 				id: params.id,
@@ -68,7 +80,9 @@ export const actions: Actions = {
 				periodStart,
 				periodEnd,
 				publishToPortal: form.get('publishToPortal') === 'on',
-				blocks
+				blocks,
+				scheduledSendAt,
+				recurrence
 			},
 			locals.user.id
 		);

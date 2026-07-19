@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS vendor_newsletters (
   blocks jsonb NOT NULL DEFAULT '[]'::jsonb,
   status vendor_newsletter_status NOT NULL DEFAULT 'draft',
   publish_to_portal boolean NOT NULL DEFAULT true,
+  scheduled_send_at timestamptz,
+  recurrence text,
   sent_at timestamptz,
   sent_by_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
   created_by uuid REFERENCES users(id) ON DELETE SET NULL,

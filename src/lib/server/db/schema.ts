@@ -3686,6 +3686,11 @@ export const vendorNewsletters = pgTable('vendor_newsletters', {
 	blocks: jsonb('blocks').notNull().default([]),
 	status: vendorNewsletterStatusEnum('status').notNull().default('draft'),
 	publishToPortal: boolean('publish_to_portal').notNull().default(true),
+	// Scheduling: a draft with scheduledSendAt in the past is sent by the
+	// vendor-newsletters cron endpoint. recurrence='monthly' makes each send
+	// stage a cloned draft one month forward (period + schedule shifted).
+	scheduledSendAt: timestamp('scheduled_send_at', { withTimezone: true }),
+	recurrence: text('recurrence'), // 'monthly' | null
 	sentAt: timestamp('sent_at', { withTimezone: true }),
 	sentByUserId: uuid('sent_by_user_id').references(() => users.id, { onDelete: 'set null' }),
 	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),

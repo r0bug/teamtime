@@ -16,7 +16,7 @@
  * preview can't hammer the POS API.
  */
 
-import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, lte, sql } from 'drizzle-orm';
 import { Marked } from 'marked';
 import sharp from 'sharp';
 import { db } from '$lib/server/db';
@@ -73,6 +73,15 @@ export interface EventsBlock {
 	heading?: string;
 	items: { date: string; title: string; description?: string }[];
 }
+/**
+ * Per-recipient stats card: the vendor's own gross/earnings/rank for the
+ * period. Rendered per recipient in email; in the portal it shows the
+ * logged-in vendor's numbers; admin preview shows a labeled example.
+ */
+export interface PersonalStatsBlock {
+	type: 'personalStats';
+	heading?: string;
+}
 
 export type NewsletterBlock =
 	| TextBlock
@@ -80,15 +89,25 @@ export type NewsletterBlock =
 	| SalesChartBlock
 	| LeaderboardBlock
 	| ShoutoutsBlock
-	| EventsBlock;
+	| EventsBlock
+	| PersonalStatsBlock;
 
-export const BLOCK_TYPES = ['text', 'tips', 'salesChart', 'leaderboard', 'shoutouts', 'events'] as const;
+export const BLOCK_TYPES = [
+	'text',
+	'tips',
+	'salesChart',
+	'personalStats',
+	'leaderboard',
+	'shoutouts',
+	'events'
+] as const;
 
 /** Starter layout for a fresh draft — one of everything, in a sensible order. */
 export function starterBlocks(): NewsletterBlock[] {
 	return [
 		{ type: 'text', heading: 'From the shop', markdown: '' },
 		{ type: 'salesChart', heading: 'Store sales this period' },
+		{ type: 'personalStats', heading: 'Your numbers' },
 		{ type: 'leaderboard', heading: 'Top vendors', metric: 'gross', limit: 10, showAmounts: true },
 		{ type: 'shoutouts', heading: 'Shoutouts', items: [] },
 		{ type: 'tips', heading: 'Vendor tool tips', items: [] },
@@ -116,6 +135,9 @@ export function normalizeBlocks(raw: unknown): NewsletterBlock[] {
 				break;
 			case 'salesChart':
 				out.push({ type: 'salesChart', heading });
+				break;
+			case 'personalStats':
+				out.push({ type: 'personalStats', heading });
 				break;
 			case 'leaderboard': {
 				const metric: LeaderboardMetric = ['gross', 'vendorPortion', 'retained'].includes(b.metric)
@@ -183,6 +205,8 @@ export interface SaveNewsletterInput {
 	periodEnd: string;
 	publishToPortal: boolean;
 	blocks: NewsletterBlock[];
+	scheduledSendAt?: Date | null;
+	recurrence?: 'monthly' | null;
 }
 
 export async function saveNewsletter(input: SaveNewsletterInput, actorId: string): Promise<VendorNewsletter> {
@@ -196,6 +220,8 @@ export async function saveNewsletter(input: SaveNewsletterInput, actorId: string
 				periodEnd: input.periodEnd,
 				publishToPortal: input.publishToPortal,
 				blocks: input.blocks,
+				scheduledSendAt: input.scheduledSendAt ?? null,
+				recurrence: input.recurrence ?? null,
 				updatedAt: new Date()
 			})
 			.where(and(eq(vendorNewsletters.id, input.id), eq(vendorNewsletters.status, 'draft')))
@@ -212,6 +238,8 @@ export async function saveNewsletter(input: SaveNewsletterInput, actorId: string
 			periodEnd: input.periodEnd,
 			publishToPortal: input.publishToPortal,
 			blocks: input.blocks,
+			scheduledSendAt: input.scheduledSendAt ?? null,
+			recurrence: input.recurrence ?? null,
 			createdBy: actorId
 		})
 		.returning();
@@ -281,7 +309,22 @@ export interface RenderedNewsletter {
 	html: string;
 	/** PNG chart to attach as cid:sales-chart when target='email'. */
 	chartPng: Buffer | null;
+	/**
+	 * Present when a personalStats block rendered in 'token' mode: substitutes
+	 * PERSONAL_STATS_TOKEN in `html` with the given vendor's stats card.
+	 */
+	personalHtmlFor?: (nrsVendorId: number | null) => string;
 }
+
+/**
+ * How a personalStats block renders:
+ *   'token'          → placeholder + personalHtmlFor closure (bulk email send)
+ *   'sample'         → labeled example numbers (admin preview / test send)
+ *   {nrsVendorId}    → that vendor's real stats inline (portal view)
+ */
+export type PersonalStatsMode = 'token' | 'sample' | { nrsVendorId: number | null };
+
+export const PERSONAL_STATS_TOKEN = '%%TT_PERSONAL_STATS%%';
 
 const marked = new Marked();
 marked.setOptions({ breaks: true, gfm: true });
@@ -323,17 +366,19 @@ const METRIC_LABEL: Record<LeaderboardMetric, string> = {
 export async function renderNewsletter(
 	newsletter: VendorNewsletter,
 	target: RenderTarget,
-	opts: { chartMode?: 'svg' | 'cid' | 'data' } = {}
+	opts: { chartMode?: 'svg' | 'cid' | 'data'; personal?: PersonalStatsMode } = {}
 ): Promise<RenderedNewsletter> {
 	const blocks = normalizeBlocks(newsletter.blocks);
 	const chartMode = opts.chartMode ?? (target === 'portal' ? 'svg' : 'cid');
+	const personal = opts.personal ?? 'sample';
 	const period = { start: newsletter.periodStart, end: newsletter.periodEnd };
 
 	// Fetch data once even if a block type appears twice.
 	const needsChart = blocks.some((b) => b.type === 'salesChart');
+	const needsPersonal = blocks.some((b) => b.type === 'personalStats');
 	const lbBlock = blocks.find((b): b is LeaderboardBlock => b.type === 'leaderboard');
 
-	const [daily, leaderboard] = await Promise.all([
+	const [daily, leaderboard, fullBoard] = await Promise.all([
 		needsChart ? getDailyStoreTotals(period.start, period.end) : Promise.resolve([]),
 		lbBlock
 			? computeLeaderboard({
@@ -343,8 +388,24 @@ export async function renderNewsletter(
 					includePriorPeriod: true,
 					limit: lbBlock.limit
 				})
+			: Promise.resolve(null),
+		// Unranked/unlimited board for personal lookups — every vendor gets a
+		// rank even if they're outside the leaderboard block's top N.
+		needsPersonal
+			? computeLeaderboard({
+					startDate: period.start,
+					endDate: period.end,
+					metric: 'gross',
+					includePriorPeriod: true
+				})
 			: Promise.resolve(null)
 	]);
+
+	const personalHtmlFor = (nrsVendorId: number | null): string => {
+		const rows = fullBoard?.rows ?? [];
+		const row = nrsVendorId !== null ? rows.find((r) => r.nrsVendorId === nrsVendorId) : undefined;
+		return renderPersonalCard(row ?? null, rows.length, period);
+	};
 
 	let chartPng: Buffer | null = null;
 	let chartSrcHtml = '';
@@ -383,6 +444,30 @@ export async function renderNewsletter(
 				parts.push(
 					`${heading}<div style="background:#eff6ff;border-radius:8px;padding:12px 16px;"><ul style="margin:0;padding-left:4px;list-style:none;">${lis}</ul></div>`
 				);
+				break;
+			}
+			case 'personalStats': {
+				let card: string;
+				if (personal === 'token') {
+					card = PERSONAL_STATS_TOKEN;
+				} else if (personal === 'sample') {
+					card =
+						`<p style="font-size:12px;color:#9ca3af;margin:0 0 4px;">Example — each vendor sees their own numbers here.</p>` +
+						renderPersonalCard(
+							{
+								rank: 4,
+								totalGross: 1234.56,
+								totalVendorPortion: 1074.07,
+								daysWithSales: 18,
+								deltaPercent: 12
+							},
+							35,
+							period
+						);
+				} else {
+					card = personalHtmlFor(personal.nrsVendorId);
+				}
+				parts.push(`${heading}${card}`);
 				break;
 			}
 			case 'salesChart': {
@@ -450,7 +535,56 @@ export async function renderNewsletter(
 		}
 	}
 
-	return { html: parts.join('\n'), chartPng };
+	return {
+		html: parts.join('\n'),
+		chartPng,
+		personalHtmlFor: needsPersonal && personal === 'token' ? personalHtmlFor : undefined
+	};
+}
+
+/**
+ * The "your numbers" stat card. `row` is the vendor's leaderboard entry for
+ * the period (rank is by gross across ALL vendors, not just the top N shown
+ * in a leaderboard block); null = no sales recorded / vendor not linked.
+ */
+function renderPersonalCard(
+	row: {
+		rank: number;
+		totalGross: number;
+		totalVendorPortion: number;
+		daysWithSales: number;
+		deltaPercent: number | null;
+	} | null,
+	totalVendors: number,
+	period: { start: string; end: string }
+): string {
+	if (!row) {
+		return `<div style="background:#f9fafb;border-radius:8px;padding:14px 16px;font-size:14px;color:#6b7280;">
+			No sales recorded for ${fmtDate(period.start)} – ${fmtDate(period.end)}. New stock and refreshed displays are the best fix — the tips below can help!
+		</div>`;
+	}
+	const cell = (label: string, value: string) =>
+		`<td style="padding:10px 12px;text-align:center;">
+			<div style="font-size:18px;font-weight:bold;color:#1f2937;">${value}</div>
+			<div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">${label}</div>
+		</td>`;
+	const delta =
+		row.deltaPercent !== null
+			? `<p style="font-size:13px;margin:8px 0 0;text-align:center;color:${row.deltaPercent >= 0 ? '#059669' : '#dc2626'};">
+					${row.deltaPercent >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(row.deltaPercent))}% vs the previous period
+				</p>`
+			: '';
+	return `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 4px;">
+		<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
+			<tr>
+				${cell('Your sales', fmtMoney(row.totalGross))}
+				${cell('Your share', fmtMoney(row.totalVendorPortion))}
+				${cell('Rank', `#${row.rank} of ${totalVendors}`)}
+				${cell('Days w/ sales', String(row.daysWithSales))}
+			</tr>
+		</table>
+		${delta}
+	</div>`;
 }
 
 function metricAmount(
@@ -520,14 +654,18 @@ export interface SendResult {
  */
 export async function sendNewsletterToVendors(
 	newsletter: VendorNewsletter,
-	actorId: string
+	actorId: string | null // null = scheduled/cron send
 ): Promise<SendResult> {
-	const rendered = await renderNewsletter(newsletter, 'email', { chartMode: 'cid' });
+	const rendered = await renderNewsletter(newsletter, 'email', {
+		chartMode: 'cid',
+		personal: 'token'
+	});
 	const subject = newsletter.subject?.trim() || newsletter.title;
 
 	const recipients = await db
 		.select({
 			id: vendors.id,
+			nrsVendorId: vendors.nrsVendorId,
 			displayName: vendors.displayName,
 			contactName: vendors.contactName,
 			contactEmail: vendors.contactEmail
@@ -544,14 +682,19 @@ export async function sendNewsletterToVendors(
 			result.skipped++;
 			continue;
 		}
-		if (seenEmails.has(email)) continue; // shared inbox across booths — send once
+		// Shared inbox across booths — send once (personal stats show the
+		// first booth's numbers; the portal view has each booth's own).
+		if (seenEmails.has(email)) continue;
 		seenEmails.add(email);
 
 		const greeting = `Hi ${v.contactName || v.displayName},`;
+		const body = rendered.personalHtmlFor
+			? rendered.html.replaceAll(PERSONAL_STATS_TOKEN, rendered.personalHtmlFor(v.nrsVendorId))
+			: rendered.html;
 		const ok = await sendEmail({
 			to: email,
 			subject,
-			html: wrapEmail(newsletter.title, rendered.html, greeting),
+			html: wrapEmail(newsletter.title, body, greeting),
 			attachments: rendered.chartPng
 				? [{ filename: 'sales-chart.png', content: rendered.chartPng, cid: 'sales-chart' }]
 				: undefined
@@ -569,11 +712,112 @@ export async function sendNewsletterToVendors(
 
 	await db
 		.update(vendorNewsletters)
-		.set({ status: 'sent', sentAt: new Date(), sentByUserId: actorId, updatedAt: new Date() })
+		.set({
+			status: 'sent',
+			sentAt: new Date(),
+			sentByUserId: actorId,
+			scheduledSendAt: null,
+			updatedAt: new Date()
+		})
 		.where(eq(vendorNewsletters.id, newsletter.id));
 
 	log.info({ newsletterId: newsletter.id, ...result }, 'Vendor newsletter sent');
+
+	if (newsletter.recurrence === 'monthly') {
+		try {
+			const next = await cloneForwardOneMonth(newsletter);
+			log.info({ from: newsletter.id, to: next.id }, 'Recurring newsletter: next draft created');
+		} catch (err) {
+			log.error({ err, newsletterId: newsletter.id }, 'Failed to create next recurring draft');
+		}
+	}
+
 	return result;
+}
+
+/**
+ * For monthly recurrence: after an issue goes out, stage the next one — same
+ * blocks (staff edit the text/shoutouts/events before it sends), period and
+ * scheduled time shifted forward one month. Data blocks re-aggregate on their
+ * own, so an untouched clone still sends fresh charts/leaderboard/stats.
+ */
+async function cloneForwardOneMonth(sent: VendorNewsletter): Promise<VendorNewsletter> {
+	const shiftDate = (iso: string) => {
+		const d = new Date(iso + 'T00:00:00Z');
+		d.setUTCMonth(d.getUTCMonth() + 1);
+		return d.toISOString().slice(0, 10);
+	};
+	const nextSchedule = sent.scheduledSendAt ? new Date(sent.scheduledSendAt) : null;
+	if (nextSchedule) nextSchedule.setMonth(nextSchedule.getMonth() + 1);
+
+	const nextEnd = shiftDate(sent.periodEnd);
+	const monthName = new Date(nextEnd + 'T00:00:00Z').toLocaleDateString('en-US', {
+		timeZone: 'UTC',
+		month: 'long',
+		year: 'numeric'
+	});
+	// "Vendor Newsletter — July 2026" → "… — August 2026"; otherwise keep as-is.
+	const title = /—\s*\w+ \d{4}\s*$/.test(sent.title)
+		? sent.title.replace(/—\s*\w+ \d{4}\s*$/, `— ${monthName}`)
+		: sent.title;
+
+	const [row] = await db
+		.insert(vendorNewsletters)
+		.values({
+			title,
+			subject: sent.subject,
+			periodStart: shiftDate(sent.periodStart),
+			periodEnd: nextEnd,
+			blocks: sent.blocks ?? [],
+			publishToPortal: sent.publishToPortal,
+			scheduledSendAt: nextSchedule,
+			recurrence: sent.recurrence,
+			createdBy: sent.createdBy
+		})
+		.returning();
+	return row;
+}
+
+/**
+ * Scheduled sends: atomically claim due drafts (clear scheduledSendAt while
+ * still draft — a crashed send leaves an unscheduled draft, never a double
+ * send), then send each. Called by the CRON_SECRET-guarded endpoint.
+ */
+export async function processDueNewsletters(): Promise<{ processed: string[]; results: SendResult[] }> {
+	const due = await db
+		.select()
+		.from(vendorNewsletters)
+		.where(
+			and(
+				eq(vendorNewsletters.status, 'draft'),
+				isNotNull(vendorNewsletters.scheduledSendAt),
+				lte(vendorNewsletters.scheduledSendAt, new Date())
+			)
+		);
+
+	const processed: string[] = [];
+	const results: SendResult[] = [];
+	for (const n of due) {
+		// Per-row atomic claim: only one worker's UPDATE matches while
+		// scheduled_send_at is still set. The pre-read row (n) keeps the
+		// original schedule time for the recurrence clone.
+		const claimed = await db
+			.update(vendorNewsletters)
+			.set({ scheduledSendAt: null, updatedAt: new Date() })
+			.where(
+				and(
+					eq(vendorNewsletters.id, n.id),
+					eq(vendorNewsletters.status, 'draft'),
+					isNotNull(vendorNewsletters.scheduledSendAt)
+				)
+			)
+			.returning({ id: vendorNewsletters.id });
+		if (!claimed.length) continue;
+
+		results.push(await sendNewsletterToVendors(n, null));
+		processed.push(n.id);
+	}
+	return { processed, results };
 }
 
 /** One-off test delivery to an arbitrary address. Doesn't change status. */

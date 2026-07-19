@@ -43,11 +43,13 @@ describe('vendor-newsletter-service', () => {
 				42,
 				{ type: 'bogus' },
 				{ type: 'text', markdown: 'hello', heading: '  From the shop  ' },
-				{ type: 'salesChart' }
+				{ type: 'salesChart' },
+				{ type: 'personalStats', heading: 'Your numbers' }
 			]);
 			expect(out).toEqual([
 				{ type: 'text', heading: 'From the shop', markdown: 'hello' },
-				{ type: 'salesChart', heading: undefined }
+				{ type: 'salesChart', heading: undefined },
+				{ type: 'personalStats', heading: 'Your numbers' }
 			]);
 		});
 

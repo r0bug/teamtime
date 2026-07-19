@@ -43,6 +43,10 @@
 								{#if n.publishToPortal}<span class="badge-primary">In portal</span>{/if}
 							{:else}
 								<span class="badge-warning">Draft</span>
+								{#if n.scheduledSendAt}
+									<span class="badge-primary">⏰ Sends {new Date(n.scheduledSendAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+								{/if}
+								{#if n.recurrence === 'monthly'}<span class="badge-gray">Monthly</span>{/if}
 							{/if}
 						</div>
 						<p class="text-xs text-gray-500 mt-1">

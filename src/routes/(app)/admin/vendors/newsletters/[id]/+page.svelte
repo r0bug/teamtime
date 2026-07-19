@@ -24,6 +24,7 @@
 		text: '📝 Text',
 		tips: '💡 Tips',
 		salesChart: '📊 Sales chart',
+		personalStats: '👤 Your numbers (per-vendor)',
 		leaderboard: '🏆 Leaderboard',
 		shoutouts: '⭐ Shoutouts',
 		events: '📅 Events'
@@ -34,6 +35,7 @@
 		switch (type) {
 			case 'tips': return { type, heading: 'Vendor tool tips', items: [] };
 			case 'salesChart': return { type, heading: 'Store sales this period' };
+			case 'personalStats': return { type, heading: 'Your numbers' };
 			case 'leaderboard': return { type, heading: 'Top vendors', metric: 'gross', limit: 10, showAmounts: true };
 			case 'shoutouts': return { type, heading: 'Shoutouts', items: [] };
 			case 'events': return { type, heading: 'Upcoming events', items: [] };
@@ -64,6 +66,13 @@
 
 	const fmtDate = (d: string | Date | null) =>
 		d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+	function dtLocalValue(d: string | Date | null): string {
+		if (!d) return '';
+		const dt = new Date(d);
+		const pad = (n: number) => String(n).padStart(2, '0');
+		return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+	}
 
 	function sendResultMessage(data: unknown): string {
 		const r = (data as { sendResult?: { sent: number; failed: number; skipped: number } })?.sendResult;
@@ -135,8 +144,23 @@
 							<input type="checkbox" name="publishToPortal" checked={newsletter.publishToPortal} disabled={readOnly} />
 							Also publish in the vendor portal after sending
 						</label>
+						<div class="flex flex-wrap items-end gap-3">
+							<div>
+								<label class="label" for="nlSchedule">Scheduled send (optional)</label>
+								<input id="nlSchedule" name="scheduledSendAt" type="datetime-local" class="input" value={dtLocalValue(newsletter.scheduledSendAt)} disabled={readOnly} />
+							</div>
+							<div>
+								<label class="label" for="nlRecurrence">Repeat</label>
+								<select id="nlRecurrence" name="recurrence" class="input" value={newsletter.recurrence ?? ''} disabled={readOnly}>
+									<option value="">One-off</option>
+									<option value="monthly">Monthly (auto-stages next issue)</option>
+								</select>
+							</div>
+						</div>
 						<p class="text-xs text-gray-500">
-							The sales chart and leaderboard blocks aggregate over the report period above.
+							The sales chart, leaderboard, and per-vendor stats aggregate over the report period above.
+							A scheduled draft is sent automatically (hourly check); monthly recurrence creates next
+							month's draft — with the period and schedule shifted — each time an issue goes out.
 						</p>
 					</div>
 				</div>
@@ -176,6 +200,9 @@
 
 									{:else if block.type === 'salesChart'}
 										<p class="text-xs text-gray-500">Daily store-wide sales bar chart for the report period. Rendered as an image in the email.</p>
+
+									{:else if block.type === 'personalStats'}
+										<p class="text-xs text-gray-500">Each vendor sees their own sales, share, rank, and active days for the period. The preview shows example numbers; the portal shows the signed-in vendor's real ones.</p>
 
 									{:else if block.type === 'leaderboard'}
 										<div class="flex flex-wrap items-end gap-3">
