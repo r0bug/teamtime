@@ -74,6 +74,11 @@
 		return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
 	}
 
+	function sentOneMessage(data: unknown): string {
+		const email = (data as { sentOne?: string })?.sentOne;
+		return email ? `Sent to ${email}` : 'Sent';
+	}
+
 	function sendResultMessage(data: unknown): string {
 		const r = (data as { sendResult?: { sent: number; failed: number; skipped: number } })?.sendResult;
 		if (!r) return 'Newsletter sent';
@@ -324,6 +329,43 @@
 					</div>
 				</div>
 			{/if}
+
+			<!-- Single-vendor send: works for drafts and sent issues (resends). -->
+			<div class="card mt-4">
+				<div class="card-body flex flex-col gap-2">
+					<h2 class="font-semibold text-gray-900">Send to one vendor</h2>
+					<form
+						method="POST"
+						action="?/sendOne"
+						class="flex gap-2 items-end flex-wrap"
+						use:enhance={() =>
+							async ({ result }) => {
+								if (result.type === 'success') {
+									notify.success(sentOneMessage(result.data));
+									await invalidateAll();
+								} else {
+									const msg = result.type === 'failure' ? String(result.data?.error ?? '') : '';
+									notify.error(msg || 'Send failed');
+								}
+							}}
+					>
+						<div class="flex-1 min-w-52">
+							<label class="label" for="sendOneVendor">Vendor</label>
+							<select id="sendOneVendor" name="vendorId" class="input" required>
+								<option value="">— pick a vendor —</option>
+								{#each data.sendableVendors as v (v.id)}
+									<option value={v.id}>{v.displayName}{v.status !== 'active' ? ` (${v.status})` : ''}</option>
+								{/each}
+							</select>
+						</div>
+						<button type="submit" class="btn-secondary">Send to this vendor</button>
+					</form>
+					<p class="text-xs text-gray-500">
+						Their personalized copy (own stats), logged below. Doesn't mark the newsletter as sent —
+						use it for previews-for-real, resends, or vendors who joined late.
+					</p>
+				</div>
+			</div>
 
 			{#if data.sends.length}
 				<div class="card mt-4">

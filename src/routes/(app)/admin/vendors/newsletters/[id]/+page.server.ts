@@ -11,6 +11,7 @@ import {
 	normalizeBlocks,
 	saveNewsletter,
 	sendNewsletterTest,
+	sendNewsletterToOneVendor,
 	sendNewsletterToVendors
 } from '$lib/server/services/vendor-newsletter-service';
 
@@ -25,6 +26,19 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		.from(vendors)
 		.where(and(eq(vendors.status, 'active'), isNotNull(vendors.contactEmail)));
 
+	// For the single-vendor send picker: anyone with an email, any status —
+	// targeted sends are a deliberate admin choice (resends, new vendors, etc.)
+	const sendableVendors = await db
+		.select({
+			id: vendors.id,
+			displayName: vendors.displayName,
+			status: vendors.status,
+			contactEmail: vendors.contactEmail
+		})
+		.from(vendors)
+		.where(isNotNull(vendors.contactEmail))
+		.orderBy(vendors.displayName);
+
 	return {
 		// date columns arrive as JS Dates from postgres-js — hand the UI strings.
 		newsletter: {
@@ -34,6 +48,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		},
 		sends: await listSends(params.id),
 		recipientCount,
+		sendableVendors,
 		myEmail: locals.user.email ?? ''
 	};
 };
@@ -103,6 +118,17 @@ export const actions: Actions = {
 		if (!to || !to.includes('@')) return fail(400, { error: 'Enter a valid email address' });
 		const ok = await sendNewsletterTest(newsletter, to);
 		return ok ? { tested: true } : fail(500, { error: 'Test send failed — check SMTP config/logs' });
+	},
+
+	sendOne: async ({ locals, params, request }) => {
+		if (!locals.user || !isManager(locals.user)) return fail(403, { error: 'Managers only' });
+		const newsletter = await requireDraft(params);
+		const form = await request.formData();
+		const vendorId = String(form.get('vendorId') || '');
+		if (!vendorId) return fail(400, { error: 'Pick a vendor' });
+		const result = await sendNewsletterToOneVendor(newsletter, vendorId);
+		if (!result.ok) return fail(400, { error: result.error });
+		return { sentOne: result.email };
 	},
 
 	send: async ({ locals, params }) => {

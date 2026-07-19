@@ -831,6 +831,55 @@ export async function processDueNewsletters(): Promise<{ processed: string[]; re
 	return { processed, results };
 }
 
+/**
+ * Send (or resend) to a single explicitly-chosen vendor — works regardless of
+ * vendor status or newsletter status, and never flips the newsletter to sent.
+ * The admin picked the target deliberately; the delivery log records it.
+ */
+export async function sendNewsletterToOneVendor(
+	newsletter: VendorNewsletter,
+	vendorId: string
+): Promise<{ ok: boolean; error?: string; email?: string }> {
+	const [v] = await db
+		.select({
+			id: vendors.id,
+			nrsVendorId: vendors.nrsVendorId,
+			displayName: vendors.displayName,
+			contactName: vendors.contactName,
+			contactEmail: vendors.contactEmail
+		})
+		.from(vendors)
+		.where(eq(vendors.id, vendorId));
+	if (!v) return { ok: false, error: 'Vendor not found' };
+	const email = v.contactEmail?.trim().toLowerCase();
+	if (!email) return { ok: false, error: `${v.displayName} has no contact email on file` };
+
+	const rendered = await renderNewsletter(newsletter, 'email', {
+		chartMode: 'cid',
+		personal: 'token'
+	});
+	const body = rendered.personalHtmlFor
+		? rendered.html.replaceAll(PERSONAL_STATS_TOKEN, rendered.personalHtmlFor(v.nrsVendorId))
+		: rendered.html;
+	const ok = await sendEmail({
+		to: email,
+		subject: newsletter.subject?.trim() || newsletter.title,
+		html: wrapEmail(newsletter.title, body, `Hi ${v.contactName || v.displayName},`),
+		attachments: rendered.chartPng
+			? [{ filename: 'sales-chart.png', content: rendered.chartPng, cid: 'sales-chart' }]
+			: undefined
+	});
+	await db.insert(vendorNewsletterSends).values({
+		newsletterId: newsletter.id,
+		vendorId: v.id,
+		email,
+		status: ok ? 'sent' : 'failed',
+		error: ok ? null : 'sendEmail returned false (see server log)'
+	});
+	log.info({ newsletterId: newsletter.id, vendorId: v.id, ok }, 'Single-vendor newsletter send');
+	return ok ? { ok: true, email } : { ok: false, error: 'Send failed — see server log', email };
+}
+
 /** One-off test delivery to an arbitrary address. Doesn't change status. */
 export async function sendNewsletterTest(newsletter: VendorNewsletter, to: string): Promise<boolean> {
 	const rendered = await renderNewsletter(newsletter, 'email', { chartMode: 'cid' });
