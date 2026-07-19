@@ -148,7 +148,19 @@ export const attendanceProvider: AIContextProvider<AttendanceData> = {
 				const shiftStart = new Date(s.startTime);
 				const shiftEnd = new Date(s.endTime);
 				// Shift has started but not ended, and user not clocked in
-				return shiftStart <= now && shiftEnd > now && !clockedInUserIds.has(s.userId);
+				if (!(shiftStart <= now && shiftEnd > now) || clockedInUserIds.has(s.userId)) {
+					return false;
+				}
+				// A completed entry overlapping the shift window means they showed
+				// up (and maybe left early) — that is not a late arrival. Without
+				// this check, anyone clocked out for lunch or gone home early was
+				// reported to the AI as "X min late".
+				const attended = todayCompletedEntries.some(te =>
+					te.userId === s.userId &&
+					new Date(te.clockIn) < shiftEnd &&
+					te.clockOut !== null && new Date(te.clockOut) > shiftStart
+				);
+				return !attended;
 			})
 			.map(s => ({
 				userId: s.userId,

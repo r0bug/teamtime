@@ -4,6 +4,7 @@ import { db, users, shifts, locations, storeHours, appSettings } from '$lib/serv
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
 import { createLogger } from '$lib/server/logger';
+import { audit } from '$lib/server/services/audit-service';
 import { parsePacificDatetime, getPacificDateParts, toPacificDateString, parsePacificDate, parsePacificEndOfDay } from '$lib/server/utils/timezone';
 import {
 	getDefaultTemplate,
@@ -326,7 +327,20 @@ export const actions: Actions = {
 		}
 
 		try {
-			await db.delete(shifts).where(eq(shifts.id, shiftId));
+			const [deleted] = await db.delete(shifts).where(eq(shifts.id, shiftId)).returning();
+			if (deleted) {
+				await audit({
+					userId: locals.user!.id,
+					action: 'schedule_deleted',
+					entityType: 'schedule',
+					entityId: shiftId,
+					beforeData: {
+						userId: deleted.userId,
+						startTime: deleted.startTime.toISOString(),
+						endTime: deleted.endTime.toISOString()
+					}
+				});
+			}
 			return { success: true, message: 'Shift deleted successfully' };
 		} catch (error) {
 			log.error({ error, shiftId }, 'Error deleting shift');

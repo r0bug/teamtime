@@ -23,6 +23,7 @@ import {
 	getPacificWeekStart
 } from '$lib/server/utils/timezone';
 import { createLogger } from '$lib/server/logger';
+import { audit } from './audit-service';
 
 const log = createLogger('services:schedule-template');
 
@@ -618,6 +619,14 @@ export async function commitApplication(
 				const existingIds = conflict.existing.map((e) => e.id);
 				if (existingIds.length > 0) {
 					await tx.delete(shifts).where(inArray(shifts.id, existingIds));
+					await audit({
+						userId: actorId,
+						action: 'schedule_deleted',
+						entityType: 'schedule',
+						entityId: null,
+						beforeData: { deletedShiftIds: existingIds },
+						metadata: { reason: 'template apply overwrite', templateId: plan.templateId, slotKey: conflict.slot.slotKey }
+					});
 					deleted += existingIds.length;
 				}
 				await tx.insert(shifts).values({

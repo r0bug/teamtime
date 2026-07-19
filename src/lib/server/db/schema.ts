@@ -125,6 +125,7 @@ export const demeritTypeEnum = pgEnum('demerit_type', [
 ]);
 
 export const demeritStatusEnum = pgEnum('demerit_status', [
+	'pending',    // Auto-detected, awaiting manager review (no points/SMS yet)
 	'active',     // Currently counting against employee
 	'appealed',   // Under review
 	'overturned', // Removed after successful appeal
