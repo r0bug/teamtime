@@ -7,7 +7,7 @@
 	import CellPopover from '$lib/components/floorplan/CellPopover.svelte';
 	import PaintToolbar from '$lib/components/floorplan/PaintToolbar.svelte';
 	import type { PageData } from './$types';
-	import type { CellMap, Mode, Tool } from '$lib/floorplan/types';
+	import type { CellMap, CellOp, Mode, Tool } from '$lib/floorplan/types';
 	import { cellKey } from '$lib/floorplan/types';
 	import { PaintSession, rectCells, lineCells, floodCells } from '$lib/floorplan/paint';
 	import { checkReachability } from '$lib/floorplan/reachability';
@@ -16,7 +16,10 @@
 
 	let mode: Mode = 'view';
 	let tool: Tool = 'cell';
-	let overlayKey = 'kind';
+	// Vendor overlay is the view people want on load; fall back to 'kind'
+	// if a plan has no vendor_id attr def.
+	let overlayKey = 'vendor_id';
+	$: if (data.attrDefs.length > 0 && !data.attrDefs.some((d) => d.key === overlayKey)) overlayKey = 'kind';
 	let activeKey = 'vendor_id';
 	let activeValue: string | null = ''; // '' = pick-a-value; null = erase mode
 	let canvas: FloorplanCanvas;
@@ -246,6 +249,14 @@
 
 	function onPageKey(e: KeyboardEvent): void {
 		if (e.key === 'Escape' && fillMenu) closeFillMenu();
+		// Ctrl/Cmd+Z undoes the last stroke — but not while typing in a field,
+		// where native text undo should win.
+		const t = e.target as HTMLElement | null;
+		const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
+		if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && mode !== 'view') {
+			e.preventDefault();
+			undo();
+		}
 	}
 
 	function onPaintDown(e: CustomEvent<{ x: number; y: number }>): void {
@@ -294,7 +305,32 @@
 		await save();
 	}
 
-	async function save(): Promise<void> {
+	// Undo: after each saved stroke, keep the ops that would restore the
+	// touched cells to their pre-stroke values. Undo replays them through the
+	// same optimistic-apply + batch-POST path. Cleared on plan switch (the
+	// ops are plan-relative).
+	const UNDO_DEPTH = 20;
+	let undoStack: CellOp[][] = [];
+	$: if (data.plan) clearUndoOnPlanChange(data.plan.id);
+	let undoPlanId: string | null = null;
+	function clearUndoOnPlanChange(planId: string): void {
+		if (undoPlanId !== null && undoPlanId !== planId) undoStack = [];
+		undoPlanId = planId;
+	}
+
+	async function undo(): Promise<void> {
+		if (undoStack.length === 0 || saving || !data.plan || mode === 'view') return;
+		const inv = undoStack[undoStack.length - 1];
+		undoStack = undoStack.slice(0, -1);
+		session = new PaintSession(cells, data.plan.gridW, data.plan.gridH);
+		skipped = 0;
+		// Restoring originals is always legal — bypass the sellable-skip in stage().
+		for (const op of inv) session.apply(op.x, op.y, op.key, op.value);
+		cells = cells;
+		await save({ undo: true });
+	}
+
+	async function save(opts: { undo?: boolean } = {}): Promise<void> {
 		if (!session || !data.plan) return;
 		const ops = session.ops();
 		if (ops.length === 0) {
@@ -304,6 +340,7 @@
 			session = null;
 			return;
 		}
+		const inverse = session.inverseOps();
 		saving = true;
 		try {
 			const res = await fetch(`/api/floorplan/${data.plan.id}/cells`, {
@@ -313,8 +350,15 @@
 			});
 			if (res.ok) {
 				session.commit();
+				if (!opts.undo) {
+					undoStack = [...undoStack.slice(-(UNDO_DEPTH - 1)), inverse];
+				}
 				const skipNote = skipped > 0 ? ` (skipped ${skipped} non-sellable)` : '';
-				notify.success(`Saved ${ops.length} cell change${ops.length === 1 ? '' : 's'}${skipNote}`);
+				notify.success(
+					opts.undo
+						? `Undid ${ops.length} cell change${ops.length === 1 ? '' : 's'}`
+						: `Saved ${ops.length} cell change${ops.length === 1 ? '' : 's'}${skipNote}`
+				);
 				if (unreachable.size > 0) runReachability(false);
 			} else {
 				const body = await res.json().catch(() => ({}));
@@ -417,6 +461,13 @@
 				{#if mode !== 'view'}
 					<div class="w-full flex flex-wrap items-center gap-2">
 						<PaintToolbar {mode} bind:tool bind:activeKey bind:activeValue defs={data.attrDefs} vendors={pickerVendors} pools={data.pools} />
+						<button
+							type="button"
+							class="btn-secondary btn-sm"
+							title="Undo last stroke (Ctrl+Z)"
+							disabled={undoStack.length === 0 || saving}
+							on:click={undo}>↩ Undo</button
+						>
 						{#if data.canBuild && activeKey === 'vendor_id' && activeValue}
 							<label class="flex items-center gap-1.5 text-sm text-gray-600" title="Color for this vendor on the map">
 								color
