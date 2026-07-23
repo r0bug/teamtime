@@ -36,7 +36,7 @@
 	const dispatch = createEventDispatcher<{
 		hover: { x: number; y: number; clientX: number; clientY: number };
 		hoverend: void;
-		paintdown: { x: number; y: number };
+		paintdown: { x: number; y: number; alt: boolean };
 		paintmove: { x: number; y: number };
 		paintup: { x: number; y: number };
 		cellmenu: { x: number; y: number; clientX: number; clientY: number };
@@ -242,7 +242,7 @@
 			panning = true;
 		} else if (e.button === 0) {
 			painting = true;
-			dispatch('paintdown', cellAt(e));
+			dispatch('paintdown', { ...cellAt(e), alt: e.altKey });
 		}
 	}
 

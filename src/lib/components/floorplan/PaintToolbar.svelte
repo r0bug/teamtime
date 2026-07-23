@@ -17,7 +17,8 @@
 		{ id: 'cell', label: '✏️', title: 'Cell brush' },
 		{ id: 'rect', label: '▭', title: 'Rectangle' },
 		{ id: 'fill', label: '🪣', title: 'Flood fill (contiguous same-value)' },
-		{ id: 'wall', label: '📏', title: 'Wall / line' }
+		{ id: 'wall', label: '📏', title: 'Wall / line' },
+		{ id: 'pick', label: '💉', title: 'Pick from cell — set the brush to whatever is painted there (Alt+click does this with any tool)' }
 	];
 
 	$: editableDefs = defs.filter((d) => (mode === 'build' ? true : !GEOMETRY_KEYS.has(d.key)));

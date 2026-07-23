@@ -259,8 +259,34 @@
 		}
 	}
 
-	function onPaintDown(e: CustomEvent<{ x: number; y: number }>): void {
+	// Eyedropper: set the brush to whatever the clicked cell is painted with.
+	// The dedicated tool is one-shot (returns to the brush you had); Alt+click
+	// picks without leaving the current tool.
+	let lastPaintTool: Tool = 'cell';
+	$: if (tool !== 'pick') lastPaintTool = tool;
+
+	function pickFromCell(x: number, y: number): void {
+		const attrs = cells.get(cellKey(x, y)) ?? {};
+		// Prefer the key being painted, then vendor, then pool.
+		const key = attrs[activeKey] !== undefined ? activeKey : attrs.vendor_id !== undefined ? 'vendor_id' : attrs.pool !== undefined ? 'pool' : null;
+		if (!key) {
+			notify.error('Nothing painted on that cell to pick up');
+			return;
+		}
+		activeKey = key;
+		activeValue = attrs[key];
+		const vendorName =
+			key === 'vendor_id' ? data.vendorOptions.find((v) => String(v.nrsVendorId) === attrs[key])?.displayName : null;
+		notify.success(`Brush set to ${key === 'vendor_id' ? (vendorName ?? `vendor ${attrs[key]}`) : `${key} = ${attrs[key]}`}`);
+		if (tool === 'pick') tool = lastPaintTool;
+	}
+
+	function onPaintDown(e: CustomEvent<{ x: number; y: number; alt: boolean }>): void {
 		if (!ready() || !data.plan) return;
+		if (tool === 'pick' || e.detail.alt) {
+			pickFromCell(e.detail.x, e.detail.y);
+			return;
+		}
 		session = new PaintSession(cells, data.plan.gridW, data.plan.gridH);
 		skipped = 0;
 		anchor = { x: e.detail.x, y: e.detail.y };

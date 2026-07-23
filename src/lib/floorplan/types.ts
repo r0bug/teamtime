@@ -26,7 +26,7 @@ export interface CellOp {
 }
 
 export type Mode = 'view' | 'edit' | 'build';
-export type Tool = 'cell' | 'rect' | 'fill' | 'wall';
+export type Tool = 'cell' | 'rect' | 'fill' | 'wall' | 'pick';
 
 export function cellKey(x: number, y: number): string {
 	return `${x},${y}`;
