@@ -39,6 +39,7 @@
 		paintdown: { x: number; y: number };
 		paintmove: { x: number; y: number };
 		paintup: { x: number; y: number };
+		cellmenu: { x: number; y: number; clientX: number; clientY: number };
 	}>();
 
 	let canvas: HTMLCanvasElement;
@@ -278,6 +279,16 @@
 		dispatch('hoverend');
 	}
 
+	function onContextMenu(e: MouseEvent): void {
+		// Right-click opens the dimension-fill dialog while editing; view mode
+		// keeps the native menu.
+		if (mode === 'view') return;
+		e.preventDefault();
+		const rect = canvas.getBoundingClientRect();
+		const cell = screenToCell(e.clientX - rect.left, e.clientY - rect.top);
+		dispatch('cellmenu', { ...cell, clientX: e.clientX, clientY: e.clientY });
+	}
+
 	function onWheel(e: WheelEvent): void {
 		// Plain wheel scrolls natively (the wrap is a scroll container);
 		// ctrl/cmd+wheel zooms — mirroring how maps and image editors behave.
@@ -325,6 +336,7 @@
 		on:pointermove={onPointerMove}
 		on:pointerup={onPointerUp}
 		on:pointerleave={onPointerLeave}
+		on:contextmenu={onContextMenu}
 		on:wheel={onWheel}
 		class:paint-cursor={mode !== 'view'}
 	/>

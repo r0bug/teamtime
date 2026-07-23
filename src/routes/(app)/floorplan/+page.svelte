@@ -23,8 +23,17 @@
 	let saving = false;
 
 	// Working copy of the plan; PaintSession mutates it optimistically.
+	// Rebuild ONLY when the load function actually produced a new cell list —
+	// the `data` prop object is re-passed (and marked dirty) on unrelated
+	// parent re-renders, and rebuilding then silently reverts unsaved
+	// optimistic paint to the page-load snapshot ("paint doesn't show until
+	// you navigate away and back").
 	let cells: CellMap = new Map();
-	$: cells = new Map(data.cells.map((c) => [cellKey(c.x, c.y), { ...c.attrs }]));
+	let cellsSource: PageData['cells'] | null = null;
+	$: if (data.cells !== cellsSource) {
+		cellsSource = data.cells;
+		cells = new Map(data.cells.map((c) => [cellKey(c.x, c.y), { ...c.attrs }]));
+	}
 
 	let session: PaintSession | null = null;
 	let anchor: { x: number; y: number } | null = null;
@@ -104,13 +113,16 @@
 		}
 	}
 
-	async function saveVendorColor(e: Event): Promise<void> {
-		const color = (e.target as HTMLInputElement).value;
-		if (!activeValue) return;
+	async function saveVendorColorFor(vendorId: string, color: string): Promise<void> {
+		if (!vendorId) return;
 		const rh = { ...((vendorDef?.renderHint as Record<string, unknown>) ?? {}) };
 		rh.mode = 'fill';
-		rh.palette = { ...vendorPalette, [activeValue]: color };
+		rh.palette = { ...vendorPalette, [vendorId]: color };
 		if (await saveVendorDef(rh)) notify.success('Vendor color saved');
+	}
+
+	function saveVendorColor(e: Event): void {
+		if (activeValue) saveVendorColorFor(activeValue, (e.target as HTMLInputElement).value);
 	}
 
 	function editPool(pool?: { id: string; name: string; color: string; vendorIds: string[] }): void {
@@ -172,20 +184,68 @@
 	// structure paints around it instead of failing the whole batch. Skips
 	// are counted and reported — a silently-dropped stroke reads as "paint
 	// is broken".
-	function stage(x: number, y: number): void {
+	function stage(x: number, y: number, key: string = activeKey, value: string | null = paintValue()): void {
 		if (!session) return;
-		const value = paintValue();
-		if ((activeKey === 'vendor_id' || activeKey === 'pool') && value !== null && cells.get(cellKey(x, y))?.kind !== 'sellable') {
+		if ((key === 'vendor_id' || key === 'pool') && value !== null && cells.get(cellKey(x, y))?.kind !== 'sellable') {
 			skipped++;
 			return;
 		}
-		session.apply(x, y, activeKey, value);
+		session.apply(x, y, key, value);
 	}
 
 	function ready(): boolean {
 		if (mode === 'view' || !data.plan) return false;
 		if (paintValue() === null) return true; // erase
 		return true;
+	}
+
+	// ---- right-click dimension fill: "N right × M down from this cell"
+	let fillMenu: { x: number; y: number; clientX: number; clientY: number } | null = null;
+	let fillW = 10;
+	let fillH = 10;
+	let fillTarget = ''; // 'v:<vendorId>' | 'p:<poolName>'
+
+	// Clamp free-typed numbers once here; everything downstream uses these.
+	$: fillWc = Math.max(1, Math.min(data.plan?.gridW ?? 1, Math.floor(fillW) || 1));
+	$: fillHc = Math.max(1, Math.min(data.plan?.gridH ?? 1, Math.floor(fillH) || 1));
+
+	// The clicked cell is the rect's top-left: right = +x, down on screen = −y.
+	$: fillRect = fillMenu
+		? rectCells(fillMenu.x, fillMenu.y, fillMenu.x + fillWc - 1, fillMenu.y - (fillHc - 1))
+		: [];
+	// Live-tint the target area while the dialog is open.
+	$: if (fillMenu) preview = new Set(fillRect.map((c) => cellKey(c.x, c.y)));
+
+	function onCellMenu(e: CustomEvent<{ x: number; y: number; clientX: number; clientY: number }>): void {
+		if (mode === 'view' || !data.plan) return;
+		// Default the target to whatever the toolbar is set to paint.
+		if (activeKey === 'vendor_id' && activeValue) fillTarget = `v:${activeValue}`;
+		else if (activeKey === 'pool' && activeValue) fillTarget = `p:${activeValue}`;
+		else if (!fillTarget) {
+			fillTarget = pickerVendors.length > 0 ? `v:${pickerVendors[0].nrsVendorId}` : data.pools[0] ? `p:${data.pools[0].name}` : '';
+		}
+		fillMenu = e.detail;
+	}
+
+	function closeFillMenu(): void {
+		fillMenu = null;
+		preview = new Set();
+	}
+
+	async function applyFill(): Promise<void> {
+		if (!fillMenu || !data.plan || !fillTarget) return;
+		const key = fillTarget.startsWith('v:') ? 'vendor_id' : 'pool';
+		const value = fillTarget.slice(2);
+		session = new PaintSession(cells, data.plan.gridW, data.plan.gridH);
+		skipped = 0;
+		for (const c of fillRect) stage(c.x, c.y, key, value);
+		cells = cells;
+		closeFillMenu();
+		await save();
+	}
+
+	function onPageKey(e: KeyboardEvent): void {
+		if (e.key === 'Escape' && fillMenu) closeFillMenu();
 	}
 
 	function onPaintDown(e: CustomEvent<{ x: number; y: number }>): void {
@@ -291,6 +351,8 @@
 	<title>Floorplan - TeamTime</title>
 </svelte:head>
 
+<svelte:window on:keydown={onPageKey} />
+
 <div class="p-4 lg:p-8 max-w-[1400px] mx-auto">
 	<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
 		<div>
@@ -391,9 +453,70 @@
 					on:paintdown={onPaintDown}
 					on:paintmove={onPaintMove}
 					on:paintup={onPaintUp}
+					on:cellmenu={onCellMenu}
 				/>
 			</div>
 		</div>
+
+		{#if fillMenu}
+			<!-- click-away layer; also swallows a second right-click -->
+			<div
+				class="fixed inset-0 z-40"
+				on:click={closeFillMenu}
+				on:contextmenu|preventDefault={closeFillMenu}
+				aria-hidden="true"
+			></div>
+			<div
+				class="fixed z-50 w-72 rounded-lg border border-gray-300 bg-white p-3 shadow-xl text-sm"
+				style="left: {Math.min(fillMenu.clientX + 8, window.innerWidth - 300)}px; top: {Math.min(fillMenu.clientY + 8, window.innerHeight - 290)}px"
+				role="dialog"
+				aria-label="Fill area"
+			>
+				<div class="font-semibold mb-2">Fill from cell ({fillMenu.x}, {fillMenu.y})</div>
+				<div class="flex items-center gap-2 mb-1">
+					<label class="flex items-center gap-1.5 text-gray-600">
+						right
+						<input type="number" class="input !w-20 !py-1" min="1" max={data.plan.gridW} bind:value={fillW} />
+					</label>
+					<span class="text-gray-400">×</span>
+					<label class="flex items-center gap-1.5 text-gray-600">
+						down
+						<input type="number" class="input !w-20 !py-1" min="1" max={data.plan.gridH} bind:value={fillH} />
+					</label>
+				</div>
+				<div class="text-xs text-gray-500 mb-2">{fillWc} × {fillHc} ft — {fillWc * fillHc} sq ft (tinted on the map)</div>
+				<label class="label !mb-1" for="fill-target">Assign to</label>
+				<select id="fill-target" class="input !py-1.5 mb-2" bind:value={fillTarget}>
+					<optgroup label="Vendors">
+						{#each pickerVendors as v}
+							<option value={'v:' + v.nrsVendorId}>{v.displayName} ({v.nrsVendorId})</option>
+						{/each}
+					</optgroup>
+					{#if data.pools.length > 0}
+						<optgroup label="Pools">
+							{#each data.pools as pl}
+								<option value={'p:' + pl.name}>{pl.name}</option>
+							{/each}
+						</optgroup>
+					{/if}
+				</select>
+				{#if data.canBuild && fillTarget.startsWith('v:')}
+					<label class="flex items-center gap-1.5 mb-2 text-gray-600" title="Color for this vendor on the map">
+						color
+						<input
+							type="color"
+							value={vendorPalette[fillTarget.slice(2)] ?? '#888888'}
+							on:change={(e) => saveVendorColorFor(fillTarget.slice(2), e.currentTarget.value)}
+							disabled={savingConfig}
+						/>
+					</label>
+				{/if}
+				<div class="flex justify-end gap-2">
+					<button type="button" class="btn-secondary btn-sm" on:click={closeFillMenu}>Cancel</button>
+					<button type="button" class="btn-primary btn-sm" disabled={!fillTarget || saving} on:click={applyFill}>Fill</button>
+				</div>
+			</div>
+		{/if}
 
 		{#if hover && mode === 'view' && Object.keys(hoverAttrs).length > 0}
 			<CellPopover
