@@ -2,6 +2,33 @@
 
 All notable changes to the TeamTime project will be documented in this file.
 
+## [1.3.0] - 2026-07-24
+
+### Floorplan (Booth Map)
+- Cell-based spatial store (`/floorplan`): the sales floor as a sparse grid of 1 ft² cells; a booth is the set of cells sharing a `vendor_id`, so booth size is always a derived count
+- Three-mode canvas editor (View / Edit / Build) with cell/rect/wall/fill tools, eyedropper, per-stroke undo, zoom-pan, and door-reachability check
+- Vendor pools, picker curation, custom vendor colors; NRS/TeamTime connectors with a flag-only sync cron and a derived count cache
+- **Saved layout snapshots** — save the whole floor as a named layout and revert; restore auto-backs-up the pre-restore state first (itself revertible), auto-backups pruned to 10
+- New tables: `floorplan_plans`, `floorplan_cell_attrs`, `floorplan_attr_defs`, `floorplan_connectors`, `floorplan_cell_count_cache`, `floorplan_pools`, `floorplan_snapshots`
+
+### Payroll Export → NRS
+- New `/admin/payroll` screen: TeamTime is now the clock of record for payroll. Per-employee Regular + Overtime hours for a pay period, computed from clock records with the break allowance; overtime split by WA rule (>40 h per Sun–Sat workweek, per week)
+- Staff↔NRS employee mapping via new `users.nrs_employee_id` (name-suggested from the NRS `employee/list` API); CSV export; graceful when NRS is unreachable
+- New shared `pay-period-service` (current + recent periods for semi-monthly/weekly/monthly), `payroll-export-service`, and `getEmployees()` in the NRS client
+- NRS has no payroll-write API, so this is an export the clerk keys/imports; Holiday/PTO/Sick stay manual until paid leave is modeled
+
+### Scheduling
+- **Fixed:** staff schedule week navigation now round-trips to the server, so next/previous week loads its shifts (was client-only paging that showed empty days); added a "Today" button
+- Scheduling selectors are **staff-only** — vendor-type users excluded across admin schedule, manage, and templates; staff who also sell as vendors stay schedulable; shift-create actions reject vendor users server-side
+- Dashboard **"My Shifts"** card — each staff member's past (with worked hours) and upcoming shifts for the current pay period
+
+### Vendor Newsletters
+- Block-composed staff→vendor mailings (`/admin/vendors/newsletters`) with markdown/tips/sales-chart/leaderboard/shoutouts/events blocks, draft→sent lifecycle, scheduled + monthly-recurring sends, per-vendor delivery log; vendors read at `/vendor/newsletters`
+- New tables: `vendor_newsletters`, `vendor_newsletter_sends`
+
+### Build / Tooling
+- **Migration workflow repaired** — `db:generate`/`db:migrate` work again (drizzle-kit 0.20 command names); the drizzle meta snapshot was re-baselined against `schema.ts` (old files archived under `drizzle/legacy/`); `db:migrate` now applies `drizzle/NNNN_*.sql` tracked per-database in a `_migrations` table (`--baseline` records without running). Generated migration SQL is now versioned in git (root cause of prior schema drift: `/drizzle/*.sql` was gitignored)
+
 ## [1.2.0] - 2026-02-06
 
 ### Admin Workflow Improvements (Phase 6)

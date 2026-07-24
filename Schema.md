@@ -958,4 +958,173 @@ CREATE INDEX staff_notes_recipient_group_idx ON staff_notes (recipient_group);
 
 ---
 
-*Last updated: June 2026*
+## Floorplan Module Schema
+
+The sales floor is a **sparse spatial EAV store**: a plan is a grid of 1 ft²
+cells, and each painted cell is zero or more attribute rows. A "booth" is never
+stored — it is the set of cells sharing a `vendor_id`, so booth size is always
+a derived `COUNT(*)`. The core is domain-agnostic (keys and counts only).
+
+### Floorplan Plans Table
+
+```sql
+CREATE TABLE floorplan_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  grid_w INTEGER NOT NULL DEFAULT 200,           -- canvas extent in cells (feet)
+  grid_h INTEGER NOT NULL DEFAULT 200,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+### Floorplan Cell Attrs Table (the spatial store)
+
+```sql
+CREATE TABLE floorplan_cell_attrs (
+  plan_id UUID NOT NULL REFERENCES floorplan_plans(id) ON DELETE CASCADE,
+  x INTEGER NOT NULL,                             -- 0-based, +x = EAST
+  y INTEGER NOT NULL,                             -- 0-based, +y = NORTH
+  key TEXT NOT NULL,                              -- 'kind' | 'vendor_id' | 'zone' | 'pool' | ...
+  value TEXT NOT NULL,
+  PRIMARY KEY (plan_id, x, y, key)                -- sparse: a void cell has zero rows
+);
+CREATE INDEX floorplan_cell_attrs_plan_key_value_idx
+  ON floorplan_cell_attrs (plan_id, key, value);  -- powers aggregate-by-value + filters
+```
+
+### Floorplan Attr Defs Table
+
+```sql
+CREATE TABLE floorplan_attr_defs (
+  plan_id UUID NOT NULL REFERENCES floorplan_plans(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  type TEXT NOT NULL,                             -- 'enum' | 'categorical' | 'ordinal' | 'number' | 'boolean'
+  owner_system TEXT NOT NULL DEFAULT 'floorplan', -- 'floorplan' | 'teamtime' | 'nrs'
+  visibility TEXT NOT NULL DEFAULT 'public',      -- 'public' | 'staff' | 'admin'
+  render_hint JSONB,                              -- palette, picker curation, fill mode
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (plan_id, key)
+);
+```
+
+### Floorplan Connectors, Count Cache, Pools
+
+```sql
+-- Build-mode bindings to external systems (config only; no external data on cells).
+CREATE TABLE floorplan_connectors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id UUID NOT NULL REFERENCES floorplan_plans(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,                             -- 'nrs' | 'teamtime'
+  label TEXT NOT NULL,
+  join_attr TEXT NOT NULL,                        -- cell attribute this connector keys on
+  caps JSONB NOT NULL,                            -- { resolve: bool, render: bool }
+  config JSONB,
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- DERIVED, non-authoritative cache of cell counts per (key, value). Truth is
+-- always a live aggregate; this exists only for leaderboard-speed reads.
+CREATE TABLE floorplan_cell_count_cache (
+  plan_id UUID NOT NULL REFERENCES floorplan_plans(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  cells INTEGER NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (plan_id, key, value)
+);
+
+-- Named vendor pools for shared/in-store spaces (painted with key 'pool').
+CREATE TABLE floorplan_pools (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id UUID NOT NULL REFERENCES floorplan_plans(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  vendor_ids JSONB NOT NULL,                      -- string[] of NRS vendor ids
+  color TEXT NOT NULL DEFAULT '#7C3AED',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (plan_id, name)
+);
+```
+
+### Floorplan Snapshots Table (saved layouts)
+
+A frozen copy of every cell-attr row in a plan, so admins can experiment on the
+live floor and revert. Restore replaces the plan's cells wholesale after
+capturing an `auto` backup of the pre-restore state — so a restore is itself
+revertible. Config (attr defs, pools, connectors) is not captured.
+
+```sql
+CREATE TABLE floorplan_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id UUID NOT NULL REFERENCES floorplan_plans(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'manual',            -- 'manual' | 'auto' (pre-restore backup)
+  cells JSONB NOT NULL,                           -- [{ x, y, key, value }, ...]
+  attr_rows INTEGER NOT NULL,                     -- length of `cells` (list views skip the blob)
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+---
+
+## Vendor Newsletters Schema
+
+Block-composed staff→vendor mailings, rendered server-side for both the vendor
+portal and the outgoing email. Blocks are JSONB because the block-type set grows.
+
+```sql
+CREATE TYPE vendor_newsletter_status AS ENUM ('draft', 'sent');
+
+CREATE TABLE vendor_newsletters (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  subject TEXT,                                   -- email subject; null = use title
+  period_start DATE NOT NULL,                     -- reporting window for data blocks
+  period_end DATE NOT NULL,
+  blocks JSONB NOT NULL DEFAULT '[]',             -- ordered content blocks
+  status vendor_newsletter_status NOT NULL DEFAULT 'draft',
+  publish_to_portal BOOLEAN NOT NULL DEFAULT true,
+  scheduled_send_at TIMESTAMPTZ,                  -- past + draft = sent by cron
+  recurrence TEXT,                               -- 'monthly' | null (clones a draft forward)
+  sent_at TIMESTAMPTZ,
+  sent_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One row per delivery attempt (incl. test sends), kept for auditability.
+CREATE TABLE vendor_newsletter_sends (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  newsletter_id UUID NOT NULL REFERENCES vendor_newsletters(id) ON DELETE CASCADE,
+  vendor_id UUID REFERENCES vendors(id) ON DELETE SET NULL,  -- null = test send
+  email TEXT NOT NULL,
+  status TEXT NOT NULL,                           -- 'sent' | 'failed' | 'test'
+  error TEXT,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_vendor_newsletter_sends_newsletter ON vendor_newsletter_sends (newsletter_id);
+```
+
+---
+
+## Payroll / NRS Employee Mapping
+
+TeamTime is the clock of record for payroll. `/admin/payroll` derives per-employee
+Regular + Overtime hours from `time_entries` (break allowance applied), split by
+the WA rule (over 40 h per Sun–Sat workweek). Each staff user maps to an NRS
+payroll employee via a single column (NRS has no payroll-write API, so the
+result is an export the clerk keys/imports).
+
+```sql
+ALTER TABLE users ADD COLUMN nrs_employee_id INTEGER UNIQUE;  -- from NRS employee/list; null = unmapped
+```
+
+---
+
+*Last updated: July 2026*

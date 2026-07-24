@@ -23,15 +23,20 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - Automatic shift matching and overtime tracking
 - **Break tracking** — employees start/end breaks from their dashboard, with a configurable paid-break allowance (e.g. 15 min per 4 hours) applied consistently across payroll export, reports, and metrics (excess break time deducted everywhere, via a shared helper)
 - **Payroll Timesheet** (`/admin/timesheet`) — per-employee daily rollups with break minutes, allowed/excess breakdown, auto-clock-out flagging, and CSV export
+- **Payroll Export → NRS** (`/admin/payroll`) — TeamTime is the clock of record for payroll. Pick a pay period and get per-employee worked hours split into NRS earning types (Regular + Overtime), computed from real clock records with the break allowance applied. Overtime follows WA rule (over 40 hours per Sun–Sat workweek), computed per week. Each staff user maps to an NRS employee (`users.nrs_employee_id`) with name-based suggestions from the NRS `employee/list` API; the mapping is confirmed once and reused. CSV download for the payroll clerk to key/import into NRS payroll checks. (NRS has no payroll-write API, so this is an export, not an auto-push; Holiday/PTO/Sick lines stay manual until paid leave is modeled.)
 - **Smart clock-out reminders** — 3-tier escalation (30min friendly → 90min firm → 180min auto-clock-out), interactive SMS with natural-language time parsing ("left at 5:30"), post-auto-clock-out corrections
 - **Late arrival detection** with automated SMS alerts and demerit escalation
 - Export to CSV for payroll integration
 
 ### Scheduling
 - Weekly grid UI for building schedules at `/admin/schedule`
+- **Staff schedule view** (`/schedule`) — the whole team's week for coordination; week navigation and a "Today" button round-trip to the server so any week (including next week) loads its shifts. Mobile "My Upcoming Shifts" list
+- **Staff-only** — scheduling selectors exclude vendor-type users everywhere (admin schedule, manage, templates); staff who also sell as vendors keep a staff user type and stay schedulable, and shift-create actions reject vendor users server-side
+- **Dashboard "My Shifts" card** — each staff member sees their past and upcoming shifts for the current pay period, with worked hours (from clock records, net of breaks) on past shifts and scheduled-vs-worked totals
 - **Schedule Templates** (`/admin/schedule/templates`) — save recurring weekly patterns with one marked as default; apply to any date range with per-conflict resolution (skip / overwrite / add alongside)
 - **Drift validation** — the admin schedule page shows a banner when the current week diverges from the default template
 - **Daily cron auto-apply** — the default template fills gaps up to 4 weeks ahead (configurable), never overwriting existing shifts
+- **Shared pay-period service** — one source of truth for the `pay_period_config` app setting and current/recent pay periods (semi-monthly / weekly / monthly), used by the schedule, dashboard, and payroll export
 - **AI office manager integration** — 6 template tools (`list_schedule_templates`, `apply_schedule_template`, `validate_schedule_against_template`, `save_week_as_template`, `create_schedule_template`, `set_default_schedule_template`)
 
 ### Task Management
@@ -57,6 +62,13 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - Create pricing decisions directly from AI identifications
 - Confidence scoring for each identification
 
+### Floorplan (Booth Map)
+- **Cell-based spatial store** — the sales floor is a sparse grid of 1 ft² cells at `/floorplan`; each cell is a bag of key→value attributes (`kind`, `vendor_id`, `zone`, `pool`, `label`, …). A "booth" is not an object — it's the set of cells sharing a `vendor_id`, so booth size is always a derived cell count, never a stored number. The core is domain-agnostic (it knows keys and counts, never rent/sales)
+- **Three-mode canvas editor** — View (hover to inspect, resolve live NRS/TeamTime data per cell), Edit (any staff paint operational keys like `vendor_id`/`pool`), Build (admins paint geometry: `kind`, `door`, `label`, `level`). Cell / rectangle / wall / flood-fill tools, eyedropper, per-stroke undo, zoom/pan, reachability check (every sellable cell reachable from a door)
+- **Vendor pools** — named groups of vendors for shared/in-store spaces, painted by pool name with a color; **picker curation** and **custom vendor colors** stored on the `vendor_id` attr def's render hint
+- **Saved layout snapshots** (Build mode) — save the whole floor as a named layout, experiment freely, and restore. Restore replaces the plan's cells wholesale but auto-captures a backup of the pre-restore state first, so a restore is itself revertible; auto-backups are pruned to the newest 10
+- **Connectors + sync** — `floorplan_connectors` bind cell attributes to external systems (NRS, TeamTime); a flag-only cron sync keeps derived counts live without storing external data on cells
+
 ### Vendor Management
 - **Booth vendors as first-class records** — link to NRS POS via `nrsVendorId`, with contact info, contract terms (rent, max discount), and lifecycle (active / inactive / terminated)
 - **Templated, stackable agreements** — primary (consignment, rental) + zero or more add-ons (glass shelf policy, locking case, etc.). Editing a template that has signed instances creates a new version; old signatures keep their `bodySnapshot` so history is preserved
@@ -72,6 +84,7 @@ Traditional workforce tools assume everyone sits at a desk. TeamTime was built f
 - **Self-service password reset** — `/forgot-password` texts and emails a single-use, 30-minute reset link (`password_reset_tokens`); `/reset-password` lets the vendor set a new password. Staff manage logins on `/admin/vendors/[id]`: reset password, unlock a locked-out account, and view live auth status
 - **Vendor sidebar + dashboard** — vendor users see a vendor-specific nav (Home / News / Inventory / Notes / Get the App / Leaderboard / Sales / Profile), a dashboard that shows both gross and vendor portion side by side (so pass-through vendors see real numbers), and a base-item check that warns when a catch-all SKU whose part number matches the vendor's prefix (POS "SR-30" convention) isn't yet on file
 - **Vendor announcements ("Vendor News")** — staff→vendor channel: admins create/edit/pin/archive announcements (optional expiry) at `/admin/vendors/announcements`; vendors see them at `/vendor/news`, with pinned announcements shown as a dismissible banner on every portal page
+- **Vendor newsletters** — block-composed staff→vendor mailings at `/admin/vendors/newsletters`: ordered content blocks (markdown text, tips, store-sales chart, leaderboard, shoutouts, events) over a reporting window, rendered server-side for both the portal and the outgoing email. Draft → sent (sent issues are immutable in the editor); scheduled and monthly-recurring sends via `/api/vendor-newsletters/cron`; per-vendor delivery log; single-vendor send. Vendors read published issues at `/vendor/newsletters`
 - **Managed printers registry** — `printers` table catalogs shop/network printers, the kiosk, and checked-out vendor units (model, dpi, network address, command language, preferred label format); staff "Labels & Tags" hub, printer checkout to vendors (records the loaded label format), and a Print Bridge ingest endpoint (`/api/printers/report`, bearer `PRINTER_BRIDGE_SECRET`)
 - **NRS sync** — `Sync from NRS` on `/admin/vendors` overwrites TT contact fields (`contact_name/email/phone`, address) when NRS has values; admin should edit identity in NRS, not TT (NRS is source of truth). Inventory code prefix is backfill-only to protect legacy printed labels
 
@@ -190,12 +203,16 @@ npm install
 cp .env.example .env
 # Edit .env with your database URL and API keys
 
-# Push database schema
-npm run db:push
+# Apply database migrations (schema.ts is the source of truth)
+npm run db:migrate         # applies drizzle/NNNN_*.sql, tracked in a _migrations table
+# npm run db:migrate -- --baseline   # for a DB that already matches schema.ts
+# npm run db:generate       # regenerate a migration after editing schema.ts
 
 # Start development server
 npm run dev
 ```
+
+> **Migrations:** generated SQL lives in `drizzle/` and is versioned in git. `db:generate` emits a delta from `schema.ts`; `db:migrate` applies pending files per-database. Use `db:push` only for throwaway local databases. (Legacy migrations are archived under `drizzle/legacy/`.)
 
 ## Production Deployment
 
@@ -247,6 +264,7 @@ src/
 │   │   ├── sales/      # Sales dashboard + transaction drill-down
 │   │   ├── expenses/   # ATM withdrawals and allocations
 │   │   ├── messages/   # Team communication
+│   │   ├── floorplan/  # Cell-based booth map (view/edit/build)
 │   │   └── schedule/   # Shift viewing and management
 │   ├── api/            # REST endpoints
 │   └── login/          # Authentication pages
@@ -255,7 +273,7 @@ src/
 
 ## API Overview
 
-TeamTime exposes **88 REST endpoints** organized by domain:
+TeamTime exposes **100+ REST endpoints** organized by domain:
 
 - `/api/clock/in`, `/api/clock/out` — Time tracking (triggers task rules + points)
 - `/api/tasks/cron` — Scheduled task processing (call every 15 min)
@@ -267,6 +285,8 @@ TeamTime exposes **88 REST endpoints** organized by domain:
 - `/api/ai/cron` — AI agent triggers
 - `/api/architect/chats` — Architecture advisor
 - `/api/sales/import-nrs` — NRS REST API sales import (replaces scraper)
+- `/api/floorplan/[planId]/cells` — batch paint diff (the floorplan write path); plus `/aggregate`, `/counts`, `/pools`, `/attrs`, `/snapshots`, `/render`
+- `/api/vendor-newsletters/cron` — scheduled + recurring vendor-newsletter sends
 - `/api/points/cron` — Daily gamification processing (sales attribution, resets)
 - `/api/printers/report` — Print Bridge status ingest (bearer `PRINTER_BRIDGE_SECRET`)
 - `/api/sms/test` — Send test SMS (admin only)
@@ -283,10 +303,11 @@ All endpoints require authentication except static files. Role-based authorizati
 
 ## Database
 
-115 tables organized across domains:
+124 tables organized across domains (plus a `_migrations` bookkeeping table used by the migration runner):
 
-- **Core**: users, sessions, locations, shifts, time_entries, break_entries
+- **Core**: users (incl. `hourly_rate`, `nrs_employee_id` for payroll mapping), sessions, locations, shifts, time_entries, break_entries
 - **Scheduling**: schedule_templates, schedule_template_shifts (referenced by `shifts.template_id` / `template_shift_id`)
+- **Floorplan**: floorplan_plans, floorplan_cell_attrs (the spatial EAV store), floorplan_attr_defs, floorplan_connectors, floorplan_cell_count_cache, floorplan_pools, floorplan_snapshots (saved layouts)
 - **Tasks**: task_templates, tasks, task_completions, task_photos, task_assignment_rules
 - **Pricing**: pricing_decisions, pricing_decision_photos, pricing_grades
 - **Inventory**: inventory_drops, inventory_drop_photos, inventory_drop_items
@@ -294,7 +315,7 @@ All endpoints require authentication except static files. Role-based authorizati
 - **Messaging**: conversations, messages, message_photos, groups, group_members, thread_participants
 - **Gamification**: point_transactions, user_stats, achievements, user_achievements, shoutouts, award_types, demerits, clock_out_warnings, late_arrival_warnings
 - **Metrics & Analytics**: sales_snapshots, sales_transactions, vendor_employee_correlations, worker_pair_performance, worker_impact_metrics, staffing_level_metrics, day_of_week_metrics
-- **Vendor Management**: vendors, agreement_templates, vendor_agreements, vendor_groups, vendor_group_members, pending_inventory_changes, nrs_inventory_api_log, vendor_tag_settings, vendor_partnumber_sequences, vendor_print_jobs, label_formats, vendor_announcements, printers
+- **Vendor Management**: vendors, agreement_templates, vendor_agreements, vendor_groups, vendor_group_members, pending_inventory_changes, nrs_inventory_api_log, vendor_tag_settings, vendor_partnumber_sequences, vendor_print_jobs, label_formats, vendor_announcements, vendor_newsletters, vendor_newsletter_sends, printers
 - **Holds & Notes**: customer_holds, staff_notes
 - **AI System**: ai_config, ai_actions, ai_memory, ai_policy_notes, ai_tool_config, ai_tool_keywords, ai_context_config, ai_context_keywords
 - **Security**: login_attempts, account_lockouts, password_reset_tokens

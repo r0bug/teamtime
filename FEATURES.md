@@ -34,6 +34,8 @@ This document provides detailed information about TeamTime features, their imple
 28. [Customer Holds & Staff Notes](#customer-holds--staff-notes)
 29. [Vendor Announcements (Vendor News)](#vendor-announcements-vendor-news)
 30. [Managed Printers & Labels Hub](#managed-printers--labels-hub)
+31. [Vendor Newsletters](#vendor-newsletters)
+32. [Floorplan (Booth Map)](#floorplan-booth-map)
 
 ---
 
@@ -2447,6 +2449,20 @@ At `/admin/timesheet`, managers see per-employee daily rollups:
 
 The page supports arbitrary start/end date ranges and CSV export for payroll processing.
 
+### Payroll Export → NRS (`/admin/payroll`)
+
+TeamTime is the **clock of record** for payroll. The Payroll Export screen turns
+clock records into exactly what an NRS payroll clerk keys into NRS payroll checks:
+
+- **Pay-period picker** — choose from recent periods (defaults to the last closed one). Periods come from the shared `pay-period-service` (`getCurrentPayPeriod` / `listRecentPayPeriods`), which reads `app_settings.pay_period_config` (semi-monthly / weekly / monthly).
+- **Per-employee Regular + Overtime hours** — computed from `time_entries` with the same break allowance as the timesheet, then split into NRS earning types. **Overtime follows WA rule**: hours over 40 in a Sun–Sat workweek, computed **per workweek** (not across the whole period) and summed. A `⚠` marks employees whose workweek straddles the period boundary (OT for that week counts only in-period hours — verify against the adjacent period).
+- **NRS employee mapping** — each staff user links to an NRS employee via `users.nrs_employee_id`. Unmapped users get a name-based suggestion from the NRS `employee/list` API (via `getEmployees()` in the NRS client); the clerk confirms the link once with a form action and it sticks. Vendors are excluded upstream.
+- **CSV download** and on-screen totals. Graceful degradation: if NRS is unreachable, hours still compute and only the roster/mapping suggestions are unavailable.
+
+**Why an export, not an auto-push:** NRS exposes no payroll-write API (only `department/list` + `employee/list`, both read-only). The clerk enters/imports the hours into NRS, which then computes pay rate, taxes, and deductions. **Holiday / PTO / Sick** lines stay manual until TeamTime models paid leave (shifts have no leave type yet).
+
+**Files:** `src/routes/(app)/admin/payroll/+page.{svelte,server.ts}`, `src/lib/server/services/payroll-export-service.ts` (+ tests), `src/lib/server/services/pay-period-service.ts`, `getEmployees()` in `src/lib/server/services/nrs-api-client.ts`.
+
 ### API Endpoints
 
 | Endpoint | Method | Description |
@@ -3091,6 +3107,112 @@ The standalone label app (v0.11+) also offers a persistent **"Local printer"** o
 - **Admin UI**: `src/routes/(app)/admin/labels/`, `src/routes/(app)/admin/printers/`
 - **API**: `src/routes/api/printers/`
 - **Schema**: `src/lib/server/db/schema.ts` — `printers` table
+
+---
+
+## Vendor Newsletters
+
+### Overview
+
+A block-composed staff→vendor mailing tool at `/admin/vendors/newsletters`. A
+newsletter is an ordered list of **content blocks** over a reporting window,
+rendered server-side so the vendor portal view and the outgoing email tell the
+same story. Vendors read published issues at `/vendor/newsletters`.
+
+### Content Blocks
+
+Blocks are stored as JSONB (the type set is expected to grow); current types
+include markdown **text**, **tips**, a **store-sales chart**, a vendor
+**leaderboard**, **shoutouts**, and **events**. The data-driven blocks
+(chart / leaderboard) aggregate over the newsletter's `period_start`–`period_end`
+window, kept on the newsletter (not per block) so every block reports the same period.
+
+### Lifecycle & Sending
+
+- **Draft → sent.** Sent issues are immutable in the editor.
+- **Scheduled sends** — a draft with `scheduled_send_at` in the past is sent by the cron endpoint `/api/vendor-newsletters/cron`.
+- **Recurring** — `recurrence = 'monthly'` stages a cloned draft one month forward (period + schedule shifted) on each send.
+- **Single-vendor send** — send one issue to one vendor (any status, without marking the issue sent) for previews/re-sends.
+- **Per-vendor delivery log** — every attempt (incl. test sends) is one `vendor_newsletter_sends` row (`sent` | `failed` | `test`), answering "did booth 12 get the July issue?".
+- Email goes through the shared SMTP path (`src/lib/server/email`); `publish_to_portal` controls portal visibility independently of email.
+
+### Database Schema
+
+- `vendor_newsletters` — issue: `title`, `subject`, `period_start/end`, `blocks` (JSONB), `status` (`draft`|`sent`), `publish_to_portal`, `scheduled_send_at`, `recurrence`, `sent_at`, attribution
+- `vendor_newsletter_sends` — one row per delivery attempt (`newsletter_id`, `vendor_id` nullable for test sends, `email`, `status`, `error`, `sent_at`)
+
+### Files
+
+- **Service**: `src/lib/server/services/vendor-newsletter-service.ts` (+ tests)
+- **Admin UI**: `src/routes/(app)/admin/vendors/newsletters/` (list, `[id]` editor, `[id]/preview`)
+- **Vendor portal**: `src/routes/(app)/vendor/newsletters/`
+- **Cron**: `src/routes/api/vendor-newsletters/cron/+server.ts`
+
+---
+
+## Floorplan (Booth Map)
+
+### Overview
+
+An interactive booth map of the sales floor at `/floorplan`. The floor is a
+**sparse grid of 1 ft² cells**; each cell is a bag of key→value attributes. A
+"booth" is **not** an object — it's the set of cells sharing a `vendor_id`
+attribute, so booth size is always a derived cell count and is never stored as a
+number anywhere. The floorplan core is **domain-agnostic**: it knows keys,
+values and counts — never rent, sales, or commission (that lives in connectors).
+
+### Three Modes
+
+- **View** — hover any cell to inspect its attributes; connectors resolve live NRS / TeamTime data per cell (e.g. a vendor's name/sales behind a `vendor_id`).
+- **Edit** — any staff-side user paints operational keys (`vendor_id`, `pool`).
+- **Build** — admins paint geometry/structure keys (`kind`, `door`, `label`, `level`) and manage plan config.
+
+Tools: single cell, rectangle, wall (line), flood fill, **eyedropper** (pick the brush value from a painted cell), plus **per-stroke undo**, zoom/pan with a scrollbar camera, and a **reachability check** (every sellable cell must be reachable from a door). Vendor strokes skip non-sellable cells and report what was skipped rather than dropping a stroke silently.
+
+### Attributes, Pools & Colors
+
+- **Attr defs** declare how each key renders/filters, who owns it (`floorplan` / `teamtime` / `nrs`), and who may see it (`public` / `staff` / `admin`). Attribute visibility is enforced on read.
+- **Vendor pools** — named groups of vendors for shared/in-store spaces, painted with key `pool` (pool name as value) and rendered in the pool's color.
+- **Picker curation & custom vendor colors** are stored on the `vendor_id` attr def's `render_hint`.
+
+### Saved Layout Snapshots (Build mode)
+
+Save the whole floor as a **named layout**, experiment freely, and restore later.
+Restore replaces the plan's cells wholesale inside one transaction, but first
+captures an `auto` backup of the pre-restore state — so a restore is itself
+revertible. Auto-backups are pruned to the newest 10; manual saves are kept.
+Snapshots capture **layout only** (cell attrs) — attr defs, pools, and
+connectors are plan config and stay untouched.
+
+### Connectors & Sync
+
+`floorplan_connectors` bind a cell attribute to an external system (NRS,
+TeamTime) for resolve/render, holding a secret *reference* (never raw
+credentials). A flag-only cron (`/api/floorplan/cron`) keeps the derived
+`floorplan_cell_count_cache` live; truth is always a live aggregate over the
+cell store.
+
+### API
+
+The write path is a **batch paint diff**: `POST /api/floorplan/[planId]/cells`
+with `{ ops: [{x, y, key, value|null}] }` (value `null` deletes that cell/key),
+applied in one transaction with per-key permission checks. Reads:
+`/aggregate` (authoritative counts), `/counts` (cache), `/cell/[x]/[y]/resolve`
+(connector resolution), `/render` (rasterize). Config: `/attrs`, `/pools`,
+`/snapshots` (+ `/snapshots/[id]` restore/delete).
+
+### Database Schema
+
+`floorplan_plans`, `floorplan_cell_attrs` (the spatial EAV store, PK
+`(plan_id, x, y, key)`), `floorplan_attr_defs`, `floorplan_connectors`,
+`floorplan_cell_count_cache` (derived), `floorplan_pools`, `floorplan_snapshots`
+(saved layouts). See **Schema.md → Floorplan Module Schema** for full DDL.
+
+### Files
+
+- **Core (domain-agnostic)**: `src/lib/server/floorplan/core.ts`, `snapshots.ts`, `permissions.ts`, `rasterize.ts`, `sync.ts`, `connectors/`
+- **API**: `src/routes/api/floorplan/`
+- **Page + canvas**: `src/routes/(app)/floorplan/+page.{svelte,server.ts}`, `src/lib/components/floorplan/`, client model in `src/lib/floorplan/`
 
 ---
 
