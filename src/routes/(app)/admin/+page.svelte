@@ -120,6 +120,20 @@
 			</div>
 		</a>
 
+		<a href="/admin/payroll" class="card hover:shadow-md transition-shadow">
+			<div class="card-body flex items-center">
+				<div class="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center mr-4">
+					<svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m-6 4h6m-6 4h4m5 5H5a2 2 0 01-2-2V5a2 2 0 012-2h9l5 5v11a2 2 0 01-2 2z" />
+					</svg>
+				</div>
+				<div>
+					<h3 class="font-semibold text-gray-900">Payroll Export</h3>
+					<p class="text-sm text-gray-600">Hours for NRS payroll by pay period</p>
+				</div>
+			</div>
+		</a>
+
 		<a href="/admin/export-hours" class="card hover:shadow-md transition-shadow">
 			<div class="card-body flex items-center">
 				<div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4">

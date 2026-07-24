@@ -339,6 +339,10 @@ export const users = pgTable('users', {
 	phone: text('phone'),
 	avatarUrl: text('avatar_url'),
 	hourlyRate: decimal('hourly_rate', { precision: 10, scale: 2 }),
+	// NRS payroll employee this staff user maps to (from NRS employee/list).
+	// Set once via the payroll export screen; used to key TeamTime worked hours
+	// to the right NRS check. Null = not yet mapped (vendors never map here).
+	nrsEmployeeId: integer('nrs_employee_id').unique(),
 	twoFactorEnabled: boolean('two_factor_enabled').notNull().default(true),
 	canListOnEbay: boolean('can_list_on_ebay').notNull().default(false), // User can claim eBay listing tasks
 	includeInLaborCost: boolean('include_in_labor_cost').notNull().default(true), // Include hours in sales-screen labor cost calc
