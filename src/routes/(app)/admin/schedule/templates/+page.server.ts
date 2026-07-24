@@ -1,8 +1,8 @@
 import type { PageServerLoad, Actions } from './$types';
 import { redirect, fail } from '@sveltejs/kit';
-import { db, users, locations } from '$lib/server/db';
-import { eq } from 'drizzle-orm';
+import { db, locations } from '$lib/server/db';
 import { isManager } from '$lib/server/auth/roles';
+import { getSchedulableStaff } from '$lib/server/services/user-classification-service';
 import {
 	listTemplates,
 	createTemplate,
@@ -22,11 +22,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	const [templates, activeUsers, allLocations] = await Promise.all([
 		listTemplates(),
-		db
-			.select({ id: users.id, name: users.name, role: users.role })
-			.from(users)
-			.where(eq(users.isActive, true))
-			.orderBy(users.name),
+		// Staff only — vendor-type users are not schedulable.
+		getSchedulableStaff(),
 		db.select({ id: locations.id, name: locations.name }).from(locations).orderBy(locations.name)
 	]);
 
