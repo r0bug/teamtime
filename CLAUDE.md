@@ -14,9 +14,11 @@ npm run dev              # Start dev server (http://localhost:5173)
 npm run check            # Type check with svelte-kit sync
 
 # Database (Drizzle ORM + PostgreSQL)
-npm run db:generate      # Generate migrations from schema
-npm run db:push          # Apply schema changes directly
-npm run db:migrate       # Run pending migrations
+npm run db:generate      # Generate SQL migration from schema.ts changes
+npm run db:migrate       # Apply pending drizzle/NNNN_*.sql (tracked in _migrations)
+npm run db:migrate -- --baseline  # Mark all files applied WITHOUT running them
+                                  # (for a DB that already matches schema.ts)
+npm run db:push          # Push schema directly — avoid; prefer generate+migrate
 npm run db:studio        # Drizzle Studio GUI
 
 # Testing
