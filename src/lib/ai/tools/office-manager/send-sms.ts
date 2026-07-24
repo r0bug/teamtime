@@ -2,6 +2,7 @@
 import { db, users } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { sendSMS, formatPhoneToE164, isValidPhoneNumber } from '$lib/server/twilio';
+import { getBroadcastStaff } from '$lib/server/services/user-classification-service';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
 import { validateUserId } from '../utils/validation';
@@ -113,16 +114,12 @@ export const sendSMSTool: AITool<SendSMSParams, SendSMSResult> = {
 		}
 
 		try {
-			// Handle sending to all staff
+			// Handle sending to all staff (vendors and admins are excluded)
 			if (params.toAllStaff) {
-				const allStaff = await db
-					.select({ id: users.id, name: users.name, phone: users.phone, role: users.role })
-					.from(users)
-					.where(eq(users.isActive, true));
+				const allStaff = await getBroadcastStaff();
 
-				// Filter to non-admin users with valid phone numbers
+				// Filter to users with valid phone numbers
 				const staffWithPhones = allStaff.filter(u => {
-					if (u.role === 'admin') return false; // Exclude admins from "all staff" broadcast
 					if (!u.phone) return false;
 					const formatted = formatPhoneToE164(u.phone);
 					return formatted !== null;
@@ -169,13 +166,17 @@ export const sendSMSTool: AITool<SendSMSParams, SendSMSResult> = {
 			if (params.toUserId) {
 				// Look up user's phone number
 				const user = await db
-					.select({ id: users.id, name: users.name, phone: users.phone })
+					.select({ id: users.id, name: users.name, phone: users.phone, isActive: users.isActive })
 					.from(users)
 					.where(eq(users.id, params.toUserId))
 					.limit(1);
 
 				if (user.length === 0) {
 					return { success: false, error: 'User not found' };
+				}
+
+				if (!user[0].isActive) {
+					return { success: false, error: `User ${user[0].name} is marked inactive (no longer works here) — SMS not sent` };
 				}
 
 				if (!user[0].phone) {

@@ -50,7 +50,7 @@ async function preFlightTriage(): Promise<PreFlightResult> {
 
 	// Check 1: Any staff late for shift? (shift started, not clocked in)
 	const activeShifts = await db
-		.select({ userId: shifts.userId, startTime: shifts.startTime })
+		.select({ userId: shifts.userId, startTime: shifts.startTime, endTime: shifts.endTime })
 		.from(shifts)
 		.where(and(
 			gte(shifts.startTime, todayStart),
@@ -63,8 +63,23 @@ async function preFlightTriage(): Promise<PreFlightResult> {
 		.from(timeEntries)
 		.where(isNull(timeEntries.clockOut));
 
+	// Completed entries today: someone who clocked in and back out (lunch,
+	// early departure) attended their shift and must not count as late
+	const todayEntries = await db
+		.select({ userId: timeEntries.userId, clockIn: timeEntries.clockIn, clockOut: timeEntries.clockOut })
+		.from(timeEntries)
+		.where(gte(timeEntries.clockIn, todayStart));
+
 	const clockedInSet = new Set(clockedInUsers.map(u => u.userId));
-	const lateStaff = activeShifts.filter(s => !clockedInSet.has(s.userId));
+	const lateStaff = activeShifts.filter(s => {
+		if (clockedInSet.has(s.userId)) return false;
+		const attended = todayEntries.some(te =>
+			te.userId === s.userId &&
+			te.clockIn < s.endTime &&
+			te.clockOut !== null && te.clockOut > s.startTime
+		);
+		return !attended;
+	});
 
 	// Check 2: Any overdue tasks?
 	const overdueResult = await db

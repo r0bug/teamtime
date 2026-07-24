@@ -117,6 +117,7 @@
 				{ href: '/admin/users', label: 'Users', icon: 'users', show: true },
 				{ href: '/admin/groups', label: 'Groups', icon: 'user-group', show: isAdmin },
 				{ href: '/admin/shoutouts', label: 'Shoutouts', icon: 'star', show: true },
+				{ href: '/admin/demerits', label: 'Demerit Review', icon: 'shield', show: true },
 				{ href: '/admin/settings/access-control', label: 'Access Control', icon: 'key', show: isAdmin },
 				{ href: '/admin/audit-logs', label: 'Audit Logs', icon: 'shield', show: isAdmin },
 				{ href: '/admin/user-activity', label: 'User Activity', icon: 'activity', show: isAdmin }
@@ -152,6 +153,7 @@
 			icon: 'chart',
 			items: [
 				{ href: '/admin/reports', label: 'Reports', icon: 'chart', show: true },
+				{ href: '/admin/sales-audit', label: 'Sales Re-Ring Audit', icon: 'shield', show: isManager },
 				{ href: '/admin/timesheet', label: 'Payroll Timesheet', icon: 'document', show: true },
 				{ href: '/admin/metrics', label: 'Metrics', icon: 'trending', show: isAdmin },
 				{ href: '/admin/metrics/vendor-correlations', label: 'Vendor Correlations', icon: 'correlation', show: isAdmin },

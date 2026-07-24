@@ -10,6 +10,7 @@
 	const navItems = [
 		{ href: '/vendor', label: 'Home', exact: true },
 		{ href: '/vendor/news', label: 'News' },
+		{ href: '/vendor/newsletters', label: 'Newsletters' },
 		{ href: '/vendor/inventory', label: 'Inventory' },
 		{ href: '/vendor/notes', label: 'Notes' },
 		// Web Avery "Print Sheet" unlinked — vendors print via the desktop app

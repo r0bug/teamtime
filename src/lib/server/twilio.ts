@@ -2,7 +2,7 @@ import twilio from 'twilio';
 import { env } from '$env/dynamic/private';
 import { createLogger } from '$lib/server/logger';
 import { db, smsLogs, users } from '$lib/server/db';
-import { eq } from 'drizzle-orm';
+import { isNotNull } from 'drizzle-orm';
 
 const log = createLogger('server:twilio');
 
@@ -65,6 +65,29 @@ export async function sendSMS(to: string, body: string): Promise<SMSResult> {
 		};
 	}
 
+	// Never text people who no longer work here. This is the single choke point
+	// for ALL outbound SMS (crons, AI tools, scheduled jobs, password resets),
+	// so the inactive check lives here rather than at each call site.
+	const recipients = await findUsersByPhone(to);
+	if (recipients.length > 0 && recipients.every((u) => !u.isActive)) {
+		const error = 'Recipient is marked inactive — SMS blocked';
+		log.info({ to, userIds: recipients.map((u) => u.id) }, 'SMS blocked: all matching users inactive');
+		try {
+			await db.insert(smsLogs).values({
+				direction: 'outbound',
+				status: 'failed',
+				fromNumber: env.TWILIO_PHONE_NUMBER!,
+				toNumber: to,
+				body: fullMessage,
+				userId: recipients[0].id,
+				errorMessage: error
+			});
+		} catch (logErr) {
+			log.warn({ error: logErr }, 'Failed to insert blocked-SMS log');
+		}
+		return { success: false, error };
+	}
+
 	try {
 		const message = await client.messages.create({
 			body: fullMessage,
@@ -124,17 +147,32 @@ export async function sendSMS(to: string, body: string): Promise<SMSResult> {
 /**
  * Look up a user ID by phone number
  */
-async function findUserByPhone(phone: string): Promise<string | null> {
+/**
+ * Find all users whose stored phone matches this number. Stored formats vary
+ * ("(509) 930-8111", "509-930-8111", "+15099308111"), so compare on the last
+ * 10 digits rather than exact string equality.
+ */
+async function findUsersByPhone(
+	phone: string
+): Promise<{ id: string; isActive: boolean }[]> {
+	const target = phone.replace(/\D/g, '').slice(-10);
+	if (target.length < 10) return [];
 	try {
-		const [user] = await db
-			.select({ id: users.id })
+		const rows = await db
+			.select({ id: users.id, phone: users.phone, isActive: users.isActive })
 			.from(users)
-			.where(eq(users.phone, phone))
-			.limit(1);
-		return user?.id ?? null;
+			.where(isNotNull(users.phone));
+		return rows.filter((u) => (u.phone ?? '').replace(/\D/g, '').slice(-10) === target);
 	} catch {
-		return null;
+		return [];
 	}
+}
+
+async function findUserByPhone(phone: string): Promise<string | null> {
+	const matches = await findUsersByPhone(phone);
+	if (matches.length === 0) return null;
+	// Prefer an active user when a number is shared
+	return (matches.find((u) => u.isActive) ?? matches[0]).id;
 }
 
 /**

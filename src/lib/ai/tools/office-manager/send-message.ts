@@ -3,6 +3,7 @@ import { db, conversations, conversationParticipants, messages, users } from '$l
 import { eq, and, sql } from 'drizzle-orm';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
+import { getBroadcastStaff } from '$lib/server/services/user-classification-service';
 import { validateUserId } from '../utils/validation';
 
 const log = createLogger('ai:tools:send-message');
@@ -167,14 +168,8 @@ export const sendMessageTool: AITool<SendMessageParams, SendMessageResult> = {
 			let recipientName = '';
 
 			if (params.toAllStaff) {
-				// Send to all active users (staff, managers, purchasers - excluding admins)
-				const allStaff = await db
-					.select({ id: users.id, name: users.name, role: users.role })
-					.from(users)
-					.where(eq(users.isActive, true));
-
-				// Exclude admin users from "all staff" broadcast
-				const nonAdminStaff = allStaff.filter(u => u.role !== 'admin');
+				// Send to all active staff (vendors and admins are excluded)
+				const nonAdminStaff = await getBroadcastStaff();
 
 				if (nonAdminStaff.length === 0) {
 					return { success: false, error: 'No active staff members found' };

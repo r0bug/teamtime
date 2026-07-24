@@ -2,7 +2,8 @@
  * Late Arrival Warning Service
  *
  * Handles late arrival detection, SMS notifications, and demerit escalation.
- * Implements the policy: 3 warnings in 30 days = automatic demerit.
+ * Implements the policy: 3 warnings in 30 days = pending demerit for manager
+ * review (nothing punitive happens until a manager approves it).
  *
  * Mirrors clock-out-warning-service.ts structure.
  */
@@ -17,8 +18,8 @@ import {
 } from '$lib/server/db';
 import { createLogger } from '$lib/server/logger';
 import { eq, and, gte, sql, count } from 'drizzle-orm';
-import { awardPoints } from './points-service';
 import { sendSMS, formatPhoneToE164 } from '$lib/server/twilio';
+import { notifyManagersOfPendingDemerit } from './demerit-review-service';
 import type { LateArrivalWarning, Demerit } from '$lib/server/db/schema';
 
 const log = createLogger('services:late-arrival-warning');
@@ -41,9 +42,7 @@ export const LATE_ARRIVAL_CONFIG = {
 
 export const SMS_MESSAGES = {
 	autoReminder: (minutesLate: number) =>
-		`You are ${minutesLate} minutes late for your shift. Please clock in as soon as possible or notify your manager.`,
-	demeritIssued: (warningCount: number) =>
-		`You have received a demerit for repeated late arrivals (${warningCount} in 30 days). ${LATE_ARRIVAL_CONFIG.DEMERIT_POINTS_DEDUCTED} points have been deducted.`
+		`You are ${minutesLate} minutes late for your shift. Please clock in as soon as possible or notify your manager.`
 };
 
 // ============================================================================
@@ -87,6 +86,31 @@ export async function hasWarningForShiftToday(shiftId: string, userId: string): 
 		.where(
 			and(
 				eq(lateArrivalWarnings.shiftId, shiftId),
+				eq(lateArrivalWarnings.userId, userId),
+				gte(lateArrivalWarnings.createdAt, todayStart)
+			)
+		)
+		.limit(1);
+
+	return !!existing;
+}
+
+/**
+ * Check if the user already got ANY late-arrival warning today, regardless of
+ * shift. One late morning must produce at most one warning — stacked
+ * back-to-back shifts (e.g. an 8:30 janitorial stub before a 10:30 opener)
+ * previously produced one warning per shift and raced people to the demerit
+ * threshold.
+ */
+export async function hasWarningForUserToday(userId: string): Promise<boolean> {
+	const todayStart = new Date();
+	todayStart.setHours(0, 0, 0, 0);
+
+	const [existing] = await db
+		.select({ id: lateArrivalWarnings.id })
+		.from(lateArrivalWarnings)
+		.where(
+			and(
 				eq(lateArrivalWarnings.userId, userId),
 				gte(lateArrivalWarnings.createdAt, todayStart)
 			)
@@ -185,7 +209,7 @@ export async function checkAndEscalateToDemerit(
 		return null;
 	}
 
-	// Get user info for SMS
+	// Get user info for the manager notification
 	const [user] = await db
 		.select({ id: users.id, name: users.name, phone: users.phone })
 		.from(users)
@@ -201,16 +225,18 @@ export async function checkAndEscalateToDemerit(
 	const expiresAt = new Date();
 	expiresAt.setDate(expiresAt.getDate() + LATE_ARRIVAL_CONFIG.DEMERIT_EXPIRY_DAYS);
 
-	// Create demerit
+	// Create the demerit as PENDING: no points deducted and no SMS to the
+	// employee until a manager approves it at /admin/demerits. Schedule data
+	// has proven unreliable, so a human confirms before anything punitive fires.
 	const [demerit] = await db
 		.insert(demerits)
 		.values({
 			userId,
 			type: 'late_arrival',
-			status: 'active',
+			status: 'pending',
 			issuedBy,
 			title: 'Repeated Late Arrivals',
-			description: `Received ${warningCount} late arrival warnings within ${LATE_ARRIVAL_CONFIG.WARNING_LOOKBACK_DAYS} days. Automatic demerit issued per policy.`,
+			description: `Received ${warningCount} late arrival warnings within ${LATE_ARRIVAL_CONFIG.WARNING_LOOKBACK_DAYS} days. Auto-detected, awaiting manager review.`,
 			pointsDeducted: LATE_ARRIVAL_CONFIG.DEMERIT_POINTS_DEDUCTED,
 			smsNotified: false,
 			expiresAt
@@ -218,13 +244,8 @@ export async function checkAndEscalateToDemerit(
 		.returning();
 
 	log.info(
-		{
-			userId,
-			demeritId: demerit.id,
-			warningCount,
-			pointsDeducted: LATE_ARRIVAL_CONFIG.DEMERIT_POINTS_DEDUCTED
-		},
-		'Demerit created for repeated late arrivals'
+		{ userId, demeritId: demerit.id, warningCount },
+		'Pending demerit created for repeated late arrivals, awaiting manager review'
 	);
 
 	// Update warning to reference demerit
@@ -236,41 +257,7 @@ export async function checkAndEscalateToDemerit(
 		})
 		.where(eq(lateArrivalWarnings.id, warningId));
 
-	// Deduct points
-	try {
-		await awardPoints({
-			userId,
-			basePoints: -LATE_ARRIVAL_CONFIG.DEMERIT_POINTS_DEDUCTED,
-			category: 'attendance',
-			action: 'demerit_late_arrival',
-			description: `Demerit issued: ${warningCount} late arrivals in ${LATE_ARRIVAL_CONFIG.WARNING_LOOKBACK_DAYS} days`,
-			sourceType: 'demerit',
-			sourceId: demerit.id,
-			metadata: { warningCount, demeritId: demerit.id }
-		});
-	} catch (err) {
-		log.error({ error: err, demeritId: demerit.id }, 'Failed to deduct points for late arrival demerit');
-	}
-
-	// Send SMS notification
-	let smsResult: { success: boolean; sid?: string; error?: string } | undefined;
-	if (user.phone) {
-		const formatted = formatPhoneToE164(user.phone);
-		if (formatted) {
-			smsResult = await sendSMS(formatted, SMS_MESSAGES.demeritIssued(warningCount));
-		}
-	}
-
-	// Update demerit with SMS result
-	if (smsResult) {
-		await db
-			.update(demerits)
-			.set({
-				smsNotified: smsResult.success,
-				smsResult
-			})
-			.where(eq(demerits.id, demerit.id));
-	}
+	await notifyManagersOfPendingDemerit(demerit, user.name);
 
 	return demerit;
 }
@@ -363,8 +350,9 @@ export async function checkLateArrivals(systemUserId: string): Promise<LateArriv
 		result.checked++;
 
 		try {
-			// Check if already warned today for this shift
-			const alreadyWarned = await hasWarningForShiftToday(shift.id, user.id);
+			// One warning per user per day: stacked back-to-back shifts must not
+			// multiply warnings for the same late morning
+			const alreadyWarned = await hasWarningForUserToday(user.id);
 			if (alreadyWarned) {
 				result.skipped++;
 				continue;

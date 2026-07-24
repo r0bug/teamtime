@@ -6,6 +6,7 @@ import { isManager, isAdmin, EXTRA_ROLES } from '$lib/server/auth/roles';
 import { hasTechAccess, TECH } from '$lib/server/auth/tech';
 import { hashPin, validatePinFormat, generatePin } from '$lib/server/auth/pin';
 import { createLogger } from '$lib/server/logger';
+import { phoneNotAllowedReason } from '$lib/server/services/user-classification-service';
 
 const log = createLogger('admin:users');
 
@@ -85,6 +86,14 @@ export const actions: Actions = {
 
 		if (!userId || !name || !email) {
 			return fail(400, { error: 'Missing required fields' });
+		}
+
+		// Vendors only get a phone number once fully onboarded
+		if (phone) {
+			const reason = await phoneNotAllowedReason(userId);
+			if (reason) {
+				return fail(400, { error: reason });
+			}
 		}
 
 		try {
