@@ -22,8 +22,8 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Database
-/drizzle/*.sql
+# Database — migrations in /drizzle ARE versioned (the old /drizzle/*.sql ignore
+# caused every box to drift; removed 2026-07-24)
 
 # Uploads
 /uploads/*
