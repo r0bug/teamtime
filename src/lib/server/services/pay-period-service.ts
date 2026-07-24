@@ -115,3 +115,24 @@ export function getCurrentPayPeriod(config: PayPeriodConfig, now: Date = new Dat
 		isCurrent: true
 	};
 }
+
+/**
+ * Recent pay periods, newest first, for a period picker. Walks back from the
+ * current period one period at a time (semi-monthly / weekly / monthly). The
+ * current period is flagged; all others are complete or in the past.
+ */
+export function listRecentPayPeriods(config: PayPeriodConfig, count = 8, now: Date = new Date()): PayPeriod[] {
+	const current = getCurrentPayPeriod(config, now);
+	if (!current) return [];
+	const periods: PayPeriod[] = [current];
+	// Step back by landing "now" one day before each prior period's start.
+	let cursor = current.startDate;
+	while (periods.length < count) {
+		const prevDay = new Date(cursor.getTime() - 24 * 60 * 60 * 1000);
+		const prev = getCurrentPayPeriod(config, prevDay);
+		if (!prev) break;
+		periods.push({ ...prev, isCurrent: false });
+		cursor = prev.startDate;
+	}
+	return periods;
+}

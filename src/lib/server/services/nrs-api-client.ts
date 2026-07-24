@@ -180,6 +180,33 @@ async function apiGet<T>(endpoint: string): Promise<T> {
 
 // ── Public Methods ───────────────────────────────────────────────────────────
 
+export interface NrsEmployee {
+	employeeId: number;
+	number: string | null; // NRS employee number (payroll id shown on checks)
+	displayName: string;
+	firstName: string;
+	lastName: string;
+	canUseClock: boolean;
+}
+
+/**
+ * Payroll employees from `POST employee/list`. Read-only. `activeOnly` limits
+ * to currently-employed people. The `creds[]` field (PINs) is deliberately
+ * dropped here — callers only need identity + number for payroll mapping.
+ */
+export async function getEmployees(activeOnly = true): Promise<NrsEmployee[]> {
+	const data = await apiPost<{ list?: Record<string, unknown>[] }>('employee/list', { activeOnly });
+	const list = Array.isArray(data.list) ? data.list : [];
+	return list.map((e) => ({
+		employeeId: Number(e.employeeId),
+		number: e.number != null && String(e.number).length > 0 ? String(e.number) : null,
+		displayName: String(e.displayName ?? ''),
+		firstName: String(e.firstName ?? ''),
+		lastName: String(e.lastName ?? ''),
+		canUseClock: Boolean(e.canUseClock)
+	}));
+}
+
 /** List vendors. */
 export async function getVendors(storeId?: number): Promise<{ vendorId: number; name: string }[]> {
 	const data = await apiGet<{ list: { vendorId: number; name: string }[] }>(`vendor/list?storeId=${storeId ?? getStoreId()}`);
