@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, pgEnum, decimal, serial, unique, date, index, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, pgEnum, decimal, serial, unique, date, index, primaryKey, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Enums
@@ -65,7 +65,8 @@ export const notificationTypeEnum = pgEnum('notification_type', [
 	'shift_request',
 	'new_message',
 	'purchase_decision',
-	'shift_reminder'
+	'shift_reminder',
+	'floorplan_sync'
 ]);
 
 // Office Manager Chat Enums
@@ -3721,3 +3722,159 @@ export const vendorNewsletterSends = pgTable(
 export type VendorNewsletter = typeof vendorNewsletters.$inferSelect;
 export type NewVendorNewsletter = typeof vendorNewsletters.$inferInsert;
 export type VendorNewsletterSend = typeof vendorNewsletterSends.$inferSelect;
+
+// ==== Floorplan module ====
+// Cell-based spatial attribute store (see docs: SPEC-floorplan-module).
+// The floor is a sparse grid of 1 ft² cells; each cell is a bag of key→value
+// attributes. A "booth" is not an object — it's the set of cells sharing a
+// vendor_id attribute, so booth size is always derived (COUNT of cells) and
+// must never be stored as a column anywhere. The floorplan core is
+// domain-agnostic: it knows keys and counts, never rent/sales/commission.
+
+export const floorplanPlans = pgTable('floorplan_plans', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),
+	// Canvas extent in feet (cells) — a view-scaling concern, not data size.
+	// Void cells store no rows, so growing the grid is just bumping these.
+	gridW: integer('grid_w').notNull().default(200),
+	gridH: integer('grid_h').notNull().default(200),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// The spatial EAV store. Sparse by design: a void cell has zero rows;
+// deleting every key at a cell returns it to void.
+export const floorplanCellAttrs = pgTable(
+	'floorplan_cell_attrs',
+	{
+		planId: uuid('plan_id')
+			.notNull()
+			.references(() => floorplanPlans.id, { onDelete: 'cascade' }),
+		x: integer('x').notNull(), // 0-based cell coord, +x = EAST
+		y: integer('y').notNull(), // 0-based cell coord, +y = NORTH
+		key: text('key').notNull(), // 'kind' | 'vendor_id' | 'zone' | ...
+		value: text('value').notNull()
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.planId, table.x, table.y, table.key] }),
+		// Powers aggregate-by-value and where=key:value filters.
+		planKeyValueIdx: index('floorplan_cell_attrs_plan_key_value_idx').on(
+			table.planId,
+			table.key,
+			table.value
+		)
+	})
+);
+
+// Declares how a key renders/filters, who owns it, and who may see it.
+// type/visibility/ownerSystem are plain text (not pgEnum) on purpose:
+// they're per-plan configuration and cheap to extend without migrations.
+export const floorplanAttrDefs = pgTable(
+	'floorplan_attr_defs',
+	{
+		planId: uuid('plan_id')
+			.notNull()
+			.references(() => floorplanPlans.id, { onDelete: 'cascade' }),
+		key: text('key').notNull(),
+		type: text('type').notNull(), // 'enum' | 'categorical' | 'ordinal' | 'number' | 'boolean'
+		ownerSystem: text('owner_system').notNull().default('floorplan'), // 'floorplan' | 'teamtime' | 'nrs'
+		visibility: text('visibility').notNull().default('public'), // 'public' | 'staff' | 'admin'
+		renderHint: jsonb('render_hint').$type<Record<string, unknown>>(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.planId, table.key] })
+	})
+);
+
+// Build-mode bindings to external systems. Configuration only — actual
+// client code lives in src/lib/server/floorplan/connectors/. config holds a
+// secret REFERENCE (e.g. env var name), never raw credentials.
+export const floorplanConnectors = pgTable('floorplan_connectors', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	planId: uuid('plan_id')
+		.notNull()
+		.references(() => floorplanPlans.id, { onDelete: 'cascade' }),
+	type: text('type').notNull(), // 'nrs' | 'teamtime' — dispatches to a code module
+	label: text('label').notNull(),
+	joinAttr: text('join_attr').notNull(), // cell attribute this connector keys on
+	caps: jsonb('caps').$type<{ resolve: boolean; render: boolean }>().notNull(),
+	config: jsonb('config').$type<Record<string, unknown>>(),
+	enabled: boolean('enabled').notNull().default(true),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// DERIVED, NON-AUTHORITATIVE cache of cell counts per (key, value), refreshed
+// total-based on every write that touches a subscribed key ("push for
+// liveness"). Truth is always GET /aggregate over floorplan_cell_attrs
+// ("pull for truth"). Exists only so leaderboard-speed reads skip the count.
+export const floorplanCellCountCache = pgTable(
+	'floorplan_cell_count_cache',
+	{
+		planId: uuid('plan_id')
+			.notNull()
+			.references(() => floorplanPlans.id, { onDelete: 'cascade' }),
+		key: text('key').notNull(),
+		value: text('value').notNull(),
+		cells: integer('cells').notNull(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.planId, table.key, table.value] })
+	})
+);
+
+// Named vendor pools for shared/in-store spaces: a pool has a display name,
+// a color, and member vendors. Cells are painted with key 'pool' and the
+// pool NAME as value (readable in hovers/aggregates); the pool's color is
+// mirrored into the 'pool' attr def palette on save.
+export const floorplanPools = pgTable(
+	'floorplan_pools',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		planId: uuid('plan_id')
+			.notNull()
+			.references(() => floorplanPlans.id, { onDelete: 'cascade' }),
+		name: text('name').notNull(),
+		vendorIds: jsonb('vendor_ids').$type<string[]>().notNull(),
+		color: text('color').notNull().default('#7C3AED'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => ({
+		uniquePlanPoolName: unique().on(table.planId, table.name)
+	})
+);
+
+// Named layout snapshots: a frozen copy of every cell-attr row in a plan, so
+// admins can experiment on the live floor and revert. Restore replaces the
+// plan's cells wholesale; an 'auto' snapshot of the pre-restore state is
+// captured first, so a restore is itself revertible. Plan config (attr defs,
+// pools, connectors) is NOT captured — snapshots are layout, not settings.
+export const floorplanSnapshots = pgTable('floorplan_snapshots', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	planId: uuid('plan_id')
+		.notNull()
+		.references(() => floorplanPlans.id, { onDelete: 'cascade' }),
+	name: text('name').notNull(),
+	kind: text('kind').notNull().default('manual'), // 'manual' | 'auto' (pre-restore backup)
+	cells: jsonb('cells').$type<{ x: number; y: number; key: string; value: string }[]>().notNull(),
+	attrRows: integer('attr_rows').notNull(), // length of `cells` — list views skip the blob
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type FloorplanSnapshot = typeof floorplanSnapshots.$inferSelect;
+export type NewFloorplanSnapshot = typeof floorplanSnapshots.$inferInsert;
+export type FloorplanPool = typeof floorplanPools.$inferSelect;
+export type FloorplanPlan = typeof floorplanPlans.$inferSelect;
+export type NewFloorplanPlan = typeof floorplanPlans.$inferInsert;
+export type FloorplanCellAttr = typeof floorplanCellAttrs.$inferSelect;
+export type NewFloorplanCellAttr = typeof floorplanCellAttrs.$inferInsert;
+export type FloorplanAttrDef = typeof floorplanAttrDefs.$inferSelect;
+export type NewFloorplanAttrDef = typeof floorplanAttrDefs.$inferInsert;
+export type FloorplanConnector = typeof floorplanConnectors.$inferSelect;
+export type NewFloorplanConnector = typeof floorplanConnectors.$inferInsert;
+export type FloorplanCellCount = typeof floorplanCellCountCache.$inferSelect;

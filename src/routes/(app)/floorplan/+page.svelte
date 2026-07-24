@@ -1,0 +1,796 @@
+<script lang="ts">
+	import { goto, invalidateAll } from '$app/navigation';
+	import { notify } from '$lib/notify';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import FloorplanCanvas from '$lib/components/floorplan/FloorplanCanvas.svelte';
+	import CellPopover from '$lib/components/floorplan/CellPopover.svelte';
+	import PaintToolbar from '$lib/components/floorplan/PaintToolbar.svelte';
+	import type { PageData } from './$types';
+	import type { CellMap, CellOp, Mode, Tool } from '$lib/floorplan/types';
+	import { cellKey } from '$lib/floorplan/types';
+	import { PaintSession, rectCells, lineCells, floodCells } from '$lib/floorplan/paint';
+	import { checkReachability } from '$lib/floorplan/reachability';
+
+	export let data: PageData;
+
+	let mode: Mode = 'view';
+	let tool: Tool = 'cell';
+	// Vendor overlay is the view people want on load; fall back to 'kind'
+	// if a plan has no vendor_id attr def.
+	let overlayKey = 'vendor_id';
+	$: if (data.attrDefs.length > 0 && !data.attrDefs.some((d) => d.key === overlayKey)) overlayKey = 'kind';
+	let activeKey = 'vendor_id';
+	let activeValue: string | null = ''; // '' = pick-a-value; null = erase mode
+	let canvas: FloorplanCanvas;
+	let saving = false;
+
+	// Working copy of the plan; PaintSession mutates it optimistically.
+	// Rebuild ONLY when the load function actually produced a new cell list —
+	// the `data` prop object is re-passed (and marked dirty) on unrelated
+	// parent re-renders, and rebuilding then silently reverts unsaved
+	// optimistic paint to the page-load snapshot ("paint doesn't show until
+	// you navigate away and back").
+	let cells: CellMap = new Map();
+	let cellsSource: PageData['cells'] | null = null;
+	$: if (data.cells !== cellsSource) {
+		cellsSource = data.cells;
+		cells = new Map(data.cells.map((c) => [cellKey(c.x, c.y), { ...c.attrs }]));
+	}
+
+	let session: PaintSession | null = null;
+	let anchor: { x: number; y: number } | null = null;
+	let preview: Set<string> = new Set();
+	let unreachable: Set<string> = new Set();
+	let reachMsg = '';
+
+	let hover: { x: number; y: number; clientX: number; clientY: number } | null = null;
+	$: hoverAttrs = hover ? (cells.get(cellKey(hover.x, hover.y)) ?? {}) : {};
+
+	$: modes = (['view', ...(data.canEdit ? ['edit'] : []), ...(data.canBuild ? ['build'] : [])] as Mode[]);
+
+	// Paint must be visible: while editing, the overlay follows the key being
+	// painted (painting vendor_id with the kind overlay looks like a no-op).
+	$: if (mode !== 'view' && activeKey) overlayKey = activeKey;
+
+	// ---- vendor picker curation + custom colors (stored on the vendor_id
+	// attr def's renderHint: { picker: { include: [...] }, palette: {...} })
+	$: vendorDef = data.attrDefs.find((d) => d.key === 'vendor_id');
+	$: pickerInclude = (vendorDef?.renderHint as { picker?: { include?: string[] } } | null)?.picker?.include;
+	$: pickerVendors =
+		pickerInclude && pickerInclude.length > 0
+			? data.vendorOptions.filter((v) => pickerInclude.includes(String(v.nrsVendorId)))
+			: data.vendorOptions;
+	$: vendorPalette = (() => {
+		const palette = (vendorDef?.renderHint as { palette?: Record<string, string> | 'auto' } | null)?.palette;
+		return palette && palette !== 'auto' ? palette : {};
+	})();
+
+	let showPicker = false;
+	let pickerSelected: Set<string> = new Set();
+	let showPools = false;
+	let poolForm = { id: '', name: '', color: '#7C3AED', members: [] as string[] };
+	let savingConfig = false;
+
+	function openPicker(): void {
+		pickerSelected = new Set(pickerInclude?.length ? pickerInclude : data.vendorOptions.map((v) => String(v.nrsVendorId)));
+		showPicker = true;
+	}
+
+	async function saveVendorDef(renderHint: Record<string, unknown>): Promise<boolean> {
+		if (!data.plan || !vendorDef) return false;
+		savingConfig = true;
+		try {
+			const res = await fetch(`/api/floorplan/${data.plan.id}/attrs`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					key: 'vendor_id',
+					type: vendorDef.type,
+					ownerSystem: vendorDef.ownerSystem,
+					visibility: vendorDef.visibility,
+					renderHint
+				})
+			});
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({}));
+				notify.error(body.error ?? 'Save failed');
+				return false;
+			}
+			await invalidateAll();
+			return true;
+		} finally {
+			savingConfig = false;
+		}
+	}
+
+	async function savePicker(): Promise<void> {
+		const all = data.vendorOptions.map((v) => String(v.nrsVendorId));
+		const include = all.filter((id) => pickerSelected.has(id));
+		const rh = { ...((vendorDef?.renderHint as Record<string, unknown>) ?? {}) };
+		if (include.length === all.length) delete rh.picker;
+		else rh.picker = { include };
+		if (await saveVendorDef(rh)) {
+			showPicker = false;
+			notify.success(include.length === all.length ? 'Picker shows all vendors' : `Picker limited to ${include.length} vendors`);
+		}
+	}
+
+	async function saveVendorColorFor(vendorId: string, color: string): Promise<void> {
+		if (!vendorId) return;
+		const rh = { ...((vendorDef?.renderHint as Record<string, unknown>) ?? {}) };
+		rh.mode = 'fill';
+		rh.palette = { ...vendorPalette, [vendorId]: color };
+		if (await saveVendorDef(rh)) notify.success('Vendor color saved');
+	}
+
+	function saveVendorColor(e: Event): void {
+		if (activeValue) saveVendorColorFor(activeValue, (e.target as HTMLInputElement).value);
+	}
+
+	function editPool(pool?: { id: string; name: string; color: string; vendorIds: string[] }): void {
+		poolForm = pool
+			? { id: pool.id, name: pool.name, color: pool.color, members: [...pool.vendorIds] }
+			: { id: '', name: '', color: '#7C3AED', members: [] };
+	}
+
+	async function savePool(): Promise<void> {
+		if (!data.plan) return;
+		savingConfig = true;
+		try {
+			const res = await fetch(`/api/floorplan/${data.plan.id}/pools`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					id: poolForm.id || undefined,
+					name: poolForm.name,
+					color: poolForm.color,
+					vendorIds: poolForm.members
+				})
+			});
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({}));
+				notify.error(body.error ?? 'Pool save failed');
+				return;
+			}
+			await invalidateAll();
+			editPool();
+			notify.success('Pool saved');
+		} finally {
+			savingConfig = false;
+		}
+	}
+
+	async function deletePool(id: string): Promise<void> {
+		if (!data.plan) return;
+		const res = await fetch(`/api/floorplan/${data.plan.id}/pools?id=${id}`, { method: 'DELETE' });
+		if (res.ok) {
+			await invalidateAll();
+			notify.success('Pool deleted (painted cells kept — erase them if needed)');
+		} else {
+			notify.error('Delete failed');
+		}
+	}
+
+	// ---- layout snapshots (Build mode): save the whole floor as a named
+	// layout, experiment freely, restore later. Restore replaces every painted
+	// cell, but auto-backs-up the current floor first so it's never one-way.
+	let showLayouts = false;
+	let layouts: { id: string; name: string; kind: string; attrRows: number; createdAt: string }[] = [];
+	let layoutName = '';
+	let layoutsBusy = false;
+
+	async function refreshLayouts(): Promise<void> {
+		if (!data.plan) return;
+		const res = await fetch(`/api/floorplan/${data.plan.id}/snapshots`);
+		if (res.ok) layouts = (await res.json()).snapshots;
+		else notify.error('Could not load saved layouts');
+	}
+
+	async function openLayouts(): Promise<void> {
+		showLayouts = true;
+		await refreshLayouts();
+	}
+
+	async function saveLayout(): Promise<void> {
+		if (!data.plan || !layoutName.trim()) return;
+		layoutsBusy = true;
+		try {
+			const res = await fetch(`/api/floorplan/${data.plan.id}/snapshots`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: layoutName.trim() })
+			});
+			if (res.ok) {
+				layoutName = '';
+				await refreshLayouts();
+				notify.success('Layout saved');
+			} else {
+				const body = await res.json().catch(() => ({}));
+				notify.error(body.error ?? 'Save failed');
+			}
+		} finally {
+			layoutsBusy = false;
+		}
+	}
+
+	async function restoreLayout(s: { id: string; name: string }): Promise<void> {
+		if (!data.plan) return;
+		if (!confirm(`Restore "${s.name}"? The current floor is auto-backed-up first, so this can be undone.`)) return;
+		layoutsBusy = true;
+		try {
+			const res = await fetch(`/api/floorplan/${data.plan.id}/snapshots/${s.id}`, { method: 'POST' });
+			if (res.ok) {
+				await invalidateAll();
+				await refreshLayouts();
+				notify.success(`Restored "${s.name}"`);
+			} else {
+				const body = await res.json().catch(() => ({}));
+				notify.error(body.error ?? body.message ?? 'Restore failed');
+			}
+		} finally {
+			layoutsBusy = false;
+		}
+	}
+
+	async function deleteLayout(s: { id: string; name: string }): Promise<void> {
+		if (!data.plan) return;
+		if (!confirm(`Delete saved layout "${s.name}"?`)) return;
+		const res = await fetch(`/api/floorplan/${data.plan.id}/snapshots/${s.id}`, { method: 'DELETE' });
+		if (res.ok) {
+			await refreshLayouts();
+			notify.success('Layout deleted');
+		} else {
+			notify.error('Delete failed');
+		}
+	}
+
+	function switchPlan(e: Event): void {
+		goto(`/floorplan?plan=${(e.target as HTMLSelectElement).value}`);
+	}
+
+	function paintValue(): string | null {
+		return activeValue === '' ? null : activeValue;
+	}
+
+	let skipped = 0; // cells dropped from the current stroke (not sellable)
+
+	// Stage one op, skipping cells the server would reject: vendor
+	// assignments only land on sellable cells, so a rect/fill that clips a
+	// structure paints around it instead of failing the whole batch. Skips
+	// are counted and reported — a silently-dropped stroke reads as "paint
+	// is broken".
+	function stage(x: number, y: number, key: string = activeKey, value: string | null = paintValue()): void {
+		if (!session) return;
+		if ((key === 'vendor_id' || key === 'pool') && value !== null && cells.get(cellKey(x, y))?.kind !== 'sellable') {
+			skipped++;
+			return;
+		}
+		session.apply(x, y, key, value);
+	}
+
+	function ready(): boolean {
+		if (mode === 'view' || !data.plan) return false;
+		if (paintValue() === null) return true; // erase
+		return true;
+	}
+
+	// ---- right-click dimension fill: "N right × M down from this cell"
+	let fillMenu: { x: number; y: number; clientX: number; clientY: number } | null = null;
+	let fillW = 10;
+	let fillH = 10;
+	let fillTarget = ''; // 'v:<vendorId>' | 'p:<poolName>'
+
+	// Clamp free-typed numbers once here; everything downstream uses these.
+	$: fillWc = Math.max(1, Math.min(data.plan?.gridW ?? 1, Math.floor(fillW) || 1));
+	$: fillHc = Math.max(1, Math.min(data.plan?.gridH ?? 1, Math.floor(fillH) || 1));
+
+	// The clicked cell is the rect's top-left: right = +x, down on screen = −y.
+	$: fillRect = fillMenu
+		? rectCells(fillMenu.x, fillMenu.y, fillMenu.x + fillWc - 1, fillMenu.y - (fillHc - 1))
+		: [];
+	// Live-tint the target area while the dialog is open.
+	$: if (fillMenu) preview = new Set(fillRect.map((c) => cellKey(c.x, c.y)));
+
+	function onCellMenu(e: CustomEvent<{ x: number; y: number; clientX: number; clientY: number }>): void {
+		if (mode === 'view' || !data.plan) return;
+		// Default the target to whatever the toolbar is set to paint.
+		if (activeKey === 'vendor_id' && activeValue) fillTarget = `v:${activeValue}`;
+		else if (activeKey === 'pool' && activeValue) fillTarget = `p:${activeValue}`;
+		else if (!fillTarget) {
+			fillTarget = pickerVendors.length > 0 ? `v:${pickerVendors[0].nrsVendorId}` : data.pools[0] ? `p:${data.pools[0].name}` : '';
+		}
+		fillMenu = e.detail;
+	}
+
+	function closeFillMenu(): void {
+		fillMenu = null;
+		preview = new Set();
+	}
+
+	async function applyFill(): Promise<void> {
+		if (!fillMenu || !data.plan || !fillTarget) return;
+		const key = fillTarget.startsWith('v:') ? 'vendor_id' : 'pool';
+		const value = fillTarget.slice(2);
+		session = new PaintSession(cells, data.plan.gridW, data.plan.gridH);
+		skipped = 0;
+		for (const c of fillRect) stage(c.x, c.y, key, value);
+		cells = cells;
+		closeFillMenu();
+		await save();
+	}
+
+	function onPageKey(e: KeyboardEvent): void {
+		if (e.key === 'Escape' && fillMenu) closeFillMenu();
+		// Ctrl/Cmd+Z undoes the last stroke — but not while typing in a field,
+		// where native text undo should win.
+		const t = e.target as HTMLElement | null;
+		const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
+		if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && mode !== 'view') {
+			e.preventDefault();
+			undo();
+		}
+	}
+
+	// Eyedropper: set the brush to whatever the clicked cell is painted with.
+	// The dedicated tool is one-shot (returns to the brush you had); Alt+click
+	// picks without leaving the current tool.
+	let lastPaintTool: Tool = 'cell';
+	$: if (tool !== 'pick') lastPaintTool = tool;
+
+	function pickFromCell(x: number, y: number): void {
+		const attrs = cells.get(cellKey(x, y)) ?? {};
+		// Prefer the key being painted, then vendor, then pool.
+		const key = attrs[activeKey] !== undefined ? activeKey : attrs.vendor_id !== undefined ? 'vendor_id' : attrs.pool !== undefined ? 'pool' : null;
+		if (!key) {
+			notify.error('Nothing painted on that cell to pick up');
+			return;
+		}
+		activeKey = key;
+		activeValue = attrs[key];
+		const vendorName =
+			key === 'vendor_id' ? data.vendorOptions.find((v) => String(v.nrsVendorId) === attrs[key])?.displayName : null;
+		notify.success(`Brush set to ${key === 'vendor_id' ? (vendorName ?? `vendor ${attrs[key]}`) : `${key} = ${attrs[key]}`}`);
+		if (tool === 'pick') tool = lastPaintTool;
+	}
+
+	function onPaintDown(e: CustomEvent<{ x: number; y: number; alt: boolean }>): void {
+		if (!ready() || !data.plan) return;
+		if (tool === 'pick' || e.detail.alt) {
+			pickFromCell(e.detail.x, e.detail.y);
+			return;
+		}
+		session = new PaintSession(cells, data.plan.gridW, data.plan.gridH);
+		skipped = 0;
+		anchor = { x: e.detail.x, y: e.detail.y };
+		if (tool === 'cell') {
+			stage(e.detail.x, e.detail.y);
+			cells = cells;
+		} else if (tool === 'rect' || tool === 'wall') {
+			preview = new Set([cellKey(e.detail.x, e.detail.y)]);
+		}
+	}
+
+	function onPaintMove(e: CustomEvent<{ x: number; y: number }>): void {
+		if (!session || !anchor) return;
+		if (tool === 'cell') {
+			stage(e.detail.x, e.detail.y);
+			cells = cells;
+		} else if (tool === 'rect') {
+			preview = new Set(rectCells(anchor.x, anchor.y, e.detail.x, e.detail.y).map((c) => cellKey(c.x, c.y)));
+		} else if (tool === 'wall') {
+			preview = new Set(lineCells(anchor.x, anchor.y, e.detail.x, e.detail.y).map((c) => cellKey(c.x, c.y)));
+		}
+	}
+
+	async function onPaintUp(e: CustomEvent<{ x: number; y: number }>): Promise<void> {
+		if (!session || !anchor || !data.plan) return;
+		if (tool === 'rect') {
+			for (const c of rectCells(anchor.x, anchor.y, e.detail.x, e.detail.y)) {
+				stage(c.x, c.y);
+			}
+		} else if (tool === 'wall') {
+			for (const c of lineCells(anchor.x, anchor.y, e.detail.x, e.detail.y)) {
+				stage(c.x, c.y);
+			}
+		} else if (tool === 'fill') {
+			for (const c of floodCells(cells, anchor.x, anchor.y, activeKey, data.plan.gridW, data.plan.gridH)) {
+				stage(c.x, c.y);
+			}
+		}
+		preview = new Set();
+		anchor = null;
+		cells = cells;
+		await save();
+	}
+
+	// Undo: after each saved stroke, keep the ops that would restore the
+	// touched cells to their pre-stroke values. Undo replays them through the
+	// same optimistic-apply + batch-POST path. Cleared on plan switch (the
+	// ops are plan-relative).
+	const UNDO_DEPTH = 20;
+	let undoStack: CellOp[][] = [];
+	$: if (data.plan) clearUndoOnPlanChange(data.plan.id);
+	let undoPlanId: string | null = null;
+	function clearUndoOnPlanChange(planId: string): void {
+		if (undoPlanId !== null && undoPlanId !== planId) undoStack = [];
+		undoPlanId = planId;
+	}
+
+	async function undo(): Promise<void> {
+		if (undoStack.length === 0 || saving || !data.plan || mode === 'view') return;
+		const inv = undoStack[undoStack.length - 1];
+		undoStack = undoStack.slice(0, -1);
+		session = new PaintSession(cells, data.plan.gridW, data.plan.gridH);
+		skipped = 0;
+		// Restoring originals is always legal — bypass the sellable-skip in stage().
+		for (const op of inv) session.apply(op.x, op.y, op.key, op.value);
+		cells = cells;
+		await save({ undo: true });
+	}
+
+	async function save(opts: { undo?: boolean } = {}): Promise<void> {
+		if (!session || !data.plan) return;
+		const ops = session.ops();
+		if (ops.length === 0) {
+			if (skipped > 0) {
+				notify.error(`Nothing painted — all ${skipped} cells in that stroke are structure or void, not sellable floor`);
+			}
+			session = null;
+			return;
+		}
+		const inverse = session.inverseOps();
+		saving = true;
+		try {
+			const res = await fetch(`/api/floorplan/${data.plan.id}/cells`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ops })
+			});
+			if (res.ok) {
+				session.commit();
+				if (!opts.undo) {
+					undoStack = [...undoStack.slice(-(UNDO_DEPTH - 1)), inverse];
+				}
+				const skipNote = skipped > 0 ? ` (skipped ${skipped} non-sellable)` : '';
+				notify.success(
+					opts.undo
+						? `Undid ${ops.length} cell change${ops.length === 1 ? '' : 's'}`
+						: `Saved ${ops.length} cell change${ops.length === 1 ? '' : 's'}${skipNote}`
+				);
+				if (unreachable.size > 0) runReachability(false);
+			} else {
+				const body = await res.json().catch(() => ({}));
+				session.rollback();
+				cells = cells;
+				const detail = Array.isArray(body.violations) ? `: ${body.violations[0]}` : '';
+				notify.error(`${body.error ?? body.message ?? 'Save failed'}${detail}`);
+			}
+		} catch {
+			session.rollback();
+			cells = cells;
+			notify.error('Save failed — network error');
+		} finally {
+			saving = false;
+			session = null;
+		}
+	}
+
+	function runReachability(announce = true): void {
+		const result = checkReachability(cells);
+		unreachable = result.unreachable;
+		if (result.doors === 0) {
+			reachMsg = 'No door cells — mark a door to check reachability.';
+		} else if (unreachable.size > 0) {
+			reachMsg = `${unreachable.size} sellable cell${unreachable.size === 1 ? '' : 's'} unreachable from any door.`;
+		} else {
+			reachMsg = '';
+			if (announce) notify.success(`All ${result.sellable} sellable cells reachable from ${result.doors} door(s)`);
+		}
+	}
+</script>
+
+<svelte:head>
+	<title>Floorplan - TeamTime</title>
+</svelte:head>
+
+<svelte:window on:keydown={onPageKey} />
+
+<div class="p-4 lg:p-8 max-w-[1400px] mx-auto">
+	<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+		<div>
+			<h1 class="text-2xl font-bold">Floorplan</h1>
+			<p class="text-gray-600 mt-1 text-sm">
+				Booths are cells — a vendor's booth size is the count of their cells, never a stored number.
+			</p>
+		</div>
+		{#if data.plans.length > 1 && data.plan}
+			<select class="input !w-auto" value={data.plan.id} on:change={switchPlan} aria-label="Plan">
+				{#each data.plans as p}
+					<option value={p.id}>{p.name}</option>
+				{/each}
+			</select>
+		{/if}
+	</div>
+
+	{#if !data.plan}
+		<EmptyState title="No floorplans" message="Seed or create a plan to get started." />
+	{:else}
+		<div class="card">
+			<div class="card-header flex flex-wrap items-center gap-3">
+				<div class="flex rounded-lg border border-gray-300 overflow-hidden" role="tablist" aria-label="Mode">
+					{#each modes as m}
+						<button
+							type="button"
+							role="tab"
+							aria-selected={mode === m}
+							class="px-3 py-1.5 text-sm capitalize {mode === m ? 'bg-primary-600 text-white' : 'bg-white hover:bg-gray-100'}"
+							on:click={() => (mode = m)}>{m}</button
+						>
+					{/each}
+				</div>
+
+				<label class="flex items-center gap-1.5 text-sm text-gray-600">
+					overlay
+					<select class="input !w-auto !py-1.5" bind:value={overlayKey}>
+						{#each data.attrDefs as def}
+							<option value={def.key}>{def.key}</option>
+						{/each}
+					</select>
+				</label>
+
+				<div class="flex items-center gap-1">
+					<button type="button" class="btn-ghost btn-sm" title="Zoom out" on:click={() => canvas.zoomBy(1 / 1.4)}>−</button>
+					<button type="button" class="btn-ghost btn-sm" title="Zoom in" on:click={() => canvas.zoomBy(1.4)}>+</button>
+					<button type="button" class="btn-ghost btn-sm" on:click={() => canvas.fit()}>Fit</button>
+				</div>
+				<span class="text-xs text-gray-400 hidden lg:inline">
+					scroll to move · ctrl+wheel or +/− to zoom{mode !== 'view' ? ' · hold Space to drag-pan' : ''}
+				</span>
+
+				{#if mode === 'build'}
+					<button type="button" class="btn-secondary btn-sm" on:click={() => runReachability()}>
+						Check reachability
+					</button>
+					<button type="button" class="btn-secondary btn-sm" on:click={openLayouts}>Layouts…</button>
+				{/if}
+				{#if saving}
+					<span class="badge-gray">saving…</span>
+				{/if}
+
+				{#if mode !== 'view'}
+					<div class="w-full flex flex-wrap items-center gap-2">
+						<PaintToolbar {mode} bind:tool bind:activeKey bind:activeValue defs={data.attrDefs} vendors={pickerVendors} pools={data.pools} />
+						<button
+							type="button"
+							class="btn-secondary btn-sm"
+							title="Undo last stroke (Ctrl+Z)"
+							disabled={undoStack.length === 0 || saving}
+							on:click={undo}>↩ Undo</button
+						>
+						{#if data.canBuild && activeKey === 'vendor_id' && activeValue}
+							<label class="flex items-center gap-1.5 text-sm text-gray-600" title="Color for this vendor on the map">
+								color
+								<input type="color" value={vendorPalette[activeValue] ?? '#888888'} on:change={saveVendorColor} disabled={savingConfig} />
+							</label>
+						{/if}
+						{#if data.canBuild && activeKey === 'vendor_id'}
+							<button type="button" class="btn-ghost btn-sm" on:click={openPicker}>Picker vendors…</button>
+						{/if}
+						<button type="button" class="btn-ghost btn-sm" on:click={() => { editPool(); showPools = true; }}>Pools…</button>
+					</div>
+				{/if}
+			</div>
+
+			{#if reachMsg}
+				<div class="mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+					⚠ {reachMsg}
+				</div>
+			{/if}
+
+			<div class="card-body !p-2" style="height: 70vh">
+				<FloorplanCanvas
+					bind:this={canvas}
+					{cells}
+					gridW={data.plan.gridW}
+					gridH={data.plan.gridH}
+					{overlayKey}
+					defs={data.attrDefs}
+					{mode}
+					{preview}
+					highlight={unreachable}
+					on:hover={(e) => (hover = e.detail)}
+					on:hoverend={() => (hover = null)}
+					on:paintdown={onPaintDown}
+					on:paintmove={onPaintMove}
+					on:paintup={onPaintUp}
+					on:cellmenu={onCellMenu}
+				/>
+			</div>
+		</div>
+
+		{#if fillMenu}
+			<!-- click-away layer; also swallows a second right-click -->
+			<div
+				class="fixed inset-0 z-40"
+				on:click={closeFillMenu}
+				on:contextmenu|preventDefault={closeFillMenu}
+				aria-hidden="true"
+			></div>
+			<div
+				class="fixed z-50 w-72 rounded-lg border border-gray-300 bg-white p-3 shadow-xl text-sm"
+				style="left: {Math.min(fillMenu.clientX + 8, window.innerWidth - 300)}px; top: {Math.min(fillMenu.clientY + 8, window.innerHeight - 290)}px"
+				role="dialog"
+				aria-label="Fill area"
+			>
+				<div class="font-semibold mb-2">Fill from cell ({fillMenu.x}, {fillMenu.y})</div>
+				<div class="flex items-center gap-2 mb-1">
+					<label class="flex items-center gap-1.5 text-gray-600">
+						right
+						<input type="number" class="input !w-20 !py-1" min="1" max={data.plan.gridW} bind:value={fillW} />
+					</label>
+					<span class="text-gray-400">×</span>
+					<label class="flex items-center gap-1.5 text-gray-600">
+						down
+						<input type="number" class="input !w-20 !py-1" min="1" max={data.plan.gridH} bind:value={fillH} />
+					</label>
+				</div>
+				<div class="text-xs text-gray-500 mb-2">{fillWc} × {fillHc} ft — {fillWc * fillHc} sq ft (tinted on the map)</div>
+				<label class="label !mb-1" for="fill-target">Assign to</label>
+				<select id="fill-target" class="input !py-1.5 mb-2" bind:value={fillTarget}>
+					<optgroup label="Vendors">
+						{#each pickerVendors as v}
+							<option value={'v:' + v.nrsVendorId}>{v.displayName} ({v.nrsVendorId})</option>
+						{/each}
+					</optgroup>
+					{#if data.pools.length > 0}
+						<optgroup label="Pools">
+							{#each data.pools as pl}
+								<option value={'p:' + pl.name}>{pl.name}</option>
+							{/each}
+						</optgroup>
+					{/if}
+				</select>
+				{#if data.canBuild && fillTarget.startsWith('v:')}
+					<label class="flex items-center gap-1.5 mb-2 text-gray-600" title="Color for this vendor on the map">
+						color
+						<input
+							type="color"
+							value={vendorPalette[fillTarget.slice(2)] ?? '#888888'}
+							on:change={(e) => saveVendorColorFor(fillTarget.slice(2), e.currentTarget.value)}
+							disabled={savingConfig}
+						/>
+					</label>
+				{/if}
+				<div class="flex justify-end gap-2">
+					<button type="button" class="btn-secondary btn-sm" on:click={closeFillMenu}>Cancel</button>
+					<button type="button" class="btn-primary btn-sm" disabled={!fillTarget || saving} on:click={applyFill}>Fill</button>
+				</div>
+			</div>
+		{/if}
+
+		{#if hover && mode === 'view' && Object.keys(hoverAttrs).length > 0}
+			<CellPopover
+				planId={data.plan.id}
+				x={hover.x}
+				y={hover.y}
+				attrs={hoverAttrs}
+				clientX={hover.clientX}
+				clientY={hover.clientY}
+			/>
+		{/if}
+
+		<Modal bind:open={showPicker} title="Vendors shown in the picker" size="md" on:close={() => (showPicker = false)}>
+			<p class="text-sm text-gray-600 mb-3">
+				Untick vendors to hide them from the Edit-mode dropdown. This only affects the picker — existing paint is untouched.
+			</p>
+			<div class="max-h-80 overflow-y-auto space-y-1">
+				{#each data.vendorOptions as v}
+					<label class="flex items-center gap-2 text-sm">
+						<input
+							type="checkbox"
+							checked={pickerSelected.has(String(v.nrsVendorId))}
+							on:change={(e) => {
+								const id = String(v.nrsVendorId);
+								if (e.currentTarget.checked) pickerSelected.add(id);
+								else pickerSelected.delete(id);
+								pickerSelected = pickerSelected;
+							}}
+						/>
+						{v.displayName} ({v.nrsVendorId})
+					</label>
+				{/each}
+			</div>
+			<div slot="footer" class="flex justify-end gap-2">
+				<button type="button" class="btn-secondary btn-sm" on:click={() => (showPicker = false)}>Cancel</button>
+				<button type="button" class="btn-primary btn-sm" disabled={savingConfig} on:click={savePicker}>Save</button>
+			</div>
+		</Modal>
+
+		<Modal bind:open={showPools} title="Vendor pools (shared / in-store spaces)" size="lg" on:close={() => (showPools = false)}>
+			<p class="text-sm text-gray-600 mb-3">
+				A pool is a named group of vendors sharing space. Paint it by picking the <span class="font-mono">pool</span> attribute
+				in the toolbar; the floor shows the pool's name and color, and booth counts stay per-pool.
+			</p>
+
+			{#if data.pools.length > 0}
+				<div class="space-y-1 mb-4">
+					{#each data.pools as pool}
+						<div class="flex items-center gap-2 text-sm">
+							<span class="inline-block w-4 h-4 rounded" style="background:{pool.color}"></span>
+							<span class="font-medium">{pool.name}</span>
+							<span class="text-gray-500">{pool.vendorIds.length} vendor{pool.vendorIds.length === 1 ? '' : 's'}</span>
+							<button type="button" class="btn-ghost btn-sm" on:click={() => editPool(pool)}>edit</button>
+							<button type="button" class="btn-ghost btn-sm !text-red-600" on:click={() => deletePool(pool.id)}>delete</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+
+			<div class="border-t border-gray-200 pt-3 space-y-2">
+				<div class="font-medium text-sm">{poolForm.id ? `Edit "${poolForm.name}"` : 'New pool'}</div>
+				<div class="flex flex-wrap items-center gap-2">
+					<input class="input !w-56" placeholder="Pool name (e.g. Shared Case 1)" bind:value={poolForm.name} />
+					<label class="flex items-center gap-1.5 text-sm text-gray-600">
+						color <input type="color" bind:value={poolForm.color} />
+					</label>
+				</div>
+				<label class="label !mb-0" for="pool-members">Member vendors (ctrl-click for several)</label>
+				<select id="pool-members" class="input" multiple size="8" bind:value={poolForm.members}>
+					{#each data.vendorOptions as v}
+						<option value={String(v.nrsVendorId)}>{v.displayName} ({v.nrsVendorId})</option>
+					{/each}
+				</select>
+			</div>
+			<div slot="footer" class="flex justify-between">
+				<button type="button" class="btn-secondary btn-sm" on:click={() => editPool()}>Clear form</button>
+				<div class="flex gap-2">
+					<button type="button" class="btn-secondary btn-sm" on:click={() => (showPools = false)}>Close</button>
+					<button type="button" class="btn-primary btn-sm" disabled={savingConfig || !poolForm.name} on:click={savePool}>
+						{poolForm.id ? 'Save changes' : 'Create pool'}
+					</button>
+				</div>
+			</div>
+		</Modal>
+
+		<Modal bind:open={showLayouts} title="Saved layouts" size="lg" on:close={() => (showLayouts = false)}>
+			<p class="text-sm text-gray-600 mb-3">
+				Save the whole floor as a named layout, experiment freely, then restore. Restoring replaces every painted
+				cell — the current floor is kept as an auto-backup first, so a restore can always be undone.
+			</p>
+
+			<div class="flex flex-wrap items-center gap-2 mb-4">
+				<input class="input !w-64" placeholder="Layout name (e.g. Pre-holiday shuffle)" bind:value={layoutName} />
+				<button
+					type="button"
+					class="btn-primary btn-sm"
+					disabled={layoutsBusy || !layoutName.trim()}
+					on:click={saveLayout}>Save current layout</button
+				>
+			</div>
+
+			{#if layouts.length === 0}
+				<p class="text-sm text-gray-500">No saved layouts yet.</p>
+			{:else}
+				<div class="space-y-1 max-h-80 overflow-y-auto">
+					{#each layouts as s}
+						<div class="flex items-center gap-2 text-sm">
+							<span class="font-medium">{s.name}</span>
+							{#if s.kind === 'auto'}<span class="badge-gray">auto-backup</span>{/if}
+							<span class="text-gray-500">{s.attrRows} attrs · {new Date(s.createdAt).toLocaleString()}</span>
+							<button type="button" class="btn-ghost btn-sm" disabled={layoutsBusy} on:click={() => restoreLayout(s)}>
+								restore
+							</button>
+							<button type="button" class="btn-ghost btn-sm !text-red-600" disabled={layoutsBusy} on:click={() => deleteLayout(s)}>
+								delete
+							</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+			<div slot="footer" class="flex justify-end">
+				<button type="button" class="btn-secondary btn-sm" on:click={() => (showLayouts = false)}>Close</button>
+			</div>
+		</Modal>
+	{/if}
+</div>

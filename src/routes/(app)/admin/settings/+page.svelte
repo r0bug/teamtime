@@ -38,6 +38,7 @@
 		{ key: 'notes', label: 'Notes', desc: 'Post-it notes board for staff' },
 		{ key: 'inventory', label: 'Inventory', desc: 'Inventory drops and processing' },
 		{ key: 'ebay', label: 'eBay', desc: 'eBay listing tasks' },
+		{ key: 'floorplan', label: 'Floorplan', desc: 'Cell-based store floorplan and booth map' },
 		{ key: 'notifications', label: 'Notifications', desc: 'Push and email notifications' },
 		{ key: 'reports', label: 'Reports', desc: 'Reporting and analytics' }
 	];

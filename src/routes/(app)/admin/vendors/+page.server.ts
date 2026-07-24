@@ -7,6 +7,7 @@ import {
 	syncFromNrs,
 	removeUnusedVendorStubs
 } from '$lib/server/services/vendor-service';
+import { runFloorplanSync } from '$lib/server/floorplan/sync';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/dashboard');
@@ -44,6 +45,9 @@ export const actions: Actions = {
 		if (!locals.user) return fail(403, { error: 'Not authorized' });
 		try {
 			const result = await syncFromNrs();
+			// Refresh floorplan delta flags whenever the vendor mirror refreshes.
+			// Fire-and-forget: floorplan issues must never break vendor sync.
+			runFloorplanSync().catch(() => {});
 			return { syncResult: result };
 		} catch (err) {
 			return fail(500, { error: err instanceof Error ? err.message : 'NRS sync failed' });

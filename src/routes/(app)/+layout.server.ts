@@ -20,7 +20,8 @@ const DEFAULT_MODULES: Record<string, boolean> = {
 	holds: true,
 	notes: true,
 	inventory: true,
-	ebay: true
+	ebay: true,
+	floorplan: true
 };
 
 export const load: LayoutServerLoad = async ({ locals, url }) => {
