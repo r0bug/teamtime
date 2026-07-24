@@ -3790,6 +3790,26 @@ export const floorplanPools = pgTable(
 	})
 );
 
+// Named layout snapshots: a frozen copy of every cell-attr row in a plan, so
+// admins can experiment on the live floor and revert. Restore replaces the
+// plan's cells wholesale; an 'auto' snapshot of the pre-restore state is
+// captured first, so a restore is itself revertible. Plan config (attr defs,
+// pools, connectors) is NOT captured — snapshots are layout, not settings.
+export const floorplanSnapshots = pgTable('floorplan_snapshots', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	planId: uuid('plan_id')
+		.notNull()
+		.references(() => floorplanPlans.id, { onDelete: 'cascade' }),
+	name: text('name').notNull(),
+	kind: text('kind').notNull().default('manual'), // 'manual' | 'auto' (pre-restore backup)
+	cells: jsonb('cells').$type<{ x: number; y: number; key: string; value: string }[]>().notNull(),
+	attrRows: integer('attr_rows').notNull(), // length of `cells` — list views skip the blob
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type FloorplanSnapshot = typeof floorplanSnapshots.$inferSelect;
+export type NewFloorplanSnapshot = typeof floorplanSnapshots.$inferInsert;
 export type FloorplanPool = typeof floorplanPools.$inferSelect;
 export type FloorplanPlan = typeof floorplanPlans.$inferSelect;
 export type NewFloorplanPlan = typeof floorplanPlans.$inferInsert;

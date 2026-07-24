@@ -157,6 +157,79 @@
 		}
 	}
 
+	// ---- layout snapshots (Build mode): save the whole floor as a named
+	// layout, experiment freely, restore later. Restore replaces every painted
+	// cell, but auto-backs-up the current floor first so it's never one-way.
+	let showLayouts = false;
+	let layouts: { id: string; name: string; kind: string; attrRows: number; createdAt: string }[] = [];
+	let layoutName = '';
+	let layoutsBusy = false;
+
+	async function refreshLayouts(): Promise<void> {
+		if (!data.plan) return;
+		const res = await fetch(`/api/floorplan/${data.plan.id}/snapshots`);
+		if (res.ok) layouts = (await res.json()).snapshots;
+		else notify.error('Could not load saved layouts');
+	}
+
+	async function openLayouts(): Promise<void> {
+		showLayouts = true;
+		await refreshLayouts();
+	}
+
+	async function saveLayout(): Promise<void> {
+		if (!data.plan || !layoutName.trim()) return;
+		layoutsBusy = true;
+		try {
+			const res = await fetch(`/api/floorplan/${data.plan.id}/snapshots`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: layoutName.trim() })
+			});
+			if (res.ok) {
+				layoutName = '';
+				await refreshLayouts();
+				notify.success('Layout saved');
+			} else {
+				const body = await res.json().catch(() => ({}));
+				notify.error(body.error ?? 'Save failed');
+			}
+		} finally {
+			layoutsBusy = false;
+		}
+	}
+
+	async function restoreLayout(s: { id: string; name: string }): Promise<void> {
+		if (!data.plan) return;
+		if (!confirm(`Restore "${s.name}"? The current floor is auto-backed-up first, so this can be undone.`)) return;
+		layoutsBusy = true;
+		try {
+			const res = await fetch(`/api/floorplan/${data.plan.id}/snapshots/${s.id}`, { method: 'POST' });
+			if (res.ok) {
+				await invalidateAll();
+				await refreshLayouts();
+				notify.success(`Restored "${s.name}"`);
+			} else {
+				const body = await res.json().catch(() => ({}));
+				notify.error(body.error ?? body.message ?? 'Restore failed');
+			}
+		} finally {
+			layoutsBusy = false;
+		}
+	}
+
+	async function deleteLayout(s: { id: string; name: string }): Promise<void> {
+		if (!data.plan) return;
+		if (!confirm(`Delete saved layout "${s.name}"?`)) return;
+		const res = await fetch(`/api/floorplan/${data.plan.id}/snapshots/${s.id}`, { method: 'DELETE' });
+		if (res.ok) {
+			await refreshLayouts();
+			notify.success('Layout deleted');
+		} else {
+			notify.error('Delete failed');
+		}
+	}
+
 	function switchPlan(e: Event): void {
 		goto(`/floorplan?plan=${(e.target as HTMLSelectElement).value}`);
 	}
@@ -347,6 +420,7 @@
 					<button type="button" class="btn-secondary btn-sm" on:click={() => runReachability()}>
 						Check reachability
 					</button>
+					<button type="button" class="btn-secondary btn-sm" on:click={openLayouts}>Layouts…</button>
 				{/if}
 				{#if saving}
 					<span class="badge-gray">saving…</span>
@@ -476,6 +550,46 @@
 						{poolForm.id ? 'Save changes' : 'Create pool'}
 					</button>
 				</div>
+			</div>
+		</Modal>
+
+		<Modal bind:open={showLayouts} title="Saved layouts" size="lg" on:close={() => (showLayouts = false)}>
+			<p class="text-sm text-gray-600 mb-3">
+				Save the whole floor as a named layout, experiment freely, then restore. Restoring replaces every painted
+				cell — the current floor is kept as an auto-backup first, so a restore can always be undone.
+			</p>
+
+			<div class="flex flex-wrap items-center gap-2 mb-4">
+				<input class="input !w-64" placeholder="Layout name (e.g. Pre-holiday shuffle)" bind:value={layoutName} />
+				<button
+					type="button"
+					class="btn-primary btn-sm"
+					disabled={layoutsBusy || !layoutName.trim()}
+					on:click={saveLayout}>Save current layout</button
+				>
+			</div>
+
+			{#if layouts.length === 0}
+				<p class="text-sm text-gray-500">No saved layouts yet.</p>
+			{:else}
+				<div class="space-y-1 max-h-80 overflow-y-auto">
+					{#each layouts as s}
+						<div class="flex items-center gap-2 text-sm">
+							<span class="font-medium">{s.name}</span>
+							{#if s.kind === 'auto'}<span class="badge-gray">auto-backup</span>{/if}
+							<span class="text-gray-500">{s.attrRows} attrs · {new Date(s.createdAt).toLocaleString()}</span>
+							<button type="button" class="btn-ghost btn-sm" disabled={layoutsBusy} on:click={() => restoreLayout(s)}>
+								restore
+							</button>
+							<button type="button" class="btn-ghost btn-sm !text-red-600" disabled={layoutsBusy} on:click={() => deleteLayout(s)}>
+								delete
+							</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+			<div slot="footer" class="flex justify-end">
+				<button type="button" class="btn-secondary btn-sm" on:click={() => (showLayouts = false)}>Close</button>
 			</div>
 		</Modal>
 	{/if}
