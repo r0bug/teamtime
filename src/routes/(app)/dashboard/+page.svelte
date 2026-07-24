@@ -30,9 +30,31 @@
 	$: userIsPurchaser = data.userIsPurchaser;
 	$: gamification = data.gamification;
 	$: whosWorking = data.whosWorking;
+	$: myPayPeriod = data.myPayPeriod;
 
 	let clockLoading = false;
 	let breakLoading = false;
+
+	function shiftDay(d: Date | string): string {
+		return new Date(d).toLocaleDateString('en-US', {
+			timeZone: 'America/Los_Angeles',
+			weekday: 'short',
+			month: 'short',
+			day: 'numeric'
+		});
+	}
+
+	function shiftTime(d: Date | string): string {
+		return new Date(d).toLocaleTimeString('en-US', {
+			timeZone: 'America/Los_Angeles',
+			hour: 'numeric',
+			minute: '2-digit'
+		});
+	}
+
+	function workedLabel(minutes: number): string {
+		return `${(Math.round((minutes / 60) * 10) / 10).toFixed(1)}h worked`;
+	}
 
 	function getTierColor(tier: string): string {
 		switch (tier) {
@@ -294,6 +316,61 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- My Shifts — current pay period -->
+	{#if myPayPeriod && (myPayPeriod.upcoming.length > 0 || myPayPeriod.past.length > 0)}
+		<div class="card mb-6">
+			<div class="card-header flex items-center justify-between">
+				<h2 class="font-semibold">My Shifts · {myPayPeriod.label}</h2>
+				<a href="/schedule" class="text-primary-600 text-sm hover:underline">Full Schedule</a>
+			</div>
+			<div class="card-body">
+				<div class="flex gap-6 text-sm text-gray-600 mb-3">
+					<span><span class="font-semibold text-gray-900">{myPayPeriod.scheduledHours}h</span> scheduled</span>
+					<span><span class="font-semibold text-gray-900">{myPayPeriod.workedHours}h</span> worked</span>
+				</div>
+
+				{#if myPayPeriod.upcoming.length > 0}
+					<h3 class="text-xs font-medium uppercase tracking-wide text-gray-500 mb-1">Upcoming</h3>
+					<div class="divide-y divide-gray-100 mb-4">
+						{#each myPayPeriod.upcoming as s (s.id)}
+							<div class="py-1.5 flex items-center justify-between gap-2 text-sm">
+								<div class="min-w-0">
+									<span class="font-medium">{shiftDay(s.startTime)}</span>
+									<span class="text-gray-600 ml-2">{shiftTime(s.startTime)} - {shiftTime(s.endTime)}</span>
+									{#if s.inProgress}
+										<span class="badge-primary ml-2">now</span>
+									{/if}
+								</div>
+								{#if s.locationName}
+									<span class="text-gray-500 text-xs truncate">{s.locationName}</span>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				{#if myPayPeriod.past.length > 0}
+					<h3 class="text-xs font-medium uppercase tracking-wide text-gray-500 mb-1">Past</h3>
+					<div class="divide-y divide-gray-100">
+						{#each myPayPeriod.past as s (s.id)}
+							<div class="py-1.5 flex items-center justify-between gap-2 text-sm">
+								<div class="min-w-0">
+									<span class="font-medium">{shiftDay(s.startTime)}</span>
+									<span class="text-gray-600 ml-2">{shiftTime(s.startTime)} - {shiftTime(s.endTime)}</span>
+								</div>
+								{#if s.workedMinutes !== null}
+									<span class="badge-gray whitespace-nowrap">{workedLabel(s.workedMinutes)}</span>
+								{:else}
+									<span class="text-gray-400 text-xs whitespace-nowrap">no clock record</span>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
 
 	<!-- Quick Stats Grid -->
 	<div class="grid grid-cols-2 gap-4 mb-6">

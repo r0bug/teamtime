@@ -1,11 +1,12 @@
 import type { PageServerLoad } from './$types';
 import { db, shifts, timeEntries, breakEntries, tasks, conversationParticipants, messages, inventoryDrops, inventoryDropItems, users, locations, pricingDecisions, customerHolds, staffNotes } from '$lib/server/db';
-import { eq, and, or, isNull, gt, gte, lt, sql, inArray, desc } from 'drizzle-orm';
+import { eq, and, or, isNull, gt, gte, lt, lte, sql, inArray, desc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { isPurchaser, isManager, isAdmin } from '$lib/server/auth/roles';
 import { urgencyAnchor } from '$lib/server/services/holds-service';
 import { getOrCreateUserStats, getTodayPoints, getLeaderboard, getUserLeaderboardPosition, LEVEL_THRESHOLDS } from '$lib/server/services/points-service';
 import { getRecentAchievements, getAchievementStats } from '$lib/server/services/achievements-service';
+import { getPayPeriodConfig, getCurrentPayPeriod } from '$lib/server/services/pay-period-service';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -377,7 +378,123 @@ export const load: PageServerLoad = async ({ locals }) => {
 		viewerRole
 	};
 
+	// ---- My shifts this pay period: the viewer's past (with worked time
+	// from linked clock records) and upcoming shifts ----
+	type UpcomingShift = { id: string; startTime: Date; endTime: Date; locationName: string | null; inProgress: boolean };
+	type PastShift = { id: string; startTime: Date; endTime: Date; locationName: string | null; workedMinutes: number | null };
+	let myPayPeriod: {
+		label: string;
+		scheduledHours: number;
+		workedHours: number;
+		upcoming: UpcomingShift[];
+		past: PastShift[];
+	} | null = null;
+
+	const payPeriod = getCurrentPayPeriod(await getPayPeriodConfig(), now);
+	if (payPeriod) {
+		const myShifts = await db
+			.select({
+				id: shifts.id,
+				startTime: shifts.startTime,
+				endTime: shifts.endTime,
+				locationName: locations.name
+			})
+			.from(shifts)
+			.leftJoin(locations, eq(shifts.locationId, locations.id))
+			.where(
+				and(
+					eq(shifts.userId, user.id),
+					gte(shifts.startTime, payPeriod.startDate),
+					lte(shifts.startTime, payPeriod.endDate)
+				)
+			)
+			.orderBy(shifts.startTime);
+
+		const myEntries = await db
+			.select({
+				id: timeEntries.id,
+				shiftId: timeEntries.shiftId,
+				clockIn: timeEntries.clockIn,
+				clockOut: timeEntries.clockOut
+			})
+			.from(timeEntries)
+			.where(
+				and(
+					eq(timeEntries.userId, user.id),
+					gte(timeEntries.clockIn, payPeriod.startDate),
+					lte(timeEntries.clockIn, payPeriod.endDate)
+				)
+			);
+
+		const myBreaks =
+			myEntries.length > 0
+				? await db
+						.select({
+							timeEntryId: breakEntries.timeEntryId,
+							breakStart: breakEntries.breakStart,
+							breakEnd: breakEntries.breakEnd
+						})
+						.from(breakEntries)
+						.where(inArray(breakEntries.timeEntryId, myEntries.map((e) => e.id)))
+				: [];
+
+		const breakMinutesByEntry = new Map<string, number>();
+		for (const b of myBreaks) {
+			if (!b.breakEnd) continue; // open break — settles when it ends
+			const mins = (b.breakEnd.getTime() - b.breakStart.getTime()) / 60000;
+			breakMinutesByEntry.set(b.timeEntryId, (breakMinutesByEntry.get(b.timeEntryId) ?? 0) + mins);
+		}
+
+		// Worked time net of breaks; an open entry counts up to now.
+		const workedMinutesByShift = new Map<string, number>();
+		let totalWorkedMinutes = 0;
+		for (const entry of myEntries) {
+			const net =
+				((entry.clockOut ?? now).getTime() - entry.clockIn.getTime()) / 60000 -
+				(breakMinutesByEntry.get(entry.id) ?? 0);
+			totalWorkedMinutes += net;
+			if (entry.shiftId) {
+				workedMinutesByShift.set(entry.shiftId, (workedMinutesByShift.get(entry.shiftId) ?? 0) + net);
+			}
+		}
+
+		const past: PastShift[] = [];
+		const upcoming: UpcomingShift[] = [];
+		let scheduledMinutes = 0;
+		for (const s of myShifts) {
+			scheduledMinutes += (s.endTime.getTime() - s.startTime.getTime()) / 60000;
+			if (s.endTime < now) {
+				const worked = workedMinutesByShift.get(s.id);
+				past.push({
+					id: s.id,
+					startTime: s.startTime,
+					endTime: s.endTime,
+					locationName: s.locationName,
+					workedMinutes: worked !== undefined ? Math.round(worked) : null
+				});
+			} else {
+				upcoming.push({
+					id: s.id,
+					startTime: s.startTime,
+					endTime: s.endTime,
+					locationName: s.locationName,
+					inProgress: s.startTime <= now
+				});
+			}
+		}
+		past.reverse(); // most recent first
+
+		myPayPeriod = {
+			label: payPeriod.label,
+			scheduledHours: Math.round((scheduledMinutes / 60) * 10) / 10,
+			workedHours: Math.round((totalWorkedMinutes / 60) * 10) / 10,
+			upcoming,
+			past
+		};
+	}
+
 	return {
+		myPayPeriod,
 		nextShift,
 		activeTimeEntry,
 		activeBreak,

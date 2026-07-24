@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
@@ -12,14 +13,10 @@
 	// Use the server-provided start date to ensure timezone consistency
 	$: startDateFromServer = data.startDate;
 
-	let weekOffset = 0;
-
 	$: weekStart = (() => {
-		// Parse the server-provided Pacific date and add week offset
+		// Parse the server-provided Pacific date
 		const [year, month, day] = startDateFromServer.split('-').map(Number);
-		const d = new Date(year, month - 1, day);
-		d.setDate(d.getDate() + (weekOffset * 7));
-		return d;
+		return new Date(year, month - 1, day);
 	})();
 
 	$: weekDays = (() => {
@@ -51,8 +48,20 @@
 		});
 	}
 
+	// Week navigation must round-trip to the server: the load only queries the
+	// requested window, so paging weeks client-side (the old weekOffset
+	// approach) showed empty days for any week but the current one.
 	function navigateWeek(delta: number) {
-		weekOffset += delta;
+		const target = new Date(weekStart);
+		target.setDate(target.getDate() + delta * 7);
+		const y = target.getFullYear();
+		const m = String(target.getMonth() + 1).padStart(2, '0');
+		const d = String(target.getDate()).padStart(2, '0');
+		goto(`/schedule?start=${y}-${m}-${d}`);
+	}
+
+	function goToToday() {
+		goto('/schedule');
 	}
 
 	function isMyShift(userId: string) {
@@ -81,10 +90,13 @@
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
 			</svg>
 		</button>
-		<h2 class="text-lg font-semibold">
-			{weekStart.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} -
-			{new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-		</h2>
+		<div class="flex items-center gap-3">
+			<h2 class="text-lg font-semibold">
+				{weekStart.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} -
+				{new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+			</h2>
+			<button on:click={goToToday} class="btn-ghost btn-sm text-sm">Today</button>
+		</div>
 		<button on:click={() => navigateWeek(1)} class="btn-ghost">
 			<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />

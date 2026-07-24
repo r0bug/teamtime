@@ -5,6 +5,7 @@ import { eq, gte, lte, and, desc } from 'drizzle-orm';
 import { parsePacificDatetime } from '$lib/server/utils/timezone';
 import { isManager } from '$lib/server/auth/roles';
 import { audit } from '$lib/server/services/audit-service';
+import { getSchedulableStaff, isVendorUser } from '$lib/server/services/user-classification-service';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user || !isManager(locals.user)) {
@@ -37,11 +38,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		.where(and(gte(shifts.startTime, weekStart), lte(shifts.startTime, weekEnd)))
 		.orderBy(shifts.startTime);
 
-	const allUsers = await db
-		.select({ id: users.id, name: users.name, role: users.role })
-		.from(users)
-		.where(eq(users.isActive, true))
-		.orderBy(users.name);
+	// Staff only — vendor-type users are not schedulable.
+	const allUsers = await getSchedulableStaff();
 
 	const allLocations = await db
 		.select({ id: locations.id, name: locations.name })
@@ -73,6 +71,10 @@ export const actions: Actions = {
 
 		if (!userId || !startTime || !endTime) {
 			return fail(400, { error: 'User, start time, and end time are required' });
+		}
+
+		if (await isVendorUser(userId)) {
+			return fail(400, { error: 'Vendors cannot be scheduled — scheduling is staff-only' });
 		}
 
 		await db.insert(shifts).values({

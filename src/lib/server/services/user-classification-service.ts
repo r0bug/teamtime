@@ -54,6 +54,30 @@ export async function getBroadcastStaff(): Promise<
 }
 
 /**
+ * Active users who can be scheduled for shifts: everyone staff-side,
+ * admins included, EXCLUDING Vendor-type users. Staff who also sell as
+ * vendors keep a staff user type (the vendor link is an extra role), so
+ * they remain schedulable.
+ */
+export async function getSchedulableStaff(): Promise<{ id: string; name: string; role: string }[]> {
+	const rows = await db
+		.select({
+			id: users.id,
+			name: users.name,
+			role: users.role,
+			typeName: userTypes.name
+		})
+		.from(users)
+		.leftJoin(userTypes, eq(userTypes.id, users.userTypeId))
+		.where(eq(users.isActive, true))
+		.orderBy(users.name);
+
+	return rows
+		.filter((u) => u.typeName !== VENDOR_USER_TYPE_NAME)
+		.map(({ id, name, role }) => ({ id, name, role }));
+}
+
+/**
  * May this user have a phone number on their user record?
  * Staff always can; vendor users only once onboarding is complete.
  * Returns null when allowed, or a human-readable reason when not.

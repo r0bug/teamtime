@@ -1,8 +1,10 @@
 import type { PageServerLoad, Actions } from './$types';
 import { redirect, fail } from '@sveltejs/kit';
-import { db, users, shifts, locations, storeHours, appSettings } from '$lib/server/db';
+import { db, users, shifts, locations, storeHours } from '$lib/server/db';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { getPayPeriodConfig, getCurrentPayPeriod } from '$lib/server/services/pay-period-service';
+import { getSchedulableStaff, isVendorUser } from '$lib/server/services/user-classification-service';
 import { createLogger } from '$lib/server/logger';
 import { audit } from '$lib/server/services/audit-service';
 import { parsePacificDatetime, getPacificDateParts, toPacificDateString, parsePacificDate, parsePacificEndOfDay } from '$lib/server/utils/timezone';
@@ -14,74 +16,8 @@ import {
 
 const log = createLogger('admin:schedule');
 
-interface PayPeriodConfig {
-	type: 'semi-monthly' | 'bi-weekly' | 'weekly' | 'monthly';
-	period1Start: number;
-	period1End: number;
-	period1Payday: number;
-	period2Start: number;
-	period2End: number;
-	period2Payday: number;
-}
-
-interface PayPeriod {
-	startDate: Date;
-	endDate: Date;
-	label: string;
-	isCurrent: boolean;
-}
-
-const DEFAULT_CONFIG: PayPeriodConfig = {
-	type: 'semi-monthly',
-	period1Start: 26,
-	period1End: 10,
-	period1Payday: 1,
-	period2Start: 11,
-	period2End: 25,
-	period2Payday: 16
-};
-
-function getCurrentPayPeriod(config: PayPeriodConfig): PayPeriod | null {
-	const now = new Date();
-	const day = now.getDate();
-	const month = now.getMonth();
-	const year = now.getFullYear();
-
-	if (config.type === 'semi-monthly') {
-		// Check if we're in period 2 (e.g., 11-25)
-		if (day >= config.period2Start && day <= config.period2End) {
-			return {
-				startDate: new Date(year, month, config.period2Start),
-				endDate: new Date(year, month, config.period2End, 23, 59, 59),
-				label: `${config.period2Start}th - ${config.period2End}th`,
-				isCurrent: true
-			};
-		}
-		// Check if we're in period 1 (e.g., 26-10, crosses month)
-		if (day >= config.period1Start) {
-			// We're at end of month, period goes to next month
-			return {
-				startDate: new Date(year, month, config.period1Start),
-				endDate: new Date(year, month + 1, config.period1End, 23, 59, 59),
-				label: `${config.period1Start}th - ${config.period1End}th`,
-				isCurrent: true
-			};
-		}
-		if (day <= config.period1End) {
-			// We're at beginning of month, period started last month
-			return {
-				startDate: new Date(year, month - 1, config.period1Start),
-				endDate: new Date(year, month, config.period1End, 23, 59, 59),
-				label: `${config.period1Start}th - ${config.period1End}th`,
-				isCurrent: true
-			};
-		}
-	}
-	return null;
-}
-
 function formatShortDate(date: Date): string {
-	return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+	return date.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' });
 }
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -89,23 +25,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		throw redirect(302, '/dashboard');
 	}
 
-	// Load pay period config
-	const setting = await db
-		.select()
-		.from(appSettings)
-		.where(eq(appSettings.key, 'pay_period_config'))
-		.limit(1);
-
-	let payPeriodConfig: PayPeriodConfig = DEFAULT_CONFIG;
-	if (setting.length > 0) {
-		try {
-			payPeriodConfig = JSON.parse(setting[0].value);
-		} catch {
-			payPeriodConfig = DEFAULT_CONFIG;
-		}
-	}
-
-	const currentPayPeriod = getCurrentPayPeriod(payPeriodConfig);
+	const currentPayPeriod = getCurrentPayPeriod(await getPayPeriodConfig());
 
 	// Get date range from query params or default to current week (in Pacific timezone)
 	const startParam = url.searchParams.get('start');
@@ -161,16 +81,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		))
 		.orderBy(shifts.startTime);
 
-	// Get all active users and locations for dropdowns
-	const allUsers = await db
-		.select({
-			id: users.id,
-			name: users.name,
-			role: users.role
-		})
-		.from(users)
-		.where(eq(users.isActive, true))
-		.orderBy(users.name);
+	// Schedulable users for dropdowns — staff only, vendor-type users excluded
+	// (staff who also sell as vendors keep a staff user type and remain).
+	const allUsers = await getSchedulableStaff();
 
 	const allLocations = await db
 		.select({
@@ -297,6 +210,10 @@ export const actions: Actions = {
 			return fail(400, { error: 'User, start time, and end time are required' });
 		}
 
+		if (await isVendorUser(userId)) {
+			return fail(400, { error: 'Vendors cannot be scheduled — scheduling is staff-only' });
+		}
+
 		try {
 			await db.insert(shifts).values({
 				userId,
@@ -401,6 +318,10 @@ export const actions: Actions = {
 
 		if (!userId || !startTime || !endTime || !datesJson) {
 			return fail(400, { error: 'User, start time, end time, and dates are required' });
+		}
+
+		if (await isVendorUser(userId)) {
+			return fail(400, { error: 'Vendors cannot be scheduled — scheduling is staff-only' });
 		}
 
 		let dates: string[];
