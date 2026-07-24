@@ -49,6 +49,27 @@ describe('PaintSession', () => {
 		s.apply(5, 0, 'kind', 'sellable');
 		expect(s.size).toBe(0);
 	});
+
+	it('inverseOps restores pre-session values when replayed (undo)', () => {
+		const cells = cellsOf([['1,1', { kind: 'sellable', vendor_id: '17009' }]]);
+		const s = new PaintSession(cells, 10, 10);
+		s.apply(1, 1, 'vendor_id', '17042'); // overwrite
+		s.apply(3, 3, 'vendor_id', '17042'); // was void
+		const inverse = s.inverseOps();
+		s.commit();
+
+		const u = new PaintSession(cells, 10, 10);
+		for (const op of inverse) u.apply(op.x, op.y, op.key, op.value);
+		expect(cells.get('1,1')!.vendor_id).toBe('17009');
+		expect(cells.has('3,3')).toBe(false);
+		// the undo session's ops are exactly what a save would POST
+		expect(u.ops()).toEqual(
+			expect.arrayContaining([
+				{ x: 1, y: 1, key: 'vendor_id', value: '17009' },
+				{ x: 3, y: 3, key: 'vendor_id', value: null }
+			])
+		);
+	});
 });
 
 describe('tools', () => {

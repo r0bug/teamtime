@@ -43,6 +43,25 @@ export class PaintSession {
 		this.setLocal(ck, key, value);
 	}
 
+	/**
+	 * Ops that would restore every touched cell to its pre-session value —
+	 * capture BEFORE commit() to build an undo entry. Entries whose pending
+	 * op cancelled out restore the current value; applying them later is a
+	 * no-op, so they're safe to include.
+	 */
+	inverseOps(): CellOp[] {
+		return [...this.snapshot.entries()].map(([pk, original]) => {
+			const i2 = pk.lastIndexOf(',');
+			const i1 = pk.lastIndexOf(',', i2 - 1);
+			return {
+				x: Number(pk.slice(0, i1)),
+				y: Number(pk.slice(i1 + 1, i2)),
+				key: pk.slice(i2 + 1),
+				value: original
+			};
+		});
+	}
+
 	/** Undo all optimistic changes (failed save). */
 	rollback(): void {
 		for (const [pk, original] of this.snapshot) {

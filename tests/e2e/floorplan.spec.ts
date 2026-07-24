@@ -26,8 +26,9 @@ test.describe('Floorplan', () => {
 			await expect(page.getByRole('tab', { name: m })).toBeVisible();
 		}
 
-		// Hydration applied the overlay binding once the select reads 'kind'.
-		await expect(page.getByLabel('overlay')).toHaveValue('kind', { timeout: 10000 });
+		// Hydration applied the overlay binding once the select reads the
+		// default overlay (vendor view).
+		await expect(page.getByLabel('overlay')).toHaveValue('vendor_id', { timeout: 10000 });
 
 		// The canvas must actually draw the seeded plan: sample pixels and
 		// require more than one distinct color (void bg + painted cells).

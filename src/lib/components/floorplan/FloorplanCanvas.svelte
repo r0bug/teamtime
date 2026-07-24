@@ -36,9 +36,10 @@
 	const dispatch = createEventDispatcher<{
 		hover: { x: number; y: number; clientX: number; clientY: number };
 		hoverend: void;
-		paintdown: { x: number; y: number };
+		paintdown: { x: number; y: number; alt: boolean };
 		paintmove: { x: number; y: number };
 		paintup: { x: number; y: number };
+		cellmenu: { x: number; y: number; clientX: number; clientY: number };
 	}>();
 
 	let canvas: HTMLCanvasElement;
@@ -241,7 +242,7 @@
 			panning = true;
 		} else if (e.button === 0) {
 			painting = true;
-			dispatch('paintdown', cellAt(e));
+			dispatch('paintdown', { ...cellAt(e), alt: e.altKey });
 		}
 	}
 
@@ -276,6 +277,16 @@
 	function onPointerLeave(): void {
 		lastHoverCell = null;
 		dispatch('hoverend');
+	}
+
+	function onContextMenu(e: MouseEvent): void {
+		// Right-click opens the dimension-fill dialog while editing; view mode
+		// keeps the native menu.
+		if (mode === 'view') return;
+		e.preventDefault();
+		const rect = canvas.getBoundingClientRect();
+		const cell = screenToCell(e.clientX - rect.left, e.clientY - rect.top);
+		dispatch('cellmenu', { ...cell, clientX: e.clientX, clientY: e.clientY });
 	}
 
 	function onWheel(e: WheelEvent): void {
@@ -325,6 +336,7 @@
 		on:pointermove={onPointerMove}
 		on:pointerup={onPointerUp}
 		on:pointerleave={onPointerLeave}
+		on:contextmenu={onContextMenu}
 		on:wheel={onWheel}
 		class:paint-cursor={mode !== 'view'}
 	/>
