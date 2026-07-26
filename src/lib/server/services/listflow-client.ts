@@ -1,8 +1,13 @@
 /**
- * Read-only client for ListFlow's machine-to-machine API (eBay sales +
- * listing-agent commissions). ListFlow is the system of record; TeamTime only
- * displays. Uses dynamic env so builds don't bake (or require) the values:
- * pages render an "unavailable" state when LISTFLOW_URL/SECRET are unset or
+ * Read-only client for ListFlow's machine-to-machine API.
+ *
+ * Contract v2 (unified suite): ListFlow owns the eBay sales LEDGER and lister
+ * attribution; TeamTime owns the money logic (consignor/YF/lister splits —
+ * see ebay-settlement-service). The feed carries teamtimeUserId + consignment
+ * group per sale; the old commission mirror endpoints are retired.
+ *
+ * Uses dynamic env so builds don't bake (or require) the values: callers
+ * render an "unavailable" state when LISTFLOW_URL/SECRET are unset or
  * ListFlow is unreachable.
  */
 import { env } from '$env/dynamic/private';
@@ -13,38 +18,30 @@ const log = createLogger('listflow-client');
 export interface EbaySaleRow {
 	id: string;
 	ebayOrderId: string;
+	lineItemId: string;
+	salesRecordNumber: string | null;
+	account: string;
 	title: string;
+	sku: string | null;
+	locationCode: string | null;
 	quantity: number;
 	itemPrice: number;
 	shippingPrice: number | null;
+	taxAmount: number | null;
 	totalPrice: number;
-	buyerUsername: string | null;
+	fees: number | null;
+	promoted: boolean;
+	currency: string;
 	soldAt: string;
-	imageUrl: string | null;
-	account: string;
 	attributionStatus: 'PENDING' | 'ATTRIBUTED' | 'HOUSE';
-	commission: {
-		amount: number;
-		basis: number;
-		rateType: 'PERCENT' | 'FLAT';
-		rateValue: number;
-		status: 'PENDING' | 'PAID';
-		agent: { id: string; name: string; teamtimeUserId: string | null };
-	} | null;
+	listedBy: { id: string; name: string; teamtimeUserId: string | null } | null;
+	consignmentGroupId: string | null;
 }
 
 export interface EbaySalesFeed {
+	generatedAt: string;
+	days: number;
 	sales: EbaySaleRow[];
-	pagination: { page: number; limit: number; total: number; pages: number };
-}
-
-export interface CommissionPayrollAgent {
-	agentId: string;
-	teamtimeUserId: string | null;
-	name: string;
-	salesCount: number;
-	totalCommission: number;
-	unpaid: number;
 }
 
 async function listflowFetch<T>(path: string): Promise<T | null> {
@@ -70,29 +67,6 @@ async function listflowFetch<T>(path: string): Promise<T | null> {
 	}
 }
 
-export async function getEbaySalesFeed(params: {
-	from?: string;
-	to?: string;
-	page?: number;
-	limit?: number;
-}): Promise<EbaySalesFeed | null> {
-	const qs = new URLSearchParams();
-	if (params.from) qs.set('from', params.from);
-	if (params.to) qs.set('to', params.to);
-	if (params.page) qs.set('page', String(params.page));
-	if (params.limit) qs.set('limit', String(params.limit));
-	return listflowFetch<EbaySalesFeed>(`/api/v1/sales/feed?${qs.toString()}`);
-}
-
-export async function getCommissionPayroll(
-	from?: string,
-	to?: string
-): Promise<CommissionPayrollAgent[] | null> {
-	const qs = new URLSearchParams();
-	if (from) qs.set('from', from);
-	if (to) qs.set('to', to);
-	const data = await listflowFetch<{ agents: CommissionPayrollAgent[] }>(
-		`/api/v1/commissions/payroll?${qs.toString()}`
-	);
-	return data?.agents ?? null;
+export async function getEbaySalesFeed(days = 30): Promise<EbaySalesFeed | null> {
+	return listflowFetch<EbaySalesFeed>(`/api/v1/sales/feed?days=${days}`);
 }

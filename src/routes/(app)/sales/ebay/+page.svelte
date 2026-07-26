@@ -79,14 +79,14 @@
 			</div>
 			<div class="card">
 				<div class="card-body">
-					<p class="text-sm text-gray-600">Gross (this page)</p>
+					<p class="text-sm text-gray-600">Gross (pre-tax basis)</p>
 					<p class="text-2xl font-bold text-gray-900">{fmtMoney(data.totals.gross)}</p>
 				</div>
 			</div>
 			<div class="card">
 				<div class="card-body">
-					<p class="text-sm text-gray-600">Commissions (this page)</p>
-					<p class="text-2xl font-bold text-gray-900">{fmtMoney(data.totals.commissions)}</p>
+					<p class="text-sm text-gray-600">Attributed to listers</p>
+					<p class="text-2xl font-bold text-gray-900">{data.totals.attributed}/{data.totals.count}</p>
 				</div>
 			</div>
 		</div>
@@ -110,21 +110,15 @@
 							<tr class="border-b border-gray-100 hover:bg-gray-50">
 								<td class="px-4 py-3">
 									<div class="flex items-center gap-3">
-										{#if sale.imageUrl}
-											<img
-												src={sale.imageUrl}
-												alt=""
-												class="w-10 h-10 rounded object-cover bg-gray-100 flex-shrink-0"
-												loading="lazy"
-											/>
-										{:else}
-											<div class="w-10 h-10 rounded bg-gray-100 flex-shrink-0"></div>
-										{/if}
 										<div class="min-w-0">
 											<p class="font-medium text-gray-900 truncate max-w-xs" title={sale.title}>
 												{sale.title}
 											</p>
-											<p class="text-xs text-gray-500">#{sale.ebayOrderId}</p>
+											<p class="text-xs text-gray-500">
+												#{sale.ebayOrderId}
+												{#if sale.sku}· {sale.sku}{/if}
+												{#if sale.locationCode}· 📍{sale.locationCode}{/if}
+											</p>
 										</div>
 									</div>
 								</td>
@@ -136,11 +130,8 @@
 									>{fmtMoney(sale.totalPrice)}</td
 								>
 								<td class="px-4 py-3">
-									{#if sale.commission}
-										<span class="text-gray-900">{sale.commission.agent.name}</span>
-										<span class="text-xs text-gray-500 whitespace-nowrap">
-											({fmtMoney(sale.commission.amount)})
-										</span>
+									{#if sale.listedBy}
+										<span class="text-gray-900">{sale.listedBy.name}</span>
 									{:else if sale.attributionStatus === 'HOUSE'}
 										<span class="text-xs text-gray-500">House</span>
 									{:else}

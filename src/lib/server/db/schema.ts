@@ -3882,3 +3882,107 @@ export type NewFloorplanAttrDef = typeof floorplanAttrDefs.$inferInsert;
 export type FloorplanConnector = typeof floorplanConnectors.$inferSelect;
 export type NewFloorplanConnector = typeof floorplanConnectors.$inferInsert;
 export type FloorplanCellCount = typeof floorplanCellCountCache.$inferSelect;
+
+// ============================================================================
+// EBAY CONSIGNMENT & SETTLEMENT (fed from ListFlow's /api/v1/sales/feed)
+// ============================================================================
+// TeamTime owns the MONEY LOGIC (fleet Standards §3): every eBay sale's
+// proceeds split three ways — consignor cut, YakimaFinds cut, and lister
+// compensation (commission $ for agents, points for hourly staff) carved out
+// of the YF cut. ListFlow owns the sales data and attribution; settlements
+// snapshot the terms applied at computation time so later rate changes never
+// rewrite history.
+
+export const consignorTypeEnum = pgEnum('consignor_type', ['vendor', 'estate', 'walkin', 'house']);
+export const listerCompTypeEnum = pgEnum('lister_comp_type', ['commission', 'points', 'none']);
+export const ebaySettlementStatusEnum = pgEnum('ebay_settlement_status', [
+	'pending',   // computed, awaiting review
+	'approved',  // reviewed — terms frozen, ready for the payroll clerk
+	'exported'   // keyed into NRS / paid out
+]);
+
+// Who we sell for: an existing TeamTime vendor, an estate sale YF runs, or a
+// walk-in customer. 'house' = YF's own inventory (no consignor cut).
+export const consignors = pgTable('consignors', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	type: consignorTypeEnum('type').notNull().default('walkin'),
+	name: text('name').notNull(),
+	vendorUserId: uuid('vendor_user_id').references(() => users.id, { onDelete: 'set null' }), // link when the consignor is an existing vendor
+	phone: text('phone'),
+	email: text('email'),
+	notes: text('notes'),
+	isActive: boolean('is_active').notNull().default(true),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// A batch of items under one agreement. ListFlow items/sales carry this row's
+// id as their consignmentGroupId tag.
+export const consignmentGroups = pgTable('consignment_groups', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	consignorId: uuid('consignor_id').notNull().references(() => consignors.id, { onDelete: 'restrict' }),
+	name: text('name').notNull(), // "Smith estate — barn lot"
+	code: text('code').unique(),  // short human code staff can type into ListFlow
+	consignorPercent: decimal('consignor_percent', { precision: 5, scale: 2 }).notNull(), // % of pre-tax basis to the consignor
+	notes: text('notes'),
+	isActive: boolean('is_active').notNull().default(true),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Per-lister compensation mode. No row (or compType 'none') → settlement
+// computes the consignor/YF split but leaves lister comp for review; nothing
+// pays out on a default.
+export const ebayListerSettings = pgTable('ebay_lister_settings', {
+	userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+	compType: listerCompTypeEnum('comp_type').notNull().default('none'),
+	commissionPercent: decimal('commission_percent', { precision: 5, scale: 2 }), // % of basis, carved from the YF share
+	pointsPerDollar: decimal('points_per_dollar', { precision: 6, scale: 3 }).default('1.000'),
+	isActive: boolean('is_active').notNull().default(true),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// One row per ListFlow sale line — the settlement snapshot.
+// Math: basis = itemPrice*qty (pre-tax; eBay-remitted tax is never revenue).
+//   consignorAmount = basis * consignorPercent/100
+//   yfGross         = basis - consignorAmount
+//   commission      = min(basis * listerCommissionPercent/100, yfGross)
+//   yfAmount        = yfGross - commission   (points don't reduce YF dollars)
+// Recomputed only while status='pending'; approved/exported rows are frozen.
+export const ebaySaleSettlements = pgTable('ebay_sale_settlements', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	listflowSaleId: text('listflow_sale_id').notNull().unique(),
+	ebayOrderId: text('ebay_order_id').notNull(),
+	lineItemId: text('line_item_id').notNull().default('0'),
+	salesRecordNumber: text('sales_record_number'),
+	account: text('account').notNull(),
+	title: text('title').notNull(),
+	sku: text('sku'),
+	quantity: integer('quantity').notNull().default(1),
+	basis: decimal('basis', { precision: 10, scale: 2 }).notNull(),
+	soldAt: timestamp('sold_at', { withTimezone: true }).notNull(),
+
+	consignmentGroupId: uuid('consignment_group_id').references(() => consignmentGroups.id, { onDelete: 'set null' }),
+	consignorId: uuid('consignor_id').references(() => consignors.id, { onDelete: 'set null' }),
+	consignorPercent: decimal('consignor_percent', { precision: 5, scale: 2 }),
+	consignorAmount: decimal('consignor_amount', { precision: 10, scale: 2 }),
+	yfAmount: decimal('yf_amount', { precision: 10, scale: 2 }).notNull(),
+
+	listerUserId: uuid('lister_user_id').references(() => users.id, { onDelete: 'set null' }),
+	listerCompType: listerCompTypeEnum('lister_comp_type'),
+	listerCommissionPercent: decimal('lister_commission_percent', { precision: 5, scale: 2 }),
+	listerCommissionAmount: decimal('lister_commission_amount', { precision: 10, scale: 2 }),
+	pointsAwarded: integer('points_awarded'),
+	pointTransactionId: uuid('point_transaction_id'), // idempotency guard: points granted once, ever
+
+	status: ebaySettlementStatusEnum('status').notNull().default('pending'),
+	payPeriod: text('pay_period').notNull(), // 'YYYY-MM' of soldAt — clerk-facing grouping
+	computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export type Consignor = typeof consignors.$inferSelect;
+export type ConsignmentGroup = typeof consignmentGroups.$inferSelect;
+export type EbayListerSettings = typeof ebayListerSettings.$inferSelect;
+export type EbaySaleSettlement = typeof ebaySaleSettlements.$inferSelect;

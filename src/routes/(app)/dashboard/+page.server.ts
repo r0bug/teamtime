@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { db, shifts, timeEntries, breakEntries, tasks, conversationParticipants, messages, inventoryDrops, inventoryDropItems, users, locations, pricingDecisions, customerHolds, staffNotes } from '$lib/server/db';
+import { db, shifts, timeEntries, breakEntries, tasks, conversationParticipants, messages, inventoryDrops, inventoryDropItems, users, locations, pricingDecisions, customerHolds, staffNotes , ebaySaleSettlements } from '$lib/server/db';
 import { eq, and, or, isNull, gt, gte, lt, lte, sql, inArray, desc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { isPurchaser, isManager, isAdmin } from '$lib/server/auth/roles';
@@ -7,7 +7,6 @@ import { urgencyAnchor } from '$lib/server/services/holds-service';
 import { getOrCreateUserStats, getTodayPoints, getLeaderboard, getUserLeaderboardPosition, LEVEL_THRESHOLDS } from '$lib/server/services/points-service';
 import { getRecentAchievements, getAchievementStats } from '$lib/server/services/achievements-service';
 import { getPayPeriodConfig, getCurrentPayPeriod } from '$lib/server/services/pay-period-service';
-import { getCommissionPayroll } from '$lib/server/services/listflow-client';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -494,8 +493,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		};
 	}
 
-	// ---- My eBay commissions (from ListFlow): current pay period + unpaid
-	// all-time. Only shown when this user is a listing agent over there. ----
+	// ---- My eBay earnings: current month settlements (LOCAL — TeamTime owns
+	// the money math now) + unpaid (pending/approved, not yet exported). ----
 	let myCommissions: {
 		periodLabel: string;
 		periodAmount: number;
@@ -503,24 +502,24 @@ export const load: PageServerLoad = async ({ locals }) => {
 		unpaidTotal: number;
 	} | null = null;
 	try {
-		const [periodAgents, allTimeAgents] = await Promise.all([
-			payPeriod
-				? getCommissionPayroll(payPeriod.startDate.toISOString(), payPeriod.endDate.toISOString())
-				: Promise.resolve(null),
-			getCommissionPayroll()
-		]);
-		const allTimeMine = allTimeAgents?.find((a) => a.teamtimeUserId === user.id);
-		if (allTimeMine) {
-			const periodMine = periodAgents?.find((a) => a.teamtimeUserId === user.id);
+		const thisPeriod = new Date().toISOString().slice(0, 7);
+		const mine = await db
+			.select()
+			.from(ebaySaleSettlements)
+			.where(eq(ebaySaleSettlements.listerUserId, user.id));
+		if (mine.length > 0) {
+			const inPeriod = mine.filter((s) => s.payPeriod === thisPeriod);
 			myCommissions = {
-				periodLabel: payPeriod?.label ?? 'This period',
-				periodAmount: periodMine?.totalCommission ?? 0,
-				periodSales: periodMine?.salesCount ?? 0,
-				unpaidTotal: allTimeMine.unpaid
+				periodLabel: thisPeriod,
+				periodAmount: inPeriod.reduce((sum, s) => sum + Number(s.listerCommissionAmount ?? 0), 0),
+				periodSales: inPeriod.length,
+				unpaidTotal: mine
+					.filter((s) => s.status !== 'exported')
+					.reduce((sum, s) => sum + Number(s.listerCommissionAmount ?? 0), 0)
 			};
 		}
 	} catch {
-		// non-critical dashboard extra; ListFlow being down must not break the dashboard
+		// non-critical dashboard extra
 	}
 
 	return {
