@@ -7,6 +7,7 @@ import { urgencyAnchor } from '$lib/server/services/holds-service';
 import { getOrCreateUserStats, getTodayPoints, getLeaderboard, getUserLeaderboardPosition, LEVEL_THRESHOLDS } from '$lib/server/services/points-service';
 import { getRecentAchievements, getAchievementStats } from '$lib/server/services/achievements-service';
 import { getPayPeriodConfig, getCurrentPayPeriod } from '$lib/server/services/pay-period-service';
+import { getCommissionPayroll } from '$lib/server/services/listflow-client';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -493,7 +494,37 @@ export const load: PageServerLoad = async ({ locals }) => {
 		};
 	}
 
+	// ---- My eBay commissions (from ListFlow): current pay period + unpaid
+	// all-time. Only shown when this user is a listing agent over there. ----
+	let myCommissions: {
+		periodLabel: string;
+		periodAmount: number;
+		periodSales: number;
+		unpaidTotal: number;
+	} | null = null;
+	try {
+		const [periodAgents, allTimeAgents] = await Promise.all([
+			payPeriod
+				? getCommissionPayroll(payPeriod.startDate.toISOString(), payPeriod.endDate.toISOString())
+				: Promise.resolve(null),
+			getCommissionPayroll()
+		]);
+		const allTimeMine = allTimeAgents?.find((a) => a.teamtimeUserId === user.id);
+		if (allTimeMine) {
+			const periodMine = periodAgents?.find((a) => a.teamtimeUserId === user.id);
+			myCommissions = {
+				periodLabel: payPeriod?.label ?? 'This period',
+				periodAmount: periodMine?.totalCommission ?? 0,
+				periodSales: periodMine?.salesCount ?? 0,
+				unpaidTotal: allTimeMine.unpaid
+			};
+		}
+	} catch {
+		// non-critical dashboard extra; ListFlow being down must not break the dashboard
+	}
+
 	return {
+		myCommissions,
 		myPayPeriod,
 		nextShift,
 		activeTimeEntry,

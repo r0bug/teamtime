@@ -157,6 +157,7 @@
 			<div>
 				<h1 class="text-2xl font-bold text-gray-900">Sales Dashboard</h1>
 				<p class="text-gray-600">Track daily and weekly sales performance</p>
+				<a href="/sales/ebay" class="inline-block mt-1 mr-4 text-sm text-primary-600 hover:underline">eBay sales →</a>
 				{#if data.user?.role === 'manager' || data.user?.role === 'admin'}
 					<a href="/sales/networking" class="inline-block mt-1 text-sm text-primary-600 hover:underline">Yakima Networking sales →</a>
 				{/if}

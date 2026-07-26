@@ -317,6 +317,37 @@
 		</div>
 	</div>
 
+	<!-- My eBay commissions (only for staff who list on eBay) -->
+	{#if data.myCommissions}
+		<div class="card mb-6">
+			<div class="card-header flex items-center justify-between">
+				<h2 class="font-semibold">My eBay Commissions · {data.myCommissions.periodLabel}</h2>
+				<a href="/sales/ebay" class="text-primary-600 text-sm hover:underline">eBay Sales</a>
+			</div>
+			<div class="card-body">
+				<div class="flex gap-6 text-sm text-gray-600">
+					<span>
+						<span class="font-semibold text-gray-900">
+							${data.myCommissions.periodAmount.toFixed(2)}
+						</span>
+						this period ({data.myCommissions.periodSales}
+						{data.myCommissions.periodSales === 1 ? 'sale' : 'sales'})
+					</span>
+					<span>
+						<span
+							class="font-semibold {data.myCommissions.unpaidTotal > 0
+								? 'text-amber-600'
+								: 'text-gray-900'}"
+						>
+							${data.myCommissions.unpaidTotal.toFixed(2)}
+						</span>
+						unpaid total
+					</span>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	<!-- My Shifts — current pay period -->
 	{#if myPayPeriod && (myPayPeriod.upcoming.length > 0 || myPayPeriod.past.length > 0)}
 		<div class="card mb-6">
