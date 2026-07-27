@@ -18,6 +18,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
 	db,
+	appSettings,
 	consignors,
 	consignmentGroups,
 	ebayListerSettings,
@@ -31,6 +32,18 @@ import { createLogger } from '$lib/server/logger';
 const log = createLogger('ebay-settlement');
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Estimated eBay fee % applied when ListFlow has no actual fees yet
+ *  (app_settings key 'ebay_default_fee_percent'; owner rule: splits ALWAYS
+ *  compute on net-after-fees, so an estimate beats pretending fees are 0). */
+const FEE_PERCENT_KEY = 'ebay_default_fee_percent';
+const FEE_PERCENT_FALLBACK = 13.25;
+
+async function defaultFeePercent(): Promise<number> {
+	const [row] = await db.select().from(appSettings).where(eq(appSettings.key, FEE_PERCENT_KEY)).limit(1);
+	const n = row ? Number(row.value) : NaN;
+	return Number.isFinite(n) && n >= 0 && n <= 50 ? n : FEE_PERCENT_FALLBACK;
+}
 
 export interface SettlementSyncResult {
 	pulled: number;
@@ -58,9 +71,10 @@ export async function syncEbaySettlements(days = 45): Promise<SettlementSyncResu
 	}
 	result.pulled = feed.sales.length;
 
+	const feePercent = await defaultFeePercent();
 	for (const sale of feed.sales) {
 		try {
-			await settleOne(sale, result);
+			await settleOne(sale, result, feePercent);
 		} catch (err) {
 			log.error(`settlement failed for sale ${sale.id}: ${(err as Error).message}`);
 		}
@@ -72,7 +86,11 @@ export async function syncEbaySettlements(days = 45): Promise<SettlementSyncResu
 	return result;
 }
 
-async function settleOne(sale: EbaySaleRow, result: SettlementSyncResult): Promise<void> {
+async function settleOne(
+	sale: EbaySaleRow,
+	result: SettlementSyncResult,
+	defaultFeePct: number
+): Promise<void> {
 	const [existing] = await db
 		.select()
 		.from(ebaySaleSettlements)
@@ -85,6 +103,12 @@ async function settleOne(sale: EbaySaleRow, result: SettlementSyncResult): Promi
 	}
 
 	const basis = round2(sale.itemPrice * sale.quantity);
+
+	// ── net after eBay fees — THE number every split uses ──
+	const feesActual = sale.fees != null && sale.fees >= 0 ? round2(sale.fees) : null;
+	const fees = feesActual ?? round2((basis * defaultFeePct) / 100);
+	const feeSource: 'actual' | 'estimated' = feesActual != null ? 'actual' : 'estimated';
+	const netBasis = round2(Math.max(0, basis - fees));
 
 	// ── consignor split ──
 	let group: typeof consignmentGroups.$inferSelect | undefined;
@@ -99,8 +123,8 @@ async function settleOne(sale: EbaySaleRow, result: SettlementSyncResult): Promi
 		}
 	}
 	const consignorPercent = group ? Number(group.consignorPercent) : 0;
-	const consignorAmount = round2((basis * consignorPercent) / 100);
-	const yfGross = round2(basis - consignorAmount);
+	const consignorAmount = round2((netBasis * consignorPercent) / 100);
+	const yfGross = round2(netBasis - consignorAmount);
 
 	// ── lister comp ──
 	const listerTeamtimeId = sale.listedBy?.teamtimeUserId ?? null;
@@ -126,7 +150,7 @@ async function settleOne(sale: EbaySaleRow, result: SettlementSyncResult): Promi
 			compType = settings?.compType ?? 'none';
 			if (compType === 'commission' && settings?.commissionPercent != null) {
 				commissionPercent = Number(settings.commissionPercent);
-				commissionAmount = Math.min(round2((basis * commissionPercent) / 100), yfGross);
+				commissionAmount = Math.min(round2((netBasis * commissionPercent) / 100), yfGross);
 			}
 			if (compType === 'points') {
 				pointsPerDollar = Number(settings?.pointsPerDollar ?? 1);
@@ -149,6 +173,9 @@ async function settleOne(sale: EbaySaleRow, result: SettlementSyncResult): Promi
 		sku: sale.sku,
 		quantity: sale.quantity,
 		basis: String(basis),
+		fees: String(fees),
+		feeSource,
+		netBasis: String(netBasis),
 		soldAt: new Date(sale.soldAt),
 		consignmentGroupId: group?.id ?? null,
 		consignorId: group?.consignorId ?? null,
@@ -182,17 +209,17 @@ async function settleOne(sale: EbaySaleRow, result: SettlementSyncResult): Promi
 
 	// ── points grant (once, ever) ──
 	if (compType === 'points' && listerUserId && !alreadyGrantedPoints && pointsPerDollar > 0) {
-		const pts = Math.round(basis * pointsPerDollar);
+		const pts = Math.round(netBasis * pointsPerDollar);
 		if (pts > 0) {
 			const { transaction } = await awardPoints({
 				userId: listerUserId,
 				basePoints: pts,
 				category: 'sales',
 				action: 'ebay_sale_listed',
-				description: `eBay sale: ${sale.title.slice(0, 80)} ($${basis.toFixed(2)})`,
+				description: `eBay sale: ${sale.title.slice(0, 80)} ($${netBasis.toFixed(2)} net)`,
 				sourceType: 'ebay_settlement',
 				sourceId: settlementId,
-				metadata: { ebayOrderId: sale.ebayOrderId, account: sale.account, basis }
+				metadata: { ebayOrderId: sale.ebayOrderId, account: sale.account, netBasis, fees, feeSource }
 			});
 			await db
 				.update(ebaySaleSettlements)
@@ -207,7 +234,16 @@ async function settleOne(sale: EbaySaleRow, result: SettlementSyncResult): Promi
 
 export interface SettlementReport {
 	period: string;
-	totals: { basis: number; consignor: number; yf: number; commissions: number; sales: number };
+	totals: {
+		basis: number;
+		fees: number;
+		net: number;
+		estimatedFeeCount: number;
+		consignor: number;
+		yf: number;
+		commissions: number;
+		sales: number;
+	};
 	listers: Array<{
 		userId: string;
 		name: string;
@@ -241,14 +277,27 @@ export async function settlementReport(period: string): Promise<SettlementReport
 		.leftJoin(consignors, eq(ebaySaleSettlements.consignorId, consignors.id))
 		.where(eq(ebaySaleSettlements.payPeriod, period));
 
-	const totals = { basis: 0, consignor: 0, yf: 0, commissions: 0, sales: rows.length };
+	const totals = {
+		basis: 0,
+		fees: 0,
+		net: 0,
+		estimatedFeeCount: 0,
+		consignor: 0,
+		yf: 0,
+		commissions: 0,
+		sales: rows.length
+	};
 	const byLister = new Map<string, SettlementReport['listers'][number]>();
 	const byConsignor = new Map<string, SettlementReport['consignorTotals'][number]>();
 	let pendingCount = 0;
 
 	for (const { s, listerName, consignorName, consignorType } of rows) {
 		const basis = Number(s.basis);
+		const net = Number(s.netBasis ?? s.basis);
 		totals.basis += basis;
+		totals.fees += Number(s.fees ?? 0);
+		totals.net += net;
+		if (s.feeSource === 'estimated') totals.estimatedFeeCount++;
 		totals.consignor += Number(s.consignorAmount ?? 0);
 		totals.yf += Number(s.yfAmount);
 		totals.commissions += Number(s.listerCommissionAmount ?? 0);
@@ -265,7 +314,7 @@ export async function settlementReport(period: string): Promise<SettlementReport
 				points: 0
 			};
 			l.salesCount++;
-			l.basis = round2(l.basis + basis);
+			l.basis = round2(l.basis + net);
 			l.commission = round2(l.commission + Number(s.listerCommissionAmount ?? 0));
 			l.points += s.pointsAwarded ?? 0;
 			byLister.set(s.listerUserId, l);
@@ -280,13 +329,15 @@ export async function settlementReport(period: string): Promise<SettlementReport
 				amount: 0
 			};
 			c.salesCount++;
-			c.basis = round2(c.basis + basis);
+			c.basis = round2(c.basis + net);
 			c.amount = round2(c.amount + Number(s.consignorAmount ?? 0));
 			byConsignor.set(s.consignorId, c);
 		}
 	}
 
 	totals.basis = round2(totals.basis);
+	totals.fees = round2(totals.fees);
+	totals.net = round2(totals.net);
 	totals.consignor = round2(totals.consignor);
 	totals.yf = round2(totals.yf);
 	totals.commissions = round2(totals.commissions);

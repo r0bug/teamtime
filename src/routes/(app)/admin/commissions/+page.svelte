@@ -79,8 +79,14 @@
 			<p class="text-2xl font-bold text-gray-900">{data.report.totals.sales}</p>
 		</div></div>
 		<div class="card"><div class="card-body">
-			<p class="text-sm text-gray-600">Basis (pre-tax)</p>
-			<p class="text-2xl font-bold text-gray-900">{fmtMoney(data.report.totals.basis)}</p>
+			<p class="text-sm text-gray-600">Net after eBay fees</p>
+			<p class="text-2xl font-bold text-gray-900">{fmtMoney(data.report.totals.net)}</p>
+			<p class="text-xs text-gray-500">
+				gross {fmtMoney(data.report.totals.basis)} − fees {fmtMoney(data.report.totals.fees)}
+				{#if data.report.totals.estimatedFeeCount}
+					· <span class="text-amber-600">{data.report.totals.estimatedFeeCount} estimated</span>
+				{/if}
+			</p>
 		</div></div>
 		<div class="card"><div class="card-body">
 			<p class="text-sm text-gray-600">Consignor payouts</p>
@@ -104,7 +110,7 @@
 						<th class="px-4 py-3 font-medium">Lister</th>
 						<th class="px-4 py-3 font-medium">Comp</th>
 						<th class="px-4 py-3 font-medium text-right">Sales</th>
-						<th class="px-4 py-3 font-medium text-right">Basis</th>
+						<th class="px-4 py-3 font-medium text-right">Net basis</th>
 						<th class="px-4 py-3 font-medium text-right">Commission</th>
 						<th class="px-4 py-3 font-medium text-right">Points</th>
 					</tr>
@@ -136,7 +142,7 @@
 						<th class="px-4 py-3 font-medium">Consignor</th>
 						<th class="px-4 py-3 font-medium">Type</th>
 						<th class="px-4 py-3 font-medium text-right">Sales</th>
-						<th class="px-4 py-3 font-medium text-right">Basis</th>
+						<th class="px-4 py-3 font-medium text-right">Net basis</th>
 						<th class="px-4 py-3 font-medium text-right">Payout</th>
 					</tr>
 				</thead>

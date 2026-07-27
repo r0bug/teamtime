@@ -3943,11 +3943,14 @@ export const ebayListerSettings = pgTable('ebay_lister_settings', {
 });
 
 // One row per ListFlow sale line — the settlement snapshot.
-// Math: basis = itemPrice*qty (pre-tax; eBay-remitted tax is never revenue).
-//   consignorAmount = basis * consignorPercent/100
-//   yfGross         = basis - consignorAmount
-//   commission      = min(basis * listerCommissionPercent/100, yfGross)
-//   yfAmount        = yfGross - commission   (points don't reduce YF dollars)
+// Math (ALL splits on NET revenue after eBay fees — owner rule 2026-07-27):
+//   basis    = itemPrice*qty (pre-tax gross; eBay-remitted tax never revenue)
+//   netBasis = basis - fees (actual from ListFlow, else estimated via
+//              app_settings 'ebay_default_fee_percent', feeSource marks which)
+//   consignorAmount = netBasis * consignorPercent/100
+//   yfGross         = netBasis - consignorAmount
+//   commission      = min(netBasis * listerCommissionPercent/100, yfGross)
+//   yfAmount        = yfGross - commission (points don't reduce YF dollars)
 // Recomputed only while status='pending'; approved/exported rows are frozen.
 export const ebaySaleSettlements = pgTable('ebay_sale_settlements', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -3959,7 +3962,10 @@ export const ebaySaleSettlements = pgTable('ebay_sale_settlements', {
 	title: text('title').notNull(),
 	sku: text('sku'),
 	quantity: integer('quantity').notNull().default(1),
-	basis: decimal('basis', { precision: 10, scale: 2 }).notNull(),
+	basis: decimal('basis', { precision: 10, scale: 2 }).notNull(), // gross: itemPrice*qty pre-tax
+	fees: decimal('fees', { precision: 10, scale: 2 }), // eBay fees (actual or estimated)
+	feeSource: text('fee_source'), // 'actual' | 'estimated' | null
+	netBasis: decimal('net_basis', { precision: 10, scale: 2 }), // basis - fees — ALL splits compute on this
 	soldAt: timestamp('sold_at', { withTimezone: true }).notNull(),
 
 	consignmentGroupId: uuid('consignment_group_id').references(() => consignmentGroups.id, { onDelete: 'set null' }),
