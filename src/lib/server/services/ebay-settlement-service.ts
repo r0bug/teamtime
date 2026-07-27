@@ -104,11 +104,18 @@ async function settleOne(
 
 	const basis = round2(sale.itemPrice * sale.quantity);
 
-	// ── net after eBay fees — THE number every split uses ──
+	// ── net after eBay fees & refunds — THE number every split uses ──
+	// Actuals reproduce eBay's "Order earnings": gross(item+shipping) −
+	// expenses − refunds. Without actuals we estimate fees on item basis.
 	const feesActual = sale.fees != null && sale.fees >= 0 ? round2(sale.fees) : null;
+	const refunds = round2(Math.max(0, sale.refunds ?? 0));
+	const shipping = round2(Math.max(0, sale.shippingPrice ?? 0));
 	const fees = feesActual ?? round2((basis * defaultFeePct) / 100);
 	const feeSource: 'actual' | 'estimated' = feesActual != null ? 'actual' : 'estimated';
-	const netBasis = round2(Math.max(0, basis - fees));
+	const netBasis =
+		feeSource === 'actual'
+			? round2(Math.max(0, basis + shipping - fees - refunds))
+			: round2(Math.max(0, basis - fees));
 
 	// ── consignor split ──
 	let group: typeof consignmentGroups.$inferSelect | undefined;
@@ -175,6 +182,7 @@ async function settleOne(
 		basis: String(basis),
 		fees: String(fees),
 		feeSource,
+		refunds: refunds > 0 ? String(refunds) : null,
 		netBasis: String(netBasis),
 		soldAt: new Date(sale.soldAt),
 		consignmentGroupId: group?.id ?? null,

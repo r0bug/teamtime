@@ -3945,7 +3945,9 @@ export const ebayListerSettings = pgTable('ebay_lister_settings', {
 // One row per ListFlow sale line — the settlement snapshot.
 // Math (ALL splits on NET revenue after eBay fees — owner rule 2026-07-27):
 //   basis    = itemPrice*qty (pre-tax gross; eBay-remitted tax never revenue)
-//   netBasis = basis - fees (actual from ListFlow, else estimated via
+//   netBasis (actual) = max(0, basis + shipping - fees - refunds)  — matches
+//              eBay's own "Order earnings" so the clerk can reconcile
+//   netBasis (no actuals yet) = basis - estimated fees via
 //              app_settings 'ebay_default_fee_percent', feeSource marks which)
 //   consignorAmount = netBasis * consignorPercent/100
 //   yfGross         = netBasis - consignorAmount
@@ -3965,6 +3967,7 @@ export const ebaySaleSettlements = pgTable('ebay_sale_settlements', {
 	basis: decimal('basis', { precision: 10, scale: 2 }).notNull(), // gross: itemPrice*qty pre-tax
 	fees: decimal('fees', { precision: 10, scale: 2 }), // eBay fees (actual or estimated)
 	feeSource: text('fee_source'), // 'actual' | 'estimated' | null
+	refunds: decimal('refunds', { precision: 10, scale: 2 }), // buyer refunds — reduce net
 	netBasis: decimal('net_basis', { precision: 10, scale: 2 }), // basis - fees — ALL splits compute on this
 	soldAt: timestamp('sold_at', { withTimezone: true }).notNull(),
 

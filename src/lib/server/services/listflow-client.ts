@@ -30,6 +30,7 @@ export interface EbaySaleRow {
 	taxAmount: number | null;
 	totalPrice: number;
 	fees: number | null;
+	refunds: number | null;
 	promoted: boolean;
 	currency: string;
 	soldAt: string;
