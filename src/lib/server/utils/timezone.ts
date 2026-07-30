@@ -256,6 +256,19 @@ export function createPacificDateTime(dateStr: string, hour: number, minute: num
 }
 
 /**
+ * Get "today" as a YYYY-MM-DD string in Pacific time.
+ *
+ * Use this anywhere a default sale/invoice date is needed instead of
+ * `new Date().toISOString().split('T')[0]`, which yields the UTC calendar
+ * date and rolls over to tomorrow after ~5pm Pacific — making "today's"
+ * sales queries return nothing for the rest of the evening.
+ */
+export function getPacificToday(date: Date = new Date()): string {
+	const { year, month, day } = getPacificDateParts(date);
+	return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/**
  * Get Pacific timezone name for display
  */
 export function getPacificTimezoneName(): string {

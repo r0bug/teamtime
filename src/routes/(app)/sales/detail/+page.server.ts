@@ -9,7 +9,7 @@ import {
 	locations
 } from '$lib/server/db';
 import { eq, gte, lte, and, sql, desc, or, isNull, lt, gt } from 'drizzle-orm';
-import { createPacificDateTime, getPacificWeekday } from '$lib/server/utils/timezone';
+import { createPacificDateTime, getPacificWeekday, getPacificToday } from '$lib/server/utils/timezone';
 
 // Default operational hours used when store_hours is not configured for the weekday
 const DEFAULT_OPEN_HOUR = 9;
@@ -27,7 +27,9 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	const vendorId = url.searchParams.get('vendorId');
 
 	// Default to today if no date
-	const targetDate = date || new Date().toISOString().split('T')[0];
+	// Default to today in Pacific time — NOT UTC. new Date().toISOString()
+	// rolls to tomorrow after ~5pm PT, which made today's drill-down empty.
+	const targetDate = date || getPacificToday();
 
 	// Build conditions for filtered (vendor-scoped) sales queries
 	const conditions = [eq(salesTransactions.invoiceDate, targetDate)];

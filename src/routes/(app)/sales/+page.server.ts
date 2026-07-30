@@ -2,7 +2,7 @@
 import type { PageServerLoad } from './$types';
 import { db, salesSnapshots, timeEntries, users } from '$lib/server/db';
 import { desc, gte, lte, and, or, isNull, gt, lt, eq, sql } from 'drizzle-orm';
-import { createPacificDateTime } from '$lib/server/utils/timezone';
+import { createPacificDateTime, getPacificToday } from '$lib/server/utils/timezone';
 
 const ALLOWED_RANGE_DAYS = [7, 14, 30, 60, 90, 180, 365, 730] as const;
 const DEFAULT_RANGE_DAYS = 30;
@@ -14,8 +14,12 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		? daysParam
 		: DEFAULT_RANGE_DAYS;
 
-	const windowStartDate = new Date();
-	windowStartDate.setDate(windowStartDate.getDate() - rangeDays);
+	// Anchor the window to Pacific "today" (UTC-midnight anchor for drift-free
+	// date math), so the range boundary doesn't shift a day after ~5pm PT.
+	const todayStr = getPacificToday();
+	const [ty, tm, td] = todayStr.split('-').map(Number);
+	const windowStartDate = new Date(Date.UTC(ty, tm - 1, td));
+	windowStartDate.setUTCDate(windowStartDate.getUTCDate() - rangeDays);
 	const thirtyDaysAgoStr = windowStartDate.toISOString().split('T')[0];
 
 	// Get daily snapshots (latest per day)
