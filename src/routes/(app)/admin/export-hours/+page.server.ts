@@ -1,30 +1,44 @@
-import type { PageServerLoad, Actions } from './$types';
+import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { db, users, timeEntries } from '$lib/server/db';
-import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
+import { eq, and, gte, lte, desc } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
 import { paidHoursByEntry } from '$lib/server/utils/break-allowance';
+import { parsePacificDate, parsePacificEndOfDay } from '$lib/server/utils/timezone';
+import {
+	loadPayPeriodConfig,
+	calculatePayPeriods,
+	lastCompletedPayPeriod,
+	formatShortDate
+} from '$lib/server/utils/pay-periods';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!isManager(locals.user)) {
 		throw redirect(302, '/dashboard');
 	}
 
-	// Get date range from query params or default to current week
-	const startParam = url.searchParams.get('start');
-	const endParam = url.searchParams.get('end');
+	const payPeriodConfig = await loadPayPeriodConfig();
+	const payPeriods = calculatePayPeriods(payPeriodConfig, 8);
 
-	const now = new Date();
-	const startOfWeek = startParam ? new Date(startParam) : new Date(now);
-	if (!startParam) {
-		startOfWeek.setDate(now.getDate() - now.getDay());
-		startOfWeek.setHours(0, 0, 0, 0);
+	// Date range from query params, defaulting to the most recently completed
+	// pay period (this page exists to export a pay period for payroll).
+	let startParam = url.searchParams.get('start');
+	let endParam = url.searchParams.get('end');
+
+	if (!startParam || !endParam) {
+		const period = lastCompletedPayPeriod(payPeriods);
+		if (period) {
+			startParam = period.startDate;
+			endParam = period.endDate;
+		} else {
+			endParam = new Date().toISOString().split('T')[0];
+			startParam = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+		}
 	}
 
-	const endOfWeek = endParam ? new Date(endParam) : new Date(startOfWeek);
-	if (!endParam) {
-		endOfWeek.setDate(startOfWeek.getDate() + 7);
-	}
+	// Pacific-day boundaries: 00:00:00 on start day through 23:59:59 on end day
+	const startDate = parsePacificDate(startParam);
+	const endDate = parsePacificEndOfDay(endParam);
 
 	// Get time entries with user info
 	const entries = await db
@@ -41,8 +55,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		.from(timeEntries)
 		.innerJoin(users, eq(timeEntries.userId, users.id))
 		.where(and(
-			gte(timeEntries.clockIn, startOfWeek),
-			lte(timeEntries.clockIn, endOfWeek)
+			gte(timeEntries.clockIn, startDate),
+			lte(timeEntries.clockIn, endDate)
 		))
 		.orderBy(desc(timeEntries.clockIn));
 
@@ -82,7 +96,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	return {
 		entries: entriesWithHours,
 		userSummary: Object.values(userSummary),
-		startDate: startOfWeek.toISOString().split('T')[0],
-		endDate: endOfWeek.toISOString().split('T')[0]
+		startDate: startParam,
+		endDate: endParam,
+		periodLabel: `${formatShortDate(startParam)} - ${formatShortDate(endParam)}`,
+		payPeriods
 	};
 };

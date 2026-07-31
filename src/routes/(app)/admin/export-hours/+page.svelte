@@ -4,14 +4,6 @@
 
 	export let data: PageData;
 
-	function formatDate(date: Date | string) {
-		return new Date(date).toLocaleDateString('en-US', {
-			weekday: 'short',
-			month: 'short',
-			day: 'numeric'
-		});
-	}
-
 	function formatDateTime(date: Date | string) {
 		return new Date(date).toLocaleString('en-US', {
 			month: 'short',
@@ -21,14 +13,8 @@
 		});
 	}
 
-	function changeWeek(direction: number) {
-		const start = new Date(data.startDate);
-		start.setDate(start.getDate() + (direction * 7));
-		const end = new Date(start);
-		end.setDate(start.getDate() + 7);
-		const startStr = start.toISOString().split('T')[0];
-		const endStr = end.toISOString().split('T')[0];
-		goto('/admin/export-hours?start=' + startStr + '&end=' + endStr);
+	function selectPeriod(start: string, end: string) {
+		goto(`/admin/export-hours?start=${start}&end=${end}`);
 	}
 
 	function exportToCSV() {
@@ -99,23 +85,36 @@
 		</div>
 	</div>
 
-	<!-- Week Navigation -->
-	<div class="flex items-center justify-between mb-4 no-print">
-		<button on:click={() => changeWeek(-1)} class="btn-secondary">
-			Previous Week
-		</button>
-		<span class="text-lg font-semibold">
-			{formatDate(data.startDate)} - {formatDate(data.endDate)}
-		</span>
-		<button on:click={() => changeWeek(1)} class="btn-secondary">
-			Next Week
-		</button>
+	<!-- Pay Period Selector -->
+	<div class="card mb-6 no-print">
+		<div class="card-body">
+			<h3 class="text-sm font-medium text-gray-700 mb-3">Select Pay Period</h3>
+			<div class="flex flex-wrap gap-2">
+				{#each data.payPeriods as period}
+					{@const isSelected = period.startDate === data.startDate && period.endDate === data.endDate}
+					<button
+						on:click={() => selectPeriod(period.startDate, period.endDate)}
+						class="px-3 py-1.5 text-sm rounded-md border transition-colors
+							{isSelected
+								? 'bg-primary-600 text-white border-primary-600'
+								: period.isCurrent
+									? 'bg-yellow-50 text-yellow-800 border-yellow-300 hover:bg-yellow-100'
+									: 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}"
+					>
+						{period.label}
+						{#if period.isCurrent}
+							<span class="text-xs ml-1">(current)</span>
+						{/if}
+					</button>
+				{/each}
+			</div>
+		</div>
 	</div>
 
 	<!-- Print Header -->
 	<div class="hidden print-only mb-4">
 		<h2 class="text-xl font-bold text-center">
-			Time Report: {formatDate(data.startDate)} - {formatDate(data.endDate)}
+			Time Report: {data.periodLabel}
 		</h2>
 	</div>
 
