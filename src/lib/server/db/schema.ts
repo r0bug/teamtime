@@ -3436,6 +3436,34 @@ export type PendingInventoryChange = typeof pendingInventoryChanges.$inferSelect
 export type NewPendingInventoryChange = typeof pendingInventoryChanges.$inferInsert;
 
 /**
+ * Local mirror of a vendor's NRS inventory. NRS remains the source of truth —
+ * this is a CACHE that survives NRS outages and gives the vendor portal fast,
+ * server-side search/sort without hammering NRS's erratic-latency API. Refreshed
+ * on demand (page load when stale) from `getAllInvStockForVendor`; a full
+ * refresh replaces the vendor's rows so deletions in NRS drop out. `syncedAt`
+ * timestamps how fresh the row is. Never authoritative for writes.
+ */
+export const vendorInventorySnapshot = pgTable('vendor_inventory_snapshot', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	vendorId: uuid('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
+	nrsVendorId: integer('nrs_vendor_id').notNull(),
+	invStockId: integer('inv_stock_id').notNull(),
+	partNumber: text('part_number'),
+	name: text('name'),
+	description: text('description'),
+	retailPriceCents: integer('retail_price_cents').notNull().default(0),
+	active: boolean('active').notNull().default(true),
+	quantityOnHand: integer('quantity_on_hand').notNull().default(0),
+	syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	uniqVendorItem: unique('uniq_vendor_inventory_snapshot_item').on(table.vendorId, table.invStockId),
+	idxVendor: index('idx_vendor_inventory_snapshot_vendor').on(table.vendorId)
+}));
+
+export type VendorInventorySnapshotRow = typeof vendorInventorySnapshot.$inferSelect;
+export type NewVendorInventorySnapshotRow = typeof vendorInventorySnapshot.$inferInsert;
+
+/**
  * Journal of NRS inventory write-API calls (invstock/save, …).
  *
  * Every auto-apply attempt — success or failure — is recorded here so staff

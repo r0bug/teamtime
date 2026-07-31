@@ -23,6 +23,8 @@
 		if (p.partName) parts.push(`name: ${p.partName}`);
 		if (p.priceCents !== undefined && p.priceCents !== null) parts.push(`$${(Number(p.priceCents) / 100).toFixed(2)}`);
 		if (p.quantity !== undefined && p.quantity !== null) parts.push(`qty: ${p.quantity}`);
+		if (p.quantityDelta !== undefined && p.quantityDelta !== null) parts.push(`+${p.quantityDelta} stock`);
+		if (p.active === false) parts.push('deactivate');
 		if (p.description) parts.push(`desc: ${String(p.description).slice(0, 40)}…`);
 		return parts.join(' · ');
 	}
@@ -35,7 +37,7 @@
 	<div class="mt-2 flex items-start justify-between gap-3 flex-wrap">
 		<div>
 			<h1 class="text-2xl font-bold text-gray-900">Inventory Change Queue</h1>
-			<p class="text-gray-600 text-sm mt-1">New items auto-apply to NRS on submit. Updates/deletes apply manually here. <a href="/admin/vendors/inventory-journal" class="text-primary-600 hover:underline">View NRS journal →</a></p>
+			<p class="text-gray-600 text-sm mt-1">All vendor changes (create, price/description edits, add-stock, deactivate) auto-apply to NRS on submit. Anything showing here as <strong>pending</strong> failed to apply and can be retried or rejected. <a href="/admin/vendors/inventory-journal" class="text-primary-600 hover:underline">View NRS journal →</a></p>
 		</div>
 		{#if data.status === 'pending' && data.counts.pending > 0}
 			<div class="flex gap-2 flex-wrap">
@@ -128,19 +130,27 @@
 					</div>
 
 					{#if openId === row.id && data.status === 'pending'}
-						<div class="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-4">
-							<form method="POST" action="?/apply" use:enhance class="space-y-2">
+						<div class="mt-3 pt-3 border-t border-gray-100 space-y-3">
+							<form method="POST" action="?/retry" use:enhance>
 								<input type="hidden" name="id" value={row.id} />
-								<label class="label text-xs" for={`notes-${row.id}`}>NRS apply notes (optional)</label>
-								<input id={`notes-${row.id}`} name="nrsApplyNotes" type="text" class="input text-sm" placeholder="What you did in NRS" />
-								<button type="submit" class="btn btn-primary w-full">Mark applied</button>
+								<button type="submit" class="btn btn-primary w-full" title="Re-drive this change through the live NRS write path.">
+									🔁 Retry to NRS ({row.changeType === 'delete' ? 'deactivate' : row.changeType})
+								</button>
 							</form>
-							<form method="POST" action="?/reject" use:enhance class="space-y-2">
-								<input type="hidden" name="id" value={row.id} />
-								<label class="label text-xs" for={`reason-${row.id}`}>Rejection reason</label>
-								<input id={`reason-${row.id}`} name="reason" type="text" class="input text-sm" required placeholder="Why this can't be applied" />
-								<button type="submit" class="btn btn-danger w-full">Reject</button>
-							</form>
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<form method="POST" action="?/apply" use:enhance class="space-y-2">
+									<input type="hidden" name="id" value={row.id} />
+									<label class="label text-xs" for={`notes-${row.id}`}>Mark applied by hand (NRS notes)</label>
+									<input id={`notes-${row.id}`} name="nrsApplyNotes" type="text" class="input text-sm" placeholder="What you did in NRS" />
+									<button type="submit" class="btn btn-secondary w-full">Mark applied</button>
+								</form>
+								<form method="POST" action="?/reject" use:enhance class="space-y-2">
+									<input type="hidden" name="id" value={row.id} />
+									<label class="label text-xs" for={`reason-${row.id}`}>Rejection reason</label>
+									<input id={`reason-${row.id}`} name="reason" type="text" class="input text-sm" required placeholder="Why this can't be applied" />
+									<button type="submit" class="btn btn-danger w-full">Reject</button>
+								</form>
+							</div>
 						</div>
 					{/if}
 				</div>
