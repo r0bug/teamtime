@@ -101,13 +101,6 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
 		// Store individual transactions for drill-down / secondary-store views
 		if (result.records.length > 0) {
-			// Delete existing transactions for this date AND store only (idempotent
-			// re-import). Scoping by store is required so importing one store never
-			// wipes another store's rows for the same date.
-			await db
-				.delete(salesTransactions)
-				.where(and(eq(salesTransactions.invoiceDate, date), eq(salesTransactions.storeId, storeId)));
-
 			// Insert in batches of 100. The primary consignment store keeps only
 			// real vendor line items (vendorId 0 = house/tax rows are excluded, as
 			// before). Secondary direct-sale stores (Yakima Networking) keep ALL
@@ -140,11 +133,41 @@ export const POST: RequestHandler = async ({ request, url }) => {
 					userName: r.userName || null
 				}));
 
-			for (let i = 0; i < txRows.length; i += 100) {
-				await db.insert(salesTransactions).values(txRows.slice(i, i + 100));
+			// NRS paginates possales/getall by page offset over live data, so a sale
+			// rung up mid-fetch shifts the window and the next page repeats a row we
+			// already have. ar_cash_reg_detail_id is globally unique, so one repeat
+			// aborts the whole insert. Dedupe on it — last write wins, the records
+			// are identical.
+			const byDetailId = new Map<number, (typeof txRows)[number]>();
+			for (const row of txRows) {
+				byDetailId.set(row.arCashRegDetailId, row);
+			}
+			const uniqueRows = [...byDetailId.values()];
+			const duplicateCount = txRows.length - uniqueRows.length;
+			if (duplicateCount > 0) {
+				log.warn(
+					{ date, storeId, duplicateCount, fetched: txRows.length },
+					'Dropped duplicate NRS sale rows (overlapping pages)'
+				);
 			}
 
-			log.info({ transactionCount: txRows.length, date }, 'Stored individual sales transactions');
+			// Delete + insert must be atomic. They were not, so when the insert threw
+			// the delete stayed committed and the day was left with NO transactions —
+			// the daily rollup in sales_snapshots still looked right, but sales-by-hour
+			// went blank. On failure now the previous rows survive.
+			await db.transaction(async (tx) => {
+				// Scoped to this date AND store so importing one store never wipes
+				// another store's rows for the same date.
+				await tx
+					.delete(salesTransactions)
+					.where(and(eq(salesTransactions.invoiceDate, date), eq(salesTransactions.storeId, storeId)));
+
+				for (let i = 0; i < uniqueRows.length; i += 100) {
+					await tx.insert(salesTransactions).values(uniqueRows.slice(i, i + 100));
+				}
+			});
+
+			log.info({ transactionCount: uniqueRows.length, duplicateCount, date }, 'Stored individual sales transactions');
 		}
 
 		log.info({
