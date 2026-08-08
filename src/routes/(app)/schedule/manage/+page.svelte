@@ -12,6 +12,7 @@
 
 	let showModal = false;
 	let selectedDate: Date | null = null;
+	let editingShift: typeof data.shifts[0] | null = null;
 	let loading = false;
 
 	$: weekDays = (() => {
@@ -48,6 +49,31 @@
 	function closeModal() {
 		showModal = false;
 		selectedDate = null;
+	}
+
+	function openEditShift(shift: typeof data.shifts[0]) {
+		editingShift = { ...shift };
+	}
+
+	function closeEditModal() {
+		editingShift = null;
+	}
+
+	// Convert a stored timestamp back to a Pacific `datetime-local` value
+	function toPacificDatetimeLocal(date: Date | string): string {
+		const options: Intl.DateTimeFormatOptions = {
+			timeZone: 'America/Los_Angeles',
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit',
+			// h23 (not hour12:false) so midnight formats as 00, never 24
+			hourCycle: 'h23'
+		};
+		const parts = new Intl.DateTimeFormat('en-US', options).formatToParts(new Date(date));
+		const get = (type: string) => parts.find(p => p.type === type)?.value || '00';
+		return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
 	}
 
 	// Convert a date to Pacific datetime-local string with specific hours
@@ -133,17 +159,24 @@
 				</div>
 				<div class="bg-white border border-gray-200 rounded-b-lg p-2 space-y-2 min-h-[150px]">
 					{#each dayShifts as shift}
-						<div class="bg-primary-50 border-l-4 border-primary-500 p-2 rounded text-xs relative group">
-							<div class="font-medium">{shift.userName}</div>
-							<div class="text-gray-600">
-								{formatTime(shift.startTime)} - {formatTime(shift.endTime)}
-							</div>
-							{#if shift.locationName}
-								<div class="text-gray-500">{shift.locationName}</div>
-							{/if}
+						<div class="bg-primary-50 border-l-4 border-primary-500 rounded text-xs relative group">
+							<button
+								type="button"
+								on:click={() => openEditShift(shift)}
+								title="Edit shift"
+								class="w-full text-left p-2 hover:bg-primary-100 rounded"
+							>
+								<div class="font-medium">{shift.userName}</div>
+								<div class="text-gray-600">
+									{formatTime(shift.startTime)} - {formatTime(shift.endTime)}
+								</div>
+								{#if shift.locationName}
+									<div class="text-gray-500">{shift.locationName}</div>
+								{/if}
+							</button>
 							<form method="POST" action="?/delete" class="absolute top-1 right-1 hidden group-hover:block">
 								<input type="hidden" name="shiftId" value={shift.id} />
-								<button type="submit" class="text-red-500 hover:text-red-700 p-1">
+								<button type="submit" title="Delete shift" class="text-red-500 hover:text-red-700 p-1">
 									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
 									</svg>
@@ -221,6 +254,86 @@
 					<button type="button" on:click={closeModal} class="btn-ghost flex-1">Cancel</button>
 					<button type="submit" disabled={loading} class="btn-primary flex-1">
 						{loading ? 'Saving...' : 'Add Shift'}
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+<!-- Edit Shift Modal -->
+{#if editingShift}
+	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+		<div class="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
+			<h3 class="text-lg font-semibold mb-4">Edit Shift</h3>
+			<form
+				method="POST"
+				action="?/update"
+				use:enhance={() => {
+					loading = true;
+					return async ({ update }) => {
+						loading = false;
+						closeEditModal();
+						await update();
+					};
+				}}
+				class="space-y-4"
+			>
+				<input type="hidden" name="shiftId" value={editingShift.id} />
+
+				<div>
+					<label for="edit-userId" class="label">Employee *</label>
+					<select id="edit-userId" name="userId" required class="input">
+						{#each users as user}
+							<option value={user.id} selected={user.id === editingShift.userId}>{user.name} ({user.role})</option>
+						{/each}
+					</select>
+				</div>
+
+				<div>
+					<label for="edit-locationId" class="label">Location</label>
+					<select id="edit-locationId" name="locationId" class="input">
+						<option value="" selected={!editingShift.locationId}>No location</option>
+						{#each locations as location}
+							<option value={location.id} selected={location.id === editingShift.locationId}>{location.name}</option>
+						{/each}
+					</select>
+				</div>
+
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<label for="edit-startTime" class="label">Start Time *</label>
+						<input
+							type="datetime-local"
+							id="edit-startTime"
+							name="startTime"
+							required
+							class="input"
+							value={toPacificDatetimeLocal(editingShift.startTime)}
+						/>
+					</div>
+					<div>
+						<label for="edit-endTime" class="label">End Time *</label>
+						<input
+							type="datetime-local"
+							id="edit-endTime"
+							name="endTime"
+							required
+							class="input"
+							value={toPacificDatetimeLocal(editingShift.endTime)}
+						/>
+					</div>
+				</div>
+
+				<div>
+					<label for="edit-notes" class="label">Notes</label>
+					<textarea id="edit-notes" name="notes" rows="2" class="input" value={editingShift.notes || ''}></textarea>
+				</div>
+
+				<div class="flex gap-4 pt-4">
+					<button type="button" on:click={closeEditModal} class="btn-ghost flex-1">Cancel</button>
+					<button type="submit" disabled={loading} class="btn-primary flex-1">
+						{loading ? 'Saving...' : 'Save Changes'}
 					</button>
 				</div>
 			</form>

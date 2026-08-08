@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { goto, invalidateAll } from '$app/navigation';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import type { PageData, ActionData } from './$types';
 
 	export let data: PageData;
@@ -13,6 +14,8 @@
 	let saveTemplateSetDefault = false;
 	let createStep: 1 | 2 = 1; // Step 1: Select days/times, Step 2: Repeat options
 	let editingShift: typeof data.shifts[0] | null = null;
+	let confirmingDelete = false;
+	let deleteShiftForm: HTMLFormElement;
 	let loading = false;
 	let viewMode: 'grid' | 'list' = 'grid';
 	let selectedLocation = '';
@@ -943,25 +946,55 @@
 						<button type="button" on:click={() => editingShift = null} class="btn-secondary flex-1">
 							Cancel
 						</button>
-						<form method="POST" action="?/deleteShift" use:enhance={() => {
-							loading = true;
-							return async ({ update }) => {
-								loading = false;
-								editingShift = null;
-								await update();
-							};
-						}} class="flex-1">
-							<input type="hidden" name="shiftId" value={editingShift.id} />
-							<button type="submit" class="btn-danger w-full">Delete</button>
-						</form>
+						<button
+							type="button"
+							disabled={loading}
+							on:click={() => (confirmingDelete = true)}
+							class="btn-danger flex-1"
+						>
+							Delete
+						</button>
 						<button type="submit" disabled={loading} class="btn-primary flex-1">
 							{loading ? 'Saving...' : 'Save'}
 						</button>
 					</div>
 				</form>
+
+				<!--
+					Delete lives in its own form, a sibling of the edit form — HTML forbids
+					nesting <form> elements, and a nested one is dropped when the page is
+					server-rendered, which wires Delete to the update action instead.
+				-->
+				<form
+					bind:this={deleteShiftForm}
+					method="POST"
+					action="?/deleteShift"
+					use:enhance={() => {
+						loading = true;
+						return async ({ update }) => {
+							loading = false;
+							confirmingDelete = false;
+							editingShift = null;
+							await update();
+						};
+					}}
+					class="hidden"
+				>
+					<input type="hidden" name="shiftId" value={editingShift.id} />
+				</form>
 			</div>
 		</div>
 	</div>
+
+	<ConfirmDialog
+		open={confirmingDelete}
+		title="Delete this shift?"
+		message="{editingShift.userName} — {formatDate(editingShift.startTime)}, {formatTime(editingShift.startTime)} to {formatTime(editingShift.endTime)}. This cannot be undone."
+		confirmLabel="Delete Shift"
+		{loading}
+		on:confirm={() => deleteShiftForm.requestSubmit()}
+		on:cancel={() => (confirmingDelete = false)}
+	/>
 {/if}
 
 <!-- Save Week as Template Modal -->
