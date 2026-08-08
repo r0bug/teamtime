@@ -303,28 +303,49 @@ export async function getSales(query: NrsSalesQuery): Promise<NrsPagedResponse> 
 	return apiPost<NrsPagedResponse>('possales/getall', query as unknown as Record<string, unknown>);
 }
 
-/** Fetch all pages of sales for given query. */
+/**
+ * Fetch all pages of sales for given query.
+ *
+ * NRS pages possales/getall by offset over live data, so a sale rung up
+ * between two page fetches shifts the window and the next page repeats rows
+ * we already have. Deduping here (rather than in each caller) keeps every
+ * consumer honest: an undetected repeat inflates vendor sales totals and
+ * retained amounts, and breaks the unique index on ar_cash_reg_detail_id.
+ */
 export async function getSalesAllPages(query: NrsSalesQuery): Promise<NrsSaleRecord[]> {
 	const pageSize = query.pagesize || 100;
 	let page = query.page || 1;
-	const allRecords: NrsSaleRecord[] = [];
+	const byDetailId = new Map<number, NrsSaleRecord>();
+	let fetched = 0;
 
 	while (true) {
 		const data = await getSales({ ...query, pagesize: pageSize, page });
 
 		if (!data.list || data.list.length === 0) break;
-		allRecords.push(...data.list);
+		fetched += data.list.length;
+		for (const record of data.list) {
+			byDetailId.set(record.arCashRegDetailId, record);
+		}
 
 		if (!data.nextPage) break;
 		page = data.nextPage;
 
 		if (page > 500) {
-			log.warn({ totalRecords: allRecords.length }, 'Hit pagination safety limit (500 pages)');
+			log.warn({ totalRecords: byDetailId.size }, 'Hit pagination safety limit (500 pages)');
 			break;
 		}
 	}
 
-	log.info({ totalRecords: allRecords.length, pages: page }, 'Fetched all sales pages');
+	const allRecords = [...byDetailId.values()];
+	const duplicateCount = fetched - allRecords.length;
+	if (duplicateCount > 0) {
+		log.warn(
+			{ ...query, fetched, duplicateCount },
+			'NRS returned overlapping pages — dropped duplicate sale rows'
+		);
+	}
+
+	log.info({ totalRecords: allRecords.length, fetched, duplicateCount, pages: page }, 'Fetched all sales pages');
 	return allRecords;
 }
 

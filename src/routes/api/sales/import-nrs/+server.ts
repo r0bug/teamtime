@@ -133,11 +133,10 @@ export const POST: RequestHandler = async ({ request, url }) => {
 					userName: r.userName || null
 				}));
 
-			// NRS paginates possales/getall by page offset over live data, so a sale
-			// rung up mid-fetch shifts the window and the next page repeats a row we
-			// already have. ar_cash_reg_detail_id is globally unique, so one repeat
-			// aborts the whole insert. Dedupe on it — last write wins, the records
-			// are identical.
+			// Second line of defense: getSalesAllPages already dedupes overlapping
+			// NRS pages, but ar_cash_reg_detail_id carries a global unique index and
+			// a single repeat aborts the whole insert — so never hand the DB a batch
+			// we haven't checked ourselves.
 			const byDetailId = new Map<number, (typeof txRows)[number]>();
 			for (const row of txRows) {
 				byDetailId.set(row.arCashRegDetailId, row);
