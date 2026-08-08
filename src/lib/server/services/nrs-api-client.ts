@@ -304,19 +304,28 @@ export async function getSales(query: NrsSalesQuery): Promise<NrsPagedResponse> 
 }
 
 /**
- * Fetch all pages of sales for given query.
+ * Fetch all pages of sales for given query, collapsed to one row per real
+ * receipt line.
  *
- * NRS pages possales/getall by offset over live data, so a sale rung up
- * between two page fetches shifts the window and the next page repeats rows
- * we already have. Deduping here (rather than in each caller) keeps every
- * consumer honest: an undetected repeat inflates vendor sales totals and
- * retained amounts, and breaks the unique index on ar_cash_reg_detail_id.
+ * possales/getall returns one row per invoice-history COPY, not per line: a
+ * re-post or reversal mints a new arInvHistDetailId for the same receipt line
+ * and NRS keeps returning every copy. Summing the raw list therefore counts
+ * re-rung sales two or three times — it inflated vendor totals and retained
+ * amounts, and the repeated arCashRegDetailId also violates the unique index
+ * on sales_transactions.
+ *
+ * A line is identified by (arCashRegId, arCashRegDetailId) — arCashRegDetailId
+ * is only stable WITHIN a receipt, so it must not be used alone. Of the copies
+ * we keep the highest arInvHistDetailId, i.e. the newest state of that line,
+ * which is the same rule the yf-forensic mirror uses.
  */
 export async function getSalesAllPages(query: NrsSalesQuery): Promise<NrsSaleRecord[]> {
 	const pageSize = query.pagesize || 100;
 	let page = query.page || 1;
-	const byDetailId = new Map<number, NrsSaleRecord>();
+	const byLine = new Map<string, NrsSaleRecord>();
 	let fetched = 0;
+
+	const copyId = (r: NrsSaleRecord) => Number(r.arInvHistDetailId ?? 0);
 
 	while (true) {
 		const data = await getSales({ ...query, pagesize: pageSize, page });
@@ -324,28 +333,33 @@ export async function getSalesAllPages(query: NrsSalesQuery): Promise<NrsSaleRec
 		if (!data.list || data.list.length === 0) break;
 		fetched += data.list.length;
 		for (const record of data.list) {
-			byDetailId.set(record.arCashRegDetailId, record);
+			const key = `${record.arCashRegId}:${record.arCashRegDetailId}`;
+			const seen = byLine.get(key);
+			// Keep the newest copy. Never rely on NRS response ordering for this.
+			if (!seen || copyId(record) >= copyId(seen)) {
+				byLine.set(key, record);
+			}
 		}
 
 		if (!data.nextPage) break;
 		page = data.nextPage;
 
 		if (page > 500) {
-			log.warn({ totalRecords: byDetailId.size }, 'Hit pagination safety limit (500 pages)');
+			log.warn({ totalRecords: byLine.size }, 'Hit pagination safety limit (500 pages)');
 			break;
 		}
 	}
 
-	const allRecords = [...byDetailId.values()];
-	const duplicateCount = fetched - allRecords.length;
-	if (duplicateCount > 0) {
+	const allRecords = [...byLine.values()];
+	const supersededCopies = fetched - allRecords.length;
+	if (supersededCopies > 0) {
 		log.warn(
-			{ ...query, fetched, duplicateCount },
-			'NRS returned overlapping pages — dropped duplicate sale rows'
+			{ ...query, fetched, supersededCopies },
+			'possales returned re-posted/reversed line copies — kept newest copy per line'
 		);
 	}
 
-	log.info({ totalRecords: allRecords.length, fetched, duplicateCount, pages: page }, 'Fetched all sales pages');
+	log.info({ totalRecords: allRecords.length, fetched, supersededCopies, pages: page }, 'Fetched all sales pages');
 	return allRecords;
 }
 

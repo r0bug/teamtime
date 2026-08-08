@@ -133,10 +133,12 @@ export const POST: RequestHandler = async ({ request, url }) => {
 					userName: r.userName || null
 				}));
 
-			// Second line of defense: getSalesAllPages already dedupes overlapping
-			// NRS pages, but ar_cash_reg_detail_id carries a global unique index and
-			// a single repeat aborts the whole insert — so never hand the DB a batch
-			// we haven't checked ourselves.
+			// Second line of defense: getSalesAllPages already collapses invoice-copy
+			// rows, but ar_cash_reg_detail_id carries a UNIQUE index (idx_sales_tx_nrs_id)
+			// and a single repeat aborts the whole insert — so never hand the DB a batch
+			// we have not checked ourselves. Note the index is on the detail id alone
+			// while a line is really keyed by (ar_cash_reg_id, ar_cash_reg_detail_id);
+			// this collapses to whichever row comes last if those ever collide.
 			const byDetailId = new Map<number, (typeof txRows)[number]>();
 			for (const row of txRows) {
 				byDetailId.set(row.arCashRegDetailId, row);
@@ -146,7 +148,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			if (duplicateCount > 0) {
 				log.warn(
 					{ date, storeId, duplicateCount, fetched: txRows.length },
-					'Dropped duplicate NRS sale rows (overlapping pages)'
+					'Dropped duplicate sale rows before insert'
 				);
 			}
 
