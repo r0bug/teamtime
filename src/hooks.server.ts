@@ -1,8 +1,9 @@
-import type { Handle } from '@sveltejs/kit';
+import { error, type Handle } from '@sveltejs/kit';
 import { lucia } from '$lib/server/auth';
 import { db, users, userExtraRoles } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { getUserPermissions } from '$lib/server/auth/permissions';
+import { applyImpersonationClamp, vendorOnlyPermissions } from '$lib/server/auth/impersonation';
 import { dev } from '$app/environment';
 import { createLogger } from '$lib/server/logger';
 
@@ -102,18 +103,38 @@ export const handle: Handle = async ({ event, resolve }) => {
 			return addSecurityHeaders(await resolve(event));
 		}
 
+		// An impersonated session — "staff acting as a vendor", minted by
+		// /api/app/impersonate-vendor — is DE-PRIVILEGED here rather than trusted from
+		// the users row. That endpoint mints a session for `vendors.userId`, and some
+		// vendor accounts are linked to staff or admin logins (Storlie's Relics ->
+		// john@yakimafinds.com is an admin), so without this clamp any manager could
+		// impersonate such a vendor and receive a full admin session.
+		//
+		// The clamp lives here, not in the endpoint: refusing to impersonate an admin
+		// would break the supported case where the owner holds the house vendor
+		// accounts. Privilege is a property of the SESSION, not the user — the same
+		// person is legitimately an admin in their browser and vendor-only in a
+		// label-app impersonation session at the same moment.
+		const isImpersonated = !!session?.contextVendorId;
+
 		if (fullUser) {
 			const extraRoleRows = await db
 				.select({ role: userExtraRoles.role })
 				.from(userExtraRoles)
 				.where(eq(userExtraRoles.userId, fullUser.id));
-			event.locals.user = { ...fullUser, extraRoles: extraRoleRows.map((r) => r.role) };
+			event.locals.user = applyImpersonationClamp(
+				fullUser,
+				extraRoleRows.map((r) => r.role),
+				isImpersonated
+			);
 		} else {
 			event.locals.user = null;
 		}
 
 		// Load user permissions for granular access control
-		if (fullUser) {
+		if (fullUser && isImpersonated) {
+			event.locals.userPermissions = vendorOnlyPermissions();
+		} else if (fullUser) {
 			try {
 				event.locals.userPermissions = await getUserPermissions(fullUser);
 			} catch {
@@ -137,6 +158,24 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	event.locals.session = session;
+
+	// Hard deny: an impersonated session may never reach an admin surface, whatever the
+	// underlying user's role. The identity clamp above is not sufficient on its own —
+	// several admin pages gate only on "is anyone signed in" and never check a role, so
+	// there is no gate there for the clamp to fail. Verified: an impersonated session
+	// for Storlie's Relics (linked to an admin login) loaded /admin/vendors with a 200
+	// with the clamp alone. This is the backstop that does not depend on any individual
+	// route remembering to check.
+	if (event.locals.session?.contextVendorId) {
+		const p = event.url.pathname;
+		if (p === '/admin' || p.startsWith('/admin/') || p.startsWith('/api/admin/')) {
+			log.warn(
+				{ path: p, userId: event.locals.user?.id, vendorId: event.locals.session.contextVendorId },
+				'Blocked admin access from an impersonated vendor session'
+			);
+			throw error(403, 'Not available while acting as a vendor');
+		}
+	}
 
 	const response = addSecurityHeaders(await resolve(event));
 

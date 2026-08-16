@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { db, vendors, users } from '$lib/server/db';
 import { lucia } from '$lib/server/auth';
 import { isManager } from '$lib/server/auth/roles';
+import { audit } from '$lib/server/services/audit-service';
 
 /**
  * POST /api/app/impersonate-vendor { vendorId } — a manager mints a session that
@@ -38,13 +39,40 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 		.limit(1);
 	if (!u || !u.isActive) return json({ error: 'Vendor user is inactive' }, { status: 409 });
 
+	// contextVendorId does two things, both load-bearing:
+	//   1. It PINS the session to this vendor, so a portal user who owns several vendor
+	//      accounts is never resolved arbitrarily by the vendor endpoints.
+	//   2. Its presence tells hooks.server.ts to de-privilege the session to vendor-only
+	//      rights. Some vendors are linked to staff/admin logins, so an un-clamped
+	//      impersonation session would carry that user's real role.
+	// Do NOT "fix" this by refusing to impersonate an admin — the owner legitimately
+	// holds the house vendor accounts. The clamp belongs on the session, not the user.
 	const session = await lucia.createSession(vendor.userId, {
 		deviceFingerprint: 'desktop-label-app-staff-impersonation',
 		ipAddress: getClientAddress(),
 		userAgent: request.headers.get('user-agent') ?? 'desktop-label-app-staff',
 		lastActive: new Date(),
-		last2faAt: new Date()
+		last2faAt: new Date(),
+		contextVendorId: vendorId
 	});
 
-	return json({ token: session.id, cookieName: lucia.sessionCookieName, vendorName: vendor.displayName });
+	await audit({
+		userId: locals.user.id,
+		action: 'vendor.impersonate',
+		entityType: 'vendor',
+		entityId: vendorId,
+		ipAddress: getClientAddress(),
+		metadata: {
+			vendorName: vendor.displayName,
+			actingAsUserId: vendor.userId,
+			sessionId: session.id
+		}
+	});
+
+	return json({
+		token: session.id,
+		cookieName: lucia.sessionCookieName,
+		vendorId,
+		vendorName: vendor.displayName
+	});
 };

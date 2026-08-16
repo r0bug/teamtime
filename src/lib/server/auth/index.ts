@@ -23,6 +23,15 @@ export const lucia = new Lucia(adapter, {
 			phone: attributes.phone,
 			isActive: attributes.isActive
 		};
+	},
+	// Exposes session columns on `locals.session`. Only contextVendorId is surfaced:
+	// it is what tells hooks.server.ts that this session is an impersonation and must
+	// be de-privileged. Nothing else here should be treated as a security signal —
+	// deviceFingerprint is client-supplied metadata.
+	getSessionAttributes: (attributes) => {
+		return {
+			contextVendorId: attributes.contextVendorId ?? null
+		};
 	}
 });
 
@@ -30,7 +39,19 @@ declare module 'lucia' {
 	interface Register {
 		Lucia: typeof lucia;
 		DatabaseUserAttributes: DatabaseUserAttributes;
+		DatabaseSessionAttributes: DatabaseSessionAttributes;
 	}
+}
+
+interface DatabaseSessionAttributes {
+	deviceFingerprint?: string | null;
+	ipAddress?: string | null;
+	userAgent?: string | null;
+	lastActive?: Date;
+	last2faAt?: Date | null;
+	// Optional so the five non-impersonation createSession call sites keep compiling
+	// unchanged; the column is nullable and defaults to NULL for ordinary logins.
+	contextVendorId?: string | null;
 }
 
 interface DatabaseUserAttributes {
