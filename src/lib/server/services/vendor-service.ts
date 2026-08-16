@@ -6,7 +6,7 @@
  * signed agreements, notes) keyed off `nrsVendorId`.
  */
 
-import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { randomUUID, randomBytes } from 'crypto';
 import { db } from '$lib/server/db';
 import {
@@ -26,6 +26,9 @@ import {
 	type AgreementTemplate,
 	type VendorGroup
 } from '$lib/server/db/schema';
+/** The db handle or a transaction handle — helpers that must join a caller's tx take this. */
+type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 import { getVendors as fetchNrsVendors, getVendorDetail, type NrsVendorDetail } from './nrs-api-client';
 import { getVendorWebFlagsBatch } from './nrs-web-client';
 import { getPacificDateParts } from '$lib/server/utils/timezone';
@@ -973,11 +976,11 @@ export async function linkExistingUserToVendor(input: {
 			);
 		}
 
-		// Re-link: drop the previously-linked user's vendor extra-role.
+		// Re-link: re-evaluate the previously-linked user's vendor extra-role. It must
+		// only be dropped if this was their LAST booth — dropping it unconditionally
+		// would strip vendor access from someone who still owns other accounts.
 		if (vendor.userId && vendor.userId !== input.userId) {
-			await tx
-				.delete(userExtraRoles)
-				.where(and(eq(userExtraRoles.userId, vendor.userId), eq(userExtraRoles.role, 'vendor')));
+			await syncVendorExtraRole(tx, vendor.userId, { excludeVendorId: input.vendorId });
 		}
 
 		await tx
@@ -1272,24 +1275,28 @@ export async function disablePortal(vendorId: string): Promise<void> {
 			.where(eq(vendors.id, vendorId));
 
 		if (vendor.userId) {
-			// Drop the 'vendor' extra-role so isVendor() reflects reality.
-			await tx
-				.delete(userExtraRoles)
-				.where(and(eq(userExtraRoles.userId, vendor.userId), eq(userExtraRoles.role, 'vendor')));
+			// One person may own several vendor accounts, so neither the extra-role nor
+			// the account itself may be torn down just because THIS booth was disabled.
+			// Disabling Wayne's SSW must leave his WSS access untouched.
+			const stillHasVendors = await syncVendorExtraRole(tx, vendor.userId, {
+				excludeVendorId: vendorId
+			});
 
-			const [linkedUser] = await tx
-				.select({ userTypeId: users.userTypeId })
-				.from(users)
-				.where(eq(users.id, vendor.userId))
-				.limit(1);
+			if (!stillHasVendors) {
+				const [linkedUser] = await tx
+					.select({ userTypeId: users.userTypeId })
+					.from(users)
+					.where(eq(users.id, vendor.userId))
+					.limit(1);
 
-			// Only deactivate if this is a vendor-only account. A staff member
-			// who's also linked to a vendor keeps their staff login active.
-			if (linkedUser && linkedUser.userTypeId === vendorTypeId) {
-				await tx
-					.update(users)
-					.set({ isActive: false, updatedAt: new Date() })
-					.where(eq(users.id, vendor.userId));
+				// Only deactivate if this is a vendor-only account with no booths left.
+				// A staff member who's also linked to a vendor keeps their staff login.
+				if (linkedUser && linkedUser.userTypeId === vendorTypeId) {
+					await tx
+						.update(users)
+						.set({ isActive: false, updatedAt: new Date() })
+						.where(eq(users.id, vendor.userId));
+				}
 			}
 		}
 	});
@@ -1349,13 +1356,67 @@ export async function generatePartNumber(vendorId: string, opts?: { now?: Date }
 /**
  * Resolve the vendor record for a logged-in user, if they're a portal user.
  * Returns null when the user isn't a vendor portal user.
+ *
+ * `vendors.user_id` is nullable and NOT unique, so a person may own several vendor
+ * accounts (Wayne Simla sells as WSS at 75% and curates the owner's goods as SSW at
+ * 50%). This LIMIT 1 previously had no ORDER BY, which let Postgres return a different
+ * row for the same query across plans — and `applyCreateViaApi` pushes
+ * `passThroughApVendorId` from whichever row came back, so the wrong booth could be
+ * billed for an item.
+ *
+ * The ordering makes that choice deterministic and sensible: the account with the
+ * higher payout percentage is the vendor's own goods, which is the right default.
+ * Checked against every real multi-account vendor — WSS 75 > SSW 50, AER 75 > JAJ 50,
+ * RGF 75 > RGS 50, LCA 87 > YFLC 75, DRMA 50 > RBR 0.
+ *
+ * This is a stopgap. Callers that need to act on a SPECIFIC account must move to the
+ * vendor-context resolver rather than relying on this default.
  */
 export async function getVendorForUser(userId: string): Promise<Vendor | null> {
 	const [row] = await db
 		.select()
 		.from(vendors)
 		.where(and(eq(vendors.userId, userId), eq(vendors.portalEnabled, true)))
+		.orderBy(desc(vendors.vendorPaymentPercent), asc(vendors.displayName), asc(vendors.id))
 		.limit(1);
 	return row ?? null;
+}
+
+/**
+ * Add or remove a user's 'vendor' extra-role so it reflects reality: they hold it iff
+ * at least one portal-enabled vendor still points at them.
+ *
+ * Exists because several call sites used to add or drop the role unconditionally, which
+ * is wrong as soon as one person owns more than one vendor account. Always call this
+ * instead of touching userExtraRoles directly.
+ *
+ * Pass the surrounding transaction so the role stays consistent with the vendor write.
+ */
+export async function syncVendorExtraRole(
+	tx: DbOrTx,
+	userId: string,
+	opts?: { excludeVendorId?: string }
+): Promise<boolean> {
+	const conds = [eq(vendors.userId, userId), eq(vendors.portalEnabled, true)];
+	if (opts?.excludeVendorId) conds.push(ne(vendors.id, opts.excludeVendorId));
+
+	const [remaining] = await tx
+		.select({ id: vendors.id })
+		.from(vendors)
+		.where(and(...conds))
+		.limit(1);
+
+	if (remaining) {
+		await tx
+			.insert(userExtraRoles)
+			.values({ userId, role: 'vendor' })
+			.onConflictDoNothing();
+		return true;
+	}
+
+	await tx
+		.delete(userExtraRoles)
+		.where(and(eq(userExtraRoles.userId, userId), eq(userExtraRoles.role, 'vendor')));
+	return false;
 }
 

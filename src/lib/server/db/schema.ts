@@ -378,6 +378,17 @@ export const sessions = pgTable('sessions', {
 	userAgent: text('user_agent'),
 	lastActive: timestamp('last_active', { withTimezone: true }).notNull().defaultNow(),
 	last2faAt: timestamp('last_2fa_at', { withTimezone: true }),
+	// Set ONLY on staff "act as vendor" sessions minted by /api/app/impersonate-vendor.
+	// Two jobs: (1) it pins which vendor the session may touch, so a user who owns
+	// several vendor accounts is never resolved arbitrarily; (2) its presence is the
+	// signal hooks.server.ts uses to DE-PRIVILEGE the session — an impersonated session
+	// gets vendor-only rights regardless of the underlying user's role. Without that
+	// clamp, impersonating a vendor whose login happens to be an admin (e.g. Storlie's
+	// Relics -> john@yakimafinds.com) hands the caller a full admin session.
+	// Untyped FK on purpose: `vendors` is declared far below this table, and naming it
+	// here would be a temporal-dead-zone reference at module load. The real FK is
+	// applied in SQL (see the Phase 0 DDL) and is intentionally absent from Drizzle.
+	contextVendorId: uuid('context_vendor_id'),
 	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
