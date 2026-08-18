@@ -2,6 +2,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 import { eq, sql } from 'drizzle-orm';
 import { db, vendors as vendorsTable } from '$lib/server/db';
+import { isManager } from '$lib/server/auth/roles';
 import {
 	listVendors,
 	syncFromNrs,
@@ -36,7 +37,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		vendors,
 		filters: { status, search, includeNrsInactive },
 		nrsInactiveCount,
-		needsOnboardingCount
+		needsOnboardingCount,
+		// Staff can see this list by design, but onboarding is manager-only — surface
+		// that so the page doesn't offer a button that 403s.
+		canOnboard: isManager(locals.user)
 	};
 };
 
