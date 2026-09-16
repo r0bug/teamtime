@@ -59,6 +59,9 @@ export interface BarbellPad {
 	 *  (shape_dims_json) so height changes need no rebuild. Defaults to ~45% of
 	 *  label height when omitted. */
 	barcodeHeightIn?: number;
+	/** Barcode pad only: explicit top offset in inches for the barcode+SKU block.
+	 *  Tunable from the DB. Omitted = anchored near the pad top (see BLOCK_TOP_FRAC). */
+	barcodeTopIn?: number;
 }
 /** Per-line font multipliers (default 1.0 each), stored per format in
  *  shape_dims_json so sizing is tunable without a rebuild. */
@@ -73,6 +76,8 @@ export interface LineScales {
 export interface BarbellShapeDims {
 	pads?: BarbellPad[];
 	lineScales?: LineScales;
+	/** Max wrapped lines for the item name on the info pad. Default 3. */
+	descriptionLines?: number;
 }
 
 export interface TagDimensions {
@@ -740,6 +745,11 @@ export function renderZplFromDimensions(dims: TagDimensions, ctx: TagRenderConte
 	return cmds.join('\n');
 }
 
+/** Barbell pads anchor their content near the top of the 0.5" strip rather than
+ *  centering it: on jewelry stock the lower half is the part that curls under the
+ *  fold, so centered blocks read as "printed at the bottom". */
+const BLOCK_TOP_FRAC = 0.05;
+
 /**
  * Fallback pad geometry when a barbell format has no `shape_dims_json`:
  * 40% pad / 20% blank neck / 40% pad. Keeps output sane pre-migration.
@@ -788,9 +798,20 @@ function renderBarbellZpl(
 		const padW = Math.round(pad.widthIn * dpi);
 		if (pad.role === 'barcode') {
 			const barHeightDots = pad.barcodeHeightIn ? Math.round(pad.barcodeHeightIn * dpi) : undefined;
-			barbellBarcodePad(cmds, { x0, padW, heightDots, partNumber, eff, scale, barHeightDots, dpi });
+			const barTopDots = pad.barcodeTopIn ? Math.round(pad.barcodeTopIn * dpi) : undefined;
+			barbellBarcodePad(cmds, {
+				x0, padW, heightDots, partNumber, eff, scale, barHeightDots, barTopDots,
+				partScale: lineScale(dims, 'partNumber'),
+				dpi
+			});
 		} else {
-			barbellInfoPad(cmds, { x0, padW, heightDots, priceText, description, eff, scale, dpi });
+			barbellInfoPad(cmds, {
+				x0, padW, heightDots, priceText, description, eff, scale,
+				priceScale: lineScale(dims, 'price'),
+				descScale: lineScale(dims, 'description'),
+				descLines: Math.max(1, Math.round(shape.descriptionLines ?? 3)),
+				dpi
+			});
 		}
 	}
 
@@ -810,22 +831,31 @@ function barbellBarcodePad(
 		eff: ReturnType<typeof resolveSettings>;
 		scale: number;
 		barHeightDots?: number;
+		barTopDots?: number;
+		partScale: number;
 		dpi: number;
 	}
 ): void {
-	const { x0, padW, heightDots, partNumber, eff, scale, barHeightDots, dpi } = p;
+	const { x0, padW, heightDots, partNumber, eff, scale, barHeightDots, barTopDots, partScale, dpi } = p;
 	if (!partNumber) return;
 	const margin = Math.max(4, Math.round(padW * 0.06));
 	const inner = padW - 2 * margin;
 	const showText = eff.includePartNumber;
-	const fPart = showText ? Math.max(12, Math.round(heightDots * 0.16 * scale)) : 0;
+	const fPart = showText
+		? Math.round(Math.max(12, Math.round(heightDots * 0.16 * scale)) * partScale)
+		: 0;
 	const textGap = showText ? 3 : 0;
 	// Barcode height: explicit shape_dims_json value (tunable, no rebuild) or
 	// ~45% of label height so it doesn't dominate the small pad. Center the
 	// barcode (+ SKU text) block vertically.
 	const barH = Math.max(20, barHeightDots ?? Math.round(heightDots * 0.45));
 	const blockH = barH + (showText ? textGap + fPart : 0);
-	const barTop = Math.max(2, Math.round((heightDots - blockH) / 2));
+	// Anchor the barcode block near the top, not centered; clamp so a tall
+	// barcodeHeightIn can never push the SKU text off the bottom of the strip.
+	const barTop = Math.min(
+		Math.max(2, barTopDots ?? Math.round(heightDots * BLOCK_TOP_FRAC)),
+		Math.max(2, heightDots - blockH - 2)
+	);
 
 	if (eff.includeBarcode) {
 		if (eff.barcodeSymbology === 'datamatrix') {
@@ -870,25 +900,33 @@ function barbellInfoPad(
 		description: string;
 		eff: ReturnType<typeof resolveSettings>;
 		scale: number;
+		priceScale: number;
+		descScale: number;
+		descLines: number;
 		dpi: number;
 	}
 ): void {
-	const { x0, padW, heightDots, priceText, description, eff, scale, dpi } = p;
+	const { x0, padW, heightDots, priceText, description, eff, scale, priceScale, descScale, descLines, dpi } = p;
 	const rows: { text: string; f: number; lines: number }[] = [];
 	if (eff.includePrice && priceText) {
-		rows.push({ text: priceText, f: Math.max(20, Math.round(heightDots * 0.3 * scale)), lines: 1 });
+		const fPrice = Math.round(Math.max(20, Math.round(heightDots * 0.3 * scale)) * priceScale);
+		rows.push({ text: priceText, f: fPrice, lines: 1 });
 	}
 	if (eff.includeDescription && description) {
-		// Item name: shrink-to-fit, wrapping to a second line before the floor.
-		const desired = Math.max(12, Math.round(heightDots * 0.16 * scale));
-		const pre = fitLine(description, padW, desired, dpi, 2);
+		// Item name: shrink-to-fit, wrapping across up to `descLines` lines before
+		// hitting the readability floor. More lines = long names survive intact.
+		const desired = Math.round(Math.max(12, Math.round(heightDots * 0.16 * scale)) * descScale);
+		const pre = fitLine(description, padW, desired, dpi, descLines);
 		rows.push({ text: pre.text, f: pre.font, lines: pre.lines });
 	}
 	if (rows.length === 0) return;
 
 	const lineH = (r: { f: number; lines: number }) => r.f * 1.2 * r.lines;
 	const total = rows.reduce((s, r) => s + lineH(r), 0);
-	let y = Math.max(2, Math.round((heightDots - total) / 2));
+	let y = Math.min(
+		Math.max(2, Math.round(heightDots * BLOCK_TOP_FRAC)),
+		Math.max(2, Math.round(heightDots - total - 2))
+	);
 	for (const r of rows) {
 		const maxChars = Math.max(1, Math.floor((padW * r.lines) / (r.f * 0.6)));
 		const text = r.text.length > maxChars ? r.text.slice(0, maxChars) : r.text;
