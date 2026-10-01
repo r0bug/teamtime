@@ -233,8 +233,15 @@ export const actions: Actions = {
 
 		// Manual assignment goes through the same race-safe claim path, so a
 		// manager assigning at the same moment someone texts YES can't
-		// double-book the shift.
-		const outcome = await claimShift({ requestId, userId, viaSms: false });
+		// double-book the shift. requireRecipient is off here on purpose: a
+		// manager may hand the shift to anyone, including people who were never
+		// in the broadcast. Self-service claims keep the check (see claimShift).
+		const outcome = await claimShift({
+			requestId,
+			userId,
+			viaSms: false,
+			requireRecipient: false
+		});
 		if (!outcome.ok) return fail(400, { error: outcome.message });
 
 		notifyLosers(requestId, userId).catch((err) =>

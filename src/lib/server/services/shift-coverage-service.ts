@@ -546,16 +546,48 @@ export async function countOpenInvites(userId: string, excludeRequestId?: string
 
 export type ClaimOutcome =
 	| { ok: true; request: ShiftRequest; autoApplied: boolean }
-	| { ok: false; reason: 'already_filled' | 'not_open' | 'conflict' | 'not_found'; message: string };
+	| {
+			ok: false;
+			reason: 'already_filled' | 'not_open' | 'conflict' | 'not_found' | 'not_invited';
+			message: string;
+	  };
+
+/**
+ * Was this user actually sent this offer?
+ *
+ * The claim code identifies a request; it is NOT a credential. Anyone who
+ * learns one — forwarded text, shoulder-surfed screen — must still fail this
+ * check, so authorization lives here rather than in the knowledge of the code.
+ */
+async function isInvitedRecipient(requestId: string, userId: string): Promise<boolean> {
+	const [row] = await db
+		.select({ id: shiftRequestRecipients.id })
+		.from(shiftRequestRecipients)
+		.where(
+			and(
+				eq(shiftRequestRecipients.requestId, requestId),
+				eq(shiftRequestRecipients.userId, userId)
+			)
+		)
+		.limit(1);
+	return !!row;
+}
 
 /**
  * Claim a shift. Race-safe: the winner is decided by a conditional UPDATE, so
  * simultaneous replies can never both succeed.
+ *
+ * `requireRecipient` defaults to true: self-service claims must come from
+ * someone who was actually invited. A manager assigning cover deliberately
+ * passes false — they may hand the shift to anyone, invited or not. The two
+ * authorization models are stated at the call site rather than implied, so a
+ * new caller has to choose one.
  */
 export async function claimShift(params: {
 	requestId: string;
 	userId: string;
 	viaSms: boolean;
+	requireRecipient?: boolean;
 }): Promise<ClaimOutcome> {
 	const [request] = await db
 		.select()
@@ -565,6 +597,18 @@ export async function claimShift(params: {
 
 	if (!request) {
 		return { ok: false, reason: 'not_found', message: 'That shift request no longer exists.' };
+	}
+
+	if (params.requireRecipient !== false && !(await isInvitedRecipient(request.id, params.userId))) {
+		log.warn(
+			{ requestId: request.id, userId: params.userId, viaSms: params.viaSms },
+			'Claim rejected: user was not an invited recipient'
+		);
+		return {
+			ok: false,
+			reason: 'not_invited',
+			message: "You weren't asked to cover this shift. Talk to a manager if you'd like to pick it up."
+		};
 	}
 	if (request.status !== 'open') {
 		return {
@@ -658,7 +702,18 @@ export async function declineRequest(params: {
 	userId: string;
 	viaSms: boolean;
 	note?: string;
+	requireRecipient?: boolean;
 }): Promise<void> {
+	// Same reasoning as claimShift: without this, anyone holding a code could
+	// write response rows against a request they were never sent.
+	if (params.requireRecipient !== false && !(await isInvitedRecipient(params.requestId, params.userId))) {
+		log.warn(
+			{ requestId: params.requestId, userId: params.userId },
+			'Decline rejected: user was not an invited recipient'
+		);
+		return;
+	}
+
 	await db
 		.insert(shiftRequestResponses)
 		.values({

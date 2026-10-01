@@ -1,3 +1,5 @@
+import { randomInt } from 'node:crypto';
+
 /**
  * Parse an inbound SMS as a shift-coverage claim or decline.
  *
@@ -98,15 +100,21 @@ const CODE_DIGITS = '23456789';
  * Generate a 4-char claim code. Always contains at least one digit so it can
  * never collide with a reply keyword (see isClaimCode).
  * Caller ensures uniqueness among live requests.
+ *
+ * Uses the CSPRNG, not Math.random(): V8's PRNG state can be recovered from a
+ * handful of observed outputs, and codes travel by SMS to a dozen people at a
+ * time. The code is only an identifier — claimShift independently checks that
+ * the claimer was an invited recipient — but it should not be predictable on
+ * top of that. Codes stay 4 chars to keep the SMS reply short; authorization
+ * does not rest on their length.
  */
 export function generateClaimCode(): string {
 	const chars: string[] = [];
 	for (let i = 0; i < 4; i++) {
-		chars.push(CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]);
+		chars.push(CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]);
 	}
 	if (!chars.some((c) => CODE_DIGITS.includes(c))) {
-		const pos = Math.floor(Math.random() * 4);
-		chars[pos] = CODE_DIGITS[Math.floor(Math.random() * CODE_DIGITS.length)];
+		chars[randomInt(4)] = CODE_DIGITS[randomInt(CODE_DIGITS.length)];
 	}
 	return chars.join('');
 }

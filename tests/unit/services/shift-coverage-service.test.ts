@@ -14,7 +14,9 @@ const state = {
 	request: null as Record<string, unknown> | null,
 	conflict: null as Record<string, unknown> | null,
 	updateWhereCalls: [] as unknown[],
-	claimWins: true
+	claimWins: true,
+	/** Is the claimer an invited recipient? Default true — see the select mock. */
+	invited: true
 };
 
 vi.mock('$lib/server/twilio', () => ({
@@ -40,10 +42,17 @@ vi.mock('$lib/server/db', () => {
 
 	const db = {
 		select: vi.fn(() => {
-			// First select in claimShift = the request; second = conflict lookup.
+			// Order of selects inside claimShift:
+			//   1. the request
+			//   2. isInvitedRecipient — added when the claim IDOR was fixed; these
+			//      tests are about the race guard, so they stage an invited
+			//      recipient and let authorization pass. Authorization itself is
+			//      covered in shift-coverage-authz.test.ts.
+			//   3. the conflicting-shift lookup
 			const calls = (db.select as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
 			if (calls === 1) return makeSelect(state.request ? [state.request] : []);
-			if (calls === 2) return makeSelect(state.conflict ? [state.conflict] : []);
+			if (calls === 2) return makeSelect(state.invited ? [{ id: 'rec-1' }] : []);
+			if (calls === 3) return makeSelect(state.conflict ? [state.conflict] : []);
 			return makeSelect(state.request ? [state.request] : []);
 		}),
 		update: vi.fn(() => {
@@ -104,6 +113,7 @@ beforeEach(() => {
 	state.conflict = null;
 	state.updateWhereCalls = [];
 	state.claimWins = true;
+	state.invited = true;
 	vi.clearAllMocks();
 });
 
