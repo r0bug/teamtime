@@ -10,9 +10,49 @@
 
 	$: pending = data.pending;
 	$: resolved = data.resolved;
+	$: policy = data.policy;
 
 	let processingId: string | null = null;
 	let confirmApproveId: string | null = null;
+	let confirmEnableKey: string | null = null;
+
+	type PolicyKey =
+		| 'demeritsEnabled'
+		| 'lateArrivalWarningsEnabled'
+		| 'clockOutNagEnabled'
+		| 'clockOutPointsPenaltyEnabled';
+
+	const switches: { key: PolicyKey; label: string; help: string; reenableWarning?: string }[] = [
+		{
+			key: 'demeritsEnabled',
+			label: 'Demerit engine',
+			help: 'Escalate repeated warnings into formal demerits and text managers to review them.',
+			reenableWarning:
+				'This restarts automatic demerits from repeated warnings and resumes the review SMS to every manager. Make sure schedule data is accurate first — bad schedules are what caused the wrongful demerits in 2026.'
+		},
+		{
+			key: 'lateArrivalWarningsEnabled',
+			label: 'Late-arrival warnings',
+			help: 'Detect staff who have not clocked in and text them about it.',
+			reenableWarning: 'Staff will start receiving "you are late" texts again whenever a shift start passes without a clock-in.'
+		},
+		{
+			key: 'clockOutNagEnabled',
+			label: 'Clock-out reminder',
+			help: `One text when someone is still clocked in ${policy.nagDelayMinutes} min past shift end. The auto-close runs either way.`
+		},
+		{
+			key: 'clockOutPointsPenaltyEnabled',
+			label: 'Dock points on auto clock-out',
+			help: 'Deduct attendance points when an entry has to be closed automatically.',
+			reenableWarning: 'Staff will start losing points whenever the system closes a forgotten clock-out.'
+		}
+	];
+
+	function submitToggle(key: string) {
+		const form = document.querySelector<HTMLFormElement>(`form[data-policy-key='${key}']`);
+		form?.requestSubmit();
+	}
 
 	const statusBadge: Record<string, string> = {
 		active: 'badge-danger',
@@ -43,11 +83,65 @@
 
 <div class="max-w-4xl mx-auto p-4 space-y-6">
 	<div>
-		<h1 class="text-2xl font-bold text-gray-900">Demerit Review</h1>
+		<h1 class="text-2xl font-bold text-gray-900">Attendance &amp; Demerits</h1>
 		<p class="text-gray-600 mt-1">
 			Auto-detected demerits wait here for review. Nothing is deducted and the employee is not
 			notified until you approve. If the schedule was wrong, fix the schedule and dismiss.
 		</p>
+	</div>
+
+	{#if !policy.demeritsEnabled}
+		<div class="card border-l-4 border-l-amber-400">
+			<div class="card-body">
+				<p class="font-medium text-gray-900">The demerit engine is off.</p>
+				<p class="text-sm text-gray-600 mt-1">
+					No new demerits are being created and nobody is being warned about late arrivals.
+					An overdue clock-out gets one reminder text; if nothing changes
+					{policy.autoCloseAfterNagMinutes} min later the entry is closed at its scheduled shift
+					end and the timesheet records that the Office Manager did it. Anything already pending
+					below can still be approved or dismissed by hand.
+				</p>
+			</div>
+		</div>
+	{/if}
+
+	<div class="card">
+		<div class="card-header">
+			<h2 class="font-semibold text-gray-900">Automation</h2>
+		</div>
+		<div class="card-body">
+			<ul class="divide-y divide-gray-100">
+				{#each switches as s (s.key)}
+					{@const on = policy[s.key]}
+					<li class="py-3 flex items-center gap-3">
+						<div class="flex-1 min-w-0">
+							<p class="font-medium text-gray-900">{s.label}</p>
+							<p class="text-sm text-gray-600">{s.help}</p>
+						</div>
+						<span class={on ? 'badge-success' : 'badge-gray'}>{on ? 'On' : 'Off'}</span>
+						<form
+							method="POST"
+							action="?/togglePolicy"
+							data-policy-key={s.key}
+							use:enhance={handleResult}
+							class="shrink-0"
+						>
+							<input type="hidden" name="key" value={s.key} />
+							<input type="hidden" name="enabled" value={on ? 'false' : 'true'} />
+							<button
+								type={on || !s.reenableWarning ? 'submit' : 'button'}
+								class="btn-secondary btn-sm touch-target"
+								on:click={() => {
+									if (!on && s.reenableWarning) confirmEnableKey = s.key;
+								}}
+							>
+								{on ? 'Turn off' : 'Turn on'}
+							</button>
+						</form>
+					</li>
+				{/each}
+			</ul>
+		</div>
 	</div>
 
 	<div class="card">
@@ -140,4 +234,17 @@
 		input?.closest('form')?.requestSubmit();
 	}}
 	on:cancel={() => (confirmApproveId = null)}
+/>
+
+<ConfirmDialog
+	open={confirmEnableKey !== null}
+	title="Turn this back on?"
+	message={switches.find((s) => s.key === confirmEnableKey)?.reenableWarning ?? ''}
+	confirmLabel="Turn on"
+	on:confirm={() => {
+		const key = confirmEnableKey;
+		confirmEnableKey = null;
+		if (key) submitToggle(key);
+	}}
+	on:cancel={() => (confirmEnableKey = null)}
 />

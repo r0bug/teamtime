@@ -1,7 +1,7 @@
 import twilio from 'twilio';
 import { env } from '$env/dynamic/private';
 import { createLogger } from '$lib/server/logger';
-import { db, smsLogs, users } from '$lib/server/db';
+import { db, smsLogs, users, vendors } from '$lib/server/db';
 import { isNotNull } from 'drizzle-orm';
 
 const log = createLogger('server:twilio');
@@ -28,6 +28,21 @@ export interface SMSResult {
 	error?: string;
 }
 
+/**
+ * Who and what this message belongs to, recorded on the sms_logs row.
+ *
+ * Optional everywhere: cron jobs and system notifications legitimately have no
+ * human sender, and they pass nothing. Anything a manager triggers — directly
+ * or through the Office Manager — should pass `sentByUserId` so the
+ * conversation log can say who sent it.
+ */
+export interface SMSMeta {
+	/** The user who caused this message. Null for cron/system sends. */
+	sentByUserId?: string | null;
+	/** The vendor counterparty, when the caller already knows it. */
+	vendorId?: string | null;
+}
+
 // Header prepended to all outgoing SMS messages
 // TODO: Make this configurable from the UI
 const SMS_HEADER = 'Yakima Finds Communiqué:';
@@ -36,9 +51,10 @@ const SMS_HEADER = 'Yakima Finds Communiqué:';
  * Send an SMS message via Twilio
  * @param to - The recipient's phone number (E.164 format, e.g., +15551234567)
  * @param body - The message body
+ * @param meta - Optional attribution recorded on the log row (see SMSMeta)
  * @returns Result with success status and message SID or error
  */
-export async function sendSMS(to: string, body: string): Promise<SMSResult> {
+export async function sendSMS(to: string, body: string, meta: SMSMeta = {}): Promise<SMSResult> {
 	// Prepend header to all messages
 	const fullMessage = `${SMS_HEADER} ${body}`;
 	const client = getClient();
@@ -80,6 +96,8 @@ export async function sendSMS(to: string, body: string): Promise<SMSResult> {
 				toNumber: to,
 				body: fullMessage,
 				userId: recipients[0].id,
+				vendorId: await resolveVendorId(to, meta.vendorId),
+				sentByUserId: resolveSenderId(meta.sentByUserId),
 				errorMessage: error
 			});
 		} catch (logErr) {
@@ -107,7 +125,9 @@ export async function sendSMS(to: string, body: string): Promise<SMSResult> {
 				fromNumber: env.TWILIO_PHONE_NUMBER!,
 				toNumber: to,
 				body: fullMessage,
-				userId
+				userId,
+				vendorId: await resolveVendorId(to, meta.vendorId),
+				sentByUserId: resolveSenderId(meta.sentByUserId)
 			});
 		} catch (logErr) {
 			log.warn({ error: logErr, sid: message.sid }, 'Failed to insert SMS log');
@@ -131,6 +151,8 @@ export async function sendSMS(to: string, body: string): Promise<SMSResult> {
 				toNumber: to,
 				body: fullMessage,
 				userId,
+				vendorId: await resolveVendorId(to, meta.vendorId),
+				sentByUserId: resolveSenderId(meta.sentByUserId),
 				errorMessage
 			});
 		} catch (logErr) {
@@ -173,6 +195,56 @@ async function findUserByPhone(phone: string): Promise<string | null> {
 	if (matches.length === 0) return null;
 	// Prefer an active user when a number is shared
 	return (matches.find((u) => u.isActive) ?? matches[0]).id;
+}
+
+/**
+ * Find the vendor whose contact phone matches this number.
+ *
+ * Same last-10-digits comparison as findUsersByPhone — vendor contact numbers
+ * are hand-entered and come in every format imaginable.
+ */
+export async function findVendorByPhone(phone: string): Promise<string | null> {
+	const target = phone.replace(/\D/g, '').slice(-10);
+	if (target.length < 10) return null;
+	try {
+		const rows = await db
+			.select({ id: vendors.id, contactPhone: vendors.contactPhone })
+			.from(vendors)
+			.where(isNotNull(vendors.contactPhone));
+		const match = rows.find(
+			(v) => (v.contactPhone ?? '').replace(/\D/g, '').slice(-10) === target
+		);
+		return match?.id ?? null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Vendor id for a log row: trust what the caller passed, otherwise try to
+ * match the number. Attribution is best-effort — never let it fail a send.
+ */
+async function resolveVendorId(to: string, supplied?: string | null): Promise<string | null> {
+	if (supplied) return supplied;
+	return findVendorByPhone(to);
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Sender id for a log row.
+ *
+ * Callers pass whatever they have, and some carry sentinels rather than user
+ * ids — the scheduled-SMS job stores "ai:office_manager" as its scheduledBy
+ * when no human triggered it. Writing that into a column with a FK to users
+ * would fail the insert and lose the log row, so anything that isn't a UUID is
+ * dropped to null: attribution is worth less than the record of the message.
+ */
+function resolveSenderId(supplied?: string | null): string | null {
+	if (!supplied) return null;
+	if (UUID_RE.test(supplied)) return supplied;
+	log.debug({ supplied }, 'Ignoring non-UUID sentByUserId on SMS log');
+	return null;
 }
 
 /**

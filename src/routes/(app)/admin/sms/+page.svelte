@@ -3,19 +3,39 @@
 
 	export let data: PageData;
 
-	type TabId = 'overview' | 'delivery' | 'replies' | 'scheduled' | 'conversations' | 'help';
+	type TabId =
+		| 'overview'
+		| 'threads'
+		| 'delivery'
+		| 'replies'
+		| 'scheduled'
+		| 'conversations'
+		| 'help';
 	let activeTab: TabId = 'overview';
 	const tabs: { id: TabId; label: string }[] = [
 		{ id: 'overview', label: 'Overview' },
+		{ id: 'threads', label: 'Conversations' },
 		{ id: 'delivery', label: 'Delivery Tracking' },
 		{ id: 'replies', label: 'Replies & Opt-outs' },
 		{ id: 'scheduled', label: 'Scheduled Jobs' },
-		{ id: 'conversations', label: 'AI Conversations' },
+		{ id: 'conversations', label: 'AI Chat Sessions' },
 		{ id: 'help', label: 'How to Use' }
 	];
 
 	let selectedConvoId: string | null = null;
 	$: selectedConvo = data.conversations?.find((c) => c.id === selectedConvoId) ?? null;
+
+	/** Which thread is expanded. Only one at a time — these get long. */
+	let openThreadKey: string | null = null;
+	$: threads = data.threads ?? [];
+	$: awaitingCount = threads.filter((t) => t.awaitingReply).length;
+
+	function counterpartyLabel(t: (typeof threads)[number]): string {
+		if (t.counterpartyName) {
+			return t.boothNumber ? `${t.counterpartyName} · Booth ${t.boothNumber}` : t.counterpartyName;
+		}
+		return t.phone;
+	}
 
 	let testPhone = '';
 	let testResult: { success: boolean; sid?: string; error?: string } | null = null;
@@ -93,6 +113,9 @@
 						{tab.label}
 						{#if tab.id === 'replies' && data.optOutCount > 0}
 							<span class="ml-1 px-1.5 py-0.5 rounded-full text-xs bg-red-100 text-red-700">{data.optOutCount}</span>
+						{/if}
+						{#if tab.id === 'threads' && awaitingCount > 0}
+							<span class="ml-1 px-1.5 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">{awaitingCount}</span>
 						{/if}
 						{#if tab.id === 'conversations'}
 							{@const pendingTotal = (data.conversations ?? []).reduce((sum, c) => sum + c.pendingPinActions, 0)}
@@ -233,6 +256,85 @@
 					</div>
 				</div>
 			{/if}
+		{/if}
+
+		<!-- Two-Way Conversations Tab -->
+		{#if activeTab === 'threads'}
+			<div class="bg-white rounded-lg shadow p-6">
+				<h2 class="text-lg font-semibold">Conversations</h2>
+				<p class="text-sm text-gray-500 mt-1 mb-4">
+					Both directions, grouped by the person on the other end. Staff and vendors alike —
+					vendors are matched on their vendor-record contact number. Outbound messages show
+					who sent them; blank means a cron or system notification.
+				</p>
+
+				{#if threads.length === 0}
+					<p class="text-sm text-gray-500">No SMS activity logged yet.</p>
+				{:else}
+					<ul class="divide-y divide-gray-100">
+						{#each threads as t (t.key)}
+							{@const isOpen = openThreadKey === t.key}
+							<li class="py-3">
+								<button
+									class="w-full text-left flex items-start gap-3 touch-target"
+									on:click={() => (openThreadKey = isOpen ? null : t.key)}
+									aria-expanded={isOpen}
+								>
+									<div class="flex-1 min-w-0">
+										<div class="flex items-center gap-2 flex-wrap">
+											<span class="font-medium text-gray-900">{counterpartyLabel(t)}</span>
+											{#if t.counterpartyKind === 'vendor'}
+												<span class="badge-primary">vendor</span>
+											{:else if t.counterpartyKind === 'staff'}
+												<span class="badge-gray">staff</span>
+											{:else}
+												<span class="badge-warning">unknown number</span>
+											{/if}
+											{#if t.awaitingReply}
+												<span class="badge-primary">awaiting reply</span>
+											{/if}
+										</div>
+										<p class="text-sm text-gray-600 truncate mt-0.5">
+											{t.messages[t.messages.length - 1]?.body ?? ''}
+										</p>
+										<p class="text-xs text-gray-500 mt-0.5">
+											{t.messageCount} message{t.messageCount === 1 ? '' : 's'} ·
+											{formatDate(t.lastMessageAt)}
+										</p>
+									</div>
+									<span class="text-gray-400 text-sm shrink-0">{isOpen ? '▲' : '▼'}</span>
+								</button>
+
+								{#if isOpen}
+									<div class="mt-3 space-y-2 border-l-2 border-gray-100 pl-3">
+										{#each t.messages as m (m.id)}
+											<div class="flex {m.direction === 'inbound' ? 'justify-start' : 'justify-end'}">
+												<div
+													class="max-w-[85%] rounded-lg px-3 py-2 text-sm {m.direction === 'inbound'
+														? 'bg-gray-100 text-gray-900'
+														: 'bg-primary-50 text-gray-900'}"
+												>
+													<p class="whitespace-pre-wrap break-words">{m.body ?? '(no body)'}</p>
+													<p class="text-xs text-gray-500 mt-1">
+														{m.direction === 'inbound' ? 'Them' : m.sentByName ?? 'System'}
+														· {formatDate(m.createdAt)}
+														<span class="px-1.5 py-0.5 rounded-full text-xs {statusColor(m.status)}">
+															{m.status}
+														</span>
+													</p>
+													{#if m.errorMessage}
+														<p class="text-xs text-red-600 mt-1">{m.errorMessage}</p>
+													{/if}
+												</div>
+											</div>
+										{/each}
+									</div>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
 		{/if}
 
 		<!-- Delivery Tracking Tab -->

@@ -2,6 +2,7 @@ import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { isAdmin, isManager } from '$lib/server/auth/roles';
 import { isTwilioConfigured } from '$lib/server/twilio';
+import { listSmsThreads } from '$lib/server/services/sms-log-service';
 import { db, jobs, users, smsLogs, officeManagerChats, officeManagerPendingActions } from '$lib/server/db';
 import { eq, desc, sql, and, gte, inArray } from 'drizzle-orm';
 import type { OfficeManagerMessage } from '$lib/server/db/schema';
@@ -12,6 +13,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 	}
 
 	const configured = isTwilioConfigured();
+
+	// Threaded view of both directions — the delivery/inbound tables below are
+	// still the raw per-message record for debugging deliverability.
+	const threads = await listSmsThreads();
 
 	// Recent SMS jobs (scheduled)
 	const recentJobs = await db
@@ -227,6 +232,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	return {
 		configured,
+		threads,
 		stats,
 		recentJobs,
 		staffCoverage: {

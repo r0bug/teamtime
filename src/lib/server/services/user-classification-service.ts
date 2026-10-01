@@ -78,6 +78,89 @@ export async function getSchedulableStaff(): Promise<{ id: string; name: string;
 }
 
 /**
+ * A vendor we can text, and which number we'd use.
+ *
+ * Vendors are reachable two ways. Onboarded vendors with a portal account have
+ * a phone on their user record (see phoneNotAllowedReason — that's the only
+ * point at which they get one). Everyone else — most of the roster, including
+ * every paper-archive migration — only has vendors.contact_phone.
+ *
+ * The user record wins when both exist: it's the number tied to a login, so
+ * it's the one that's been through onboarding.
+ */
+export interface VendorSmsTarget {
+	vendorId: string;
+	displayName: string;
+	boothNumber: string | null;
+	/** Raw stored phone — caller formats to E.164. Null when unreachable. */
+	phone: string | null;
+	source: 'user_account' | 'vendor_record' | null;
+}
+
+function toSmsTarget(row: {
+	id: string;
+	displayName: string;
+	boothNumber: string | null;
+	contactPhone: string | null;
+	userPhone: string | null;
+}): VendorSmsTarget {
+	const phone = row.userPhone ?? row.contactPhone ?? null;
+	return {
+		vendorId: row.id,
+		displayName: row.displayName,
+		boothNumber: row.boothNumber,
+		phone,
+		source: phone === null ? null : row.userPhone ? 'user_account' : 'vendor_record'
+	};
+}
+
+/** One vendor's SMS target, or null when no such vendor exists. */
+export async function getVendorSmsTarget(vendorId: string): Promise<VendorSmsTarget | null> {
+	const [row] = await db
+		.select({
+			id: vendors.id,
+			displayName: vendors.displayName,
+			boothNumber: vendors.boothNumber,
+			contactPhone: vendors.contactPhone,
+			userPhone: users.phone
+		})
+		.from(vendors)
+		.leftJoin(users, eq(users.id, vendors.userId))
+		.where(eq(vendors.id, vendorId))
+		.limit(1);
+
+	return row ? toSmsTarget(row) : null;
+}
+
+/**
+ * Every vendor we could text. Active-only by default — a broadcast should not
+ * reach vendors who have left.
+ */
+export async function getVendorSmsTargets(
+	opts: { activeOnly?: boolean } = {}
+): Promise<VendorSmsTarget[]> {
+	const activeOnly = opts.activeOnly !== false;
+
+	const rows = await db
+		.select({
+			id: vendors.id,
+			displayName: vendors.displayName,
+			boothNumber: vendors.boothNumber,
+			contactPhone: vendors.contactPhone,
+			userPhone: users.phone,
+			status: vendors.status,
+			nrsInactive: vendors.nrsInactive
+		})
+		.from(vendors)
+		.leftJoin(users, eq(users.id, vendors.userId))
+		.orderBy(vendors.displayName);
+
+	return rows
+		.filter((v) => !activeOnly || (v.status === 'active' && !v.nrsInactive))
+		.map(toSmsTarget);
+}
+
+/**
  * May this user have a phone number on their user record?
  * Staff always can; vendor users only once onboarding is complete.
  * Returns null when allowed, or a human-readable reason when not.

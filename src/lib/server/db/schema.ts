@@ -1657,6 +1657,14 @@ export const smsLogs = pgTable('sms_logs', {
 	toNumber: text('to_number').notNull(),
 	body: text('body'), // Message text
 	userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }), // Linked user if known
+	// The vendor on the other end, when the counterparty is a booth vendor
+	// rather than staff. Most vendors have no user account, so userId alone
+	// would leave their side of the conversation unattributed.
+	vendorId: uuid('vendor_id').references((): AnyPgColumn => vendors.id, { onDelete: 'set null' }),
+	// Which human caused this outbound message. Null for cron/system sends and
+	// for all inbound messages. Without it the log can't answer "who texted
+	// this vendor?" — every message looks like it came from the Office Manager.
+	sentByUserId: uuid('sent_by_user_id').references(() => users.id, { onDelete: 'set null' }),
 	errorCode: text('error_code'), // Twilio error code if failed
 	errorMessage: text('error_message'), // Twilio error message
 	segments: integer('segments'), // Number of SMS segments
@@ -1664,7 +1672,10 @@ export const smsLogs = pgTable('sms_logs', {
 	statusUpdatedAt: timestamp('status_updated_at', { withTimezone: true }), // Last status callback time
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 }, (table) => ({
-	userIdIdx: index('sms_logs_user_id_idx').on(table.userId)
+	userIdIdx: index('sms_logs_user_id_idx').on(table.userId),
+	vendorIdIdx: index('sms_logs_vendor_id_idx').on(table.vendorId),
+	// Threaded conversation view pages by counterparty number, newest first.
+	threadIdx: index('sms_logs_thread_idx').on(table.toNumber, table.fromNumber, table.createdAt)
 }));
 
 export type SmsLog = typeof smsLogs.$inferSelect;
@@ -2905,8 +2916,37 @@ export const clockOutWarnings = pgTable('clock_out_warnings', {
 	demeritId: uuid('demerit_id').references(() => demerits.id, { onDelete: 'set null' }),
 	userReply: text('user_reply'),
 	repliedAt: timestamp('replied_at', { withTimezone: true }),
+	// What the Office Manager made of the employee's reply — chiefly whether
+	// working past shift end was the business's doing (asked to stay, customers
+	// still in the store) or just a forgotten clock-out. Drives whether the
+	// entry is closed at shift end or held open for a manager.
+	replyAnalysis: jsonb('reply_analysis').$type<ClockOutReplyAnalysis>(),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
+
+/** Stored verdict from interpreting a clock-out reminder reply. */
+export interface ClockOutReplyAnalysis {
+	intent: 'still_working' | 'already_left' | 'will_clock_out' | 'unclear';
+	/** Only meaningful for still_working: was the overtime the business's doing? */
+	justified: boolean;
+	category:
+		| 'asked_to_stay'
+		| 'customers_present'
+		| 'task_unfinished'
+		| 'covering_shift'
+		| 'forgot'
+		| 'personal'
+		| 'other';
+	/** Pacific "HH:MM" they say they actually left, when they gave one. */
+	statedClockOutTime: string | null;
+	/** One line for the timesheet, in the Office Manager's words. */
+	reason: string;
+	needsManager: boolean;
+	confidence: 'high' | 'low';
+	/** Model that produced this, or 'fallback' when interpretation failed. */
+	model: string;
+	analysedAt: string;
+}
 
 // Clock-Out Warnings Relations
 export const clockOutWarningsRelations = relations(clockOutWarnings, ({ one }) => ({
@@ -3036,11 +3076,35 @@ export type AccountLockout = typeof accountLockouts.$inferSelect;
 export type NewAccountLockout = typeof accountLockouts.$inferInsert;
 
 // ============================================
-// SHIFT REQUESTS (Broadcast Shift Responses)
+// SHIFT COVERAGE (call-outs, pickups, trades)
 // ============================================
+//
+// Flow: staff files a request for a shift they can't work -> a manager reviews
+// it and picks eligible coworkers -> those coworkers get an SMS -> the first to
+// reply claims it. See PLAN-shift-coverage.md.
 
-export const shiftRequestStatusEnum = pgEnum('shift_request_status', ['open', 'filled', 'cancelled']);
+export const shiftRequestStatusEnum = pgEnum('shift_request_status', [
+	'open',
+	'filled',
+	'cancelled',
+	'pending_approval',
+	'expired',
+	'denied'
+]);
 export const shiftResponseStatusEnum = pgEnum('shift_response_status', ['accepted', 'declined']);
+export const shiftRequestTypeEnum = pgEnum('shift_request_type', [
+	'sick',
+	'personal',
+	'appointment',
+	'trade',
+	'open_shift'
+]);
+export const shiftRecipientDeliveryEnum = pgEnum('shift_recipient_delivery', [
+	'pending',
+	'sent',
+	'failed',
+	'skipped'
+]);
 
 export const shiftRequests = pgTable('shift_requests', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -3054,9 +3118,60 @@ export const shiftRequests = pgTable('shift_requests', {
 	status: shiftRequestStatusEnum('status').notNull().default('open'),
 	filledBy: uuid('filled_by').references(() => users.id, { onDelete: 'set null' }),
 	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	// --- shift coverage ---
+	requestType: shiftRequestTypeEnum('request_type').notNull().default('open_shift'),
+	// The staff member who can't work the shift. Distinct from createdBy, which
+	// is whoever entered it — a manager can file on someone's behalf from a call.
+	requestedBy: uuid('requested_by').references(() => users.id, { onDelete: 'set null' }),
+	// Staff's own note ("food poisoning"). Manager-visible only — never broadcast.
+	reason: text('reason'),
+	// Short code used to disambiguate SMS replies when a user has >1 open invite.
+	claimCode: text('claim_code'),
+	respondBy: timestamp('respond_by', { withTimezone: true }),
+	broadcastAt: timestamp('broadcast_at', { withTimezone: true }),
+	broadcastBy: uuid('broadcast_by').references(() => users.id, { onDelete: 'set null' }),
+	filledAt: timestamp('filled_at', { withTimezone: true }),
+	// When true, a claim reassigns the shift immediately. Trades set this false:
+	// moving two people's schedules should wait for a manager.
+	autoApply: boolean('auto_apply').notNull().default(true),
+	// Phase 2 (trade): the shift the requester takes in exchange.
+	offeredShiftId: uuid('offered_shift_id').references((): AnyPgColumn => shifts.id, { onDelete: 'set null' }),
+	managerNote: text('manager_note'),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => ({
+	statusIdx: index('shift_requests_status_idx').on(table.status),
+	claimCodeIdx: index('shift_requests_claim_code_idx').on(table.claimCode),
+	requestedByIdx: index('shift_requests_requested_by_idx').on(table.requestedBy)
+}));
+
+// Who was invited to cover a request. shift_request_responses only records
+// people who replied; this records the invited set, so the UI can show
+// "3 of 8 responded", chase non-responders, and verify that a texter was
+// actually invited.
+export const shiftRequestRecipients = pgTable('shift_request_recipients', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	requestId: uuid('request_id')
+		.notNull()
+		.references(() => shiftRequests.id, { onDelete: 'cascade' }),
+	userId: uuid('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	phone: text('phone'), // snapshot at send time
+	deliveryStatus: shiftRecipientDeliveryEnum('delivery_status').notNull().default('pending'),
+	smsLogId: uuid('sms_log_id').references(() => smsLogs.id, { onDelete: 'set null' }),
+	// Why this person was flagged, frozen at send time so the record still
+	// explains itself after the schedule changes.
+	eligibilityNotes: jsonb('eligibility_notes').$type<{ warnings?: string[] }>(),
+	errorMessage: text('error_message'),
+	remindedAt: timestamp('reminded_at', { withTimezone: true }),
+	sentAt: timestamp('sent_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	uniqueRecipient: unique('shift_request_recipients_unique').on(table.requestId, table.userId),
+	requestIdIdx: index('shift_request_recipients_request_id_idx').on(table.requestId),
+	userIdIdx: index('shift_request_recipients_user_id_idx').on(table.userId)
+}));
 
 export const shiftRequestResponses = pgTable('shift_request_responses', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -3068,6 +3183,8 @@ export const shiftRequestResponses = pgTable('shift_request_responses', {
 		.references(() => users.id, { onDelete: 'cascade' }),
 	status: shiftResponseStatusEnum('status').notNull(),
 	note: text('note'),
+	viaSms: boolean('via_sms').notNull().default(false),
+	smsLogId: uuid('sms_log_id').references(() => smsLogs.id, { onDelete: 'set null' }),
 	respondedAt: timestamp('responded_at', { withTimezone: true }).notNull().defaultNow()
 }, (table) => ({
 	uniqueResponse: unique().on(table.requestId, table.userId)
@@ -3093,7 +3210,24 @@ export const shiftRequestsRelations = relations(shiftRequests, ({ one, many }) =
 		references: [users.id],
 		relationName: 'shiftRequestCreatedBy'
 	}),
-	responses: many(shiftRequestResponses)
+	requestedByUser: one(users, {
+		fields: [shiftRequests.requestedBy],
+		references: [users.id],
+		relationName: 'shiftRequestRequestedBy'
+	}),
+	responses: many(shiftRequestResponses),
+	recipients: many(shiftRequestRecipients)
+}));
+
+export const shiftRequestRecipientsRelations = relations(shiftRequestRecipients, ({ one }) => ({
+	request: one(shiftRequests, {
+		fields: [shiftRequestRecipients.requestId],
+		references: [shiftRequests.id]
+	}),
+	user: one(users, {
+		fields: [shiftRequestRecipients.userId],
+		references: [users.id]
+	})
 }));
 
 export const shiftRequestResponsesRelations = relations(shiftRequestResponses, ({ one }) => ({
@@ -3112,6 +3246,8 @@ export type ShiftRequest = typeof shiftRequests.$inferSelect;
 export type NewShiftRequest = typeof shiftRequests.$inferInsert;
 export type ShiftRequestResponse = typeof shiftRequestResponses.$inferSelect;
 export type NewShiftRequestResponse = typeof shiftRequestResponses.$inferInsert;
+export type ShiftRequestRecipient = typeof shiftRequestRecipients.$inferSelect;
+export type NewShiftRequestRecipient = typeof shiftRequestRecipients.$inferInsert;
 
 // ============================================
 // GAMIFICATION CONFIG (Database-driven game mechanics)
