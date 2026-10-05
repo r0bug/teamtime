@@ -12,6 +12,7 @@
 		{ href: '/vendor/news', label: 'News' },
 		{ href: '/vendor/newsletters', label: 'Newsletters' },
 		{ href: '/vendor/inventory', label: 'Inventory' },
+		{ href: '/vendor/floorplan', label: 'My Booth' },
 		{ href: '/vendor/notes', label: 'Notes' },
 		// Web Avery "Print Sheet" unlinked — vendors print via the desktop app
 		// (USB/print-queue). Route + renderer kept intact for re-linking later.

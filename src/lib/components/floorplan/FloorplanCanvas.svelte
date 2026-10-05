@@ -28,8 +28,9 @@
 	export let mode: Mode = 'view';
 	/** transient injected color layer: "x,y" -> color (overrides overlay) */
 	export let renderLayer: Map<string, string> | null = null;
-	/** cells to outline as a warning (reachability check) */
+	/** cells to outline (reachability warning by default; read-only views use it to frame a booth) */
 	export let highlight: Set<string> = new Set();
+	export let highlightColor = '#ef4444';
 	/** live tool preview: cells to tint while dragging */
 	export let preview: Set<string> = new Set();
 
@@ -60,7 +61,7 @@
 
 	$: defByKey = new Map(defs.map((d) => [d.key, d]));
 	// Any input change repaints.
-	$: cells, overlayKey, renderLayer, highlight, preview, gridW, gridH, invalidate();
+	$: cells, overlayKey, renderLayer, highlight, highlightColor, preview, gridW, gridH, invalidate();
 	$: spacerW = gridW * scale;
 	$: spacerH = gridH * scale;
 
@@ -82,16 +83,32 @@
 	}
 
 	export function fit(): void {
-		const bbox = contentBBox(cells);
+		frame(contentBBox(cells), 24, MAX_SCALE);
+	}
+
+	/**
+	 * Frame a subset of cells (e.g. one vendor's booth). Zoom is capped well
+	 * below MAX_SCALE so a small booth keeps its surroundings in view.
+	 */
+	export function fitTo(keys: Iterable<string>, maxScale = 24): void {
+		const subset: CellMap = new Map();
+		for (const k of keys) subset.set(k, {});
+		frame(contentBBox(subset), 48, maxScale);
+	}
+
+	function frame(
+		bbox: { minX: number; minY: number; maxX: number; maxY: number } | null,
+		margin: number,
+		maxScale: number
+	): void {
 		if (!bbox || cssW <= 0 || cssH <= 0) return;
-		const margin = 24;
 		const w = bbox.maxX - bbox.minX;
 		const h = bbox.maxY - bbox.minY;
-		scale = Math.min(
-			MAX_SCALE,
-			Math.max(MIN_SCALE, Math.min((cssW - 2 * margin) / w, (cssH - 2 * margin) / h))
-		);
-		queueScroll(bbox.minX * scale - margin, (gridH - bbox.maxY) * scale - margin);
+		scale = Math.min(maxScale, Math.max(MIN_SCALE, Math.min((cssW - 2 * margin) / w, (cssH - 2 * margin) / h)));
+		// Center the bbox in the viewport (matters when the zoom cap leaves slack).
+		const left = (bbox.minX + w / 2) * scale - cssW / 2;
+		const top = (gridH - (bbox.minY + h / 2)) * scale - cssH / 2;
+		queueScroll(left, top);
 	}
 
 	/** Zoom keeping the world point at viewport position (px,py) fixed. */
@@ -188,7 +205,7 @@
 		}
 
 		if (highlight.size > 0) {
-			ctx.strokeStyle = '#ef4444';
+			ctx.strokeStyle = highlightColor;
 			ctx.lineWidth = Math.max(1, s * 0.12);
 			for (const key of highlight) {
 				const { x, y } = parseKey(key);

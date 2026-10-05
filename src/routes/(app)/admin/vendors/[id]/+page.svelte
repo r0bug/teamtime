@@ -236,6 +236,7 @@
 			</p>
 		</div>
 		<div class="flex gap-2">
+			<a href={`/admin/vendors/${data.vendor.id}/floorplan`} class="btn btn-secondary">🗺 Floorplan</a>
 			<a href={`/admin/vendors/${data.vendor.id}/tags`} class="btn btn-secondary">🏷 Tag Designer</a>
 			<button class="btn btn-primary" on:click={() => openSignModal()} disabled={data.availableTemplates.length === 0}>
 				+ Capture Signature
