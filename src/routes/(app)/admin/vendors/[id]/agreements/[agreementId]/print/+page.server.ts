@@ -6,7 +6,6 @@ import { marked } from 'marked';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	if (!locals.user) throw redirect(302, '/login');
-	if (!locals.user) throw redirect(302, '/dashboard');
 
 	const [vendor] = await db
 		.select({

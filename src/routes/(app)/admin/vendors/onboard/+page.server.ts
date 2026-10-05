@@ -7,11 +7,17 @@ import {
 	type OnboardingInput
 } from '$lib/server/services/vendor-onboarding-service';
 import { createLogger } from '$lib/server/logger';
+import { isManager } from '$lib/server/auth/roles';
 
 const log = createLogger('route:vendors:onboard');
 
+// Creating a vendor is a manager action. The vendor LIST at /admin/vendors is
+// deliberately staff-visible (it sits in the main nav with show:true), but creating one
+// writes an NRS-backed record with rent and commission terms, so it is gated here.
+// Checked before tightening: of 104 vendors, 103 came from the NRS sync and the single
+// UI-created one was made by a manager, so no existing workflow depends on staff access.
 export const load: PageServerLoad = async ({ locals }) => {
-	if (!locals.user) throw redirect(302, '/dashboard');
+	if (!isManager(locals.user)) throw redirect(302, '/admin/vendors');
 	return {
 		boothCommissionPercent: BOOTH_RENTAL_COMMISSION_PERCENT,
 		individualCommissionPercent: INDIVIDUAL_ITEM_COMMISSION_PERCENT
@@ -41,7 +47,7 @@ function text(raw: FormDataEntryValue | null): string | null {
 
 export const actions: Actions = {
 	create: async ({ locals, request }) => {
-		if (!locals.user) return fail(403, { error: 'Not authorized' });
+		if (!isManager(locals.user)) return fail(403, { error: 'Not authorized' });
 
 		const fd = await request.formData();
 		const displayName = text(fd.get('displayName'));
