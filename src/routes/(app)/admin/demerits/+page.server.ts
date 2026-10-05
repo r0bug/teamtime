@@ -5,6 +5,12 @@ import {
 	approveDemerit,
 	dismissDemerit
 } from '$lib/server/services/demerit-review-service';
+import {
+	getAttendancePolicyConfig,
+	updateAttendancePolicyConfig,
+	type AttendancePolicyConfig
+} from '$lib/server/services/attendance-policy-service';
+import { audit } from '$lib/server/services/audit-service';
 
 function requireManager(locals: App.Locals) {
 	if (!locals.user) {
@@ -16,10 +22,21 @@ function requireManager(locals: App.Locals) {
 	return locals.user;
 }
 
+/** Switches a manager may flip from this page. */
+const TOGGLEABLE: readonly (keyof AttendancePolicyConfig)[] = [
+	'demeritsEnabled',
+	'lateArrivalWarningsEnabled',
+	'clockOutNagEnabled',
+	'clockOutPointsPenaltyEnabled'
+];
+
 export const load: PageServerLoad = async ({ locals }) => {
 	requireManager(locals);
-	const { pending, resolved } = await listDemeritsForReview(50);
-	return { pending, resolved };
+	const [{ pending, resolved }, policy] = await Promise.all([
+		listDemeritsForReview(50),
+		getAttendancePolicyConfig()
+	]);
+	return { pending, resolved, policy };
 };
 
 export const actions: Actions = {
@@ -49,6 +66,39 @@ export const actions: Actions = {
 			return { success: true, message: 'Demerit dismissed — nothing was sent or deducted.' };
 		} catch (err) {
 			return fail(400, { error: err instanceof Error ? err.message : 'Failed to dismiss demerit' });
+		}
+	},
+
+	togglePolicy: async ({ locals, request }) => {
+		const user = requireManager(locals);
+		const form = await request.formData();
+		const key = form.get('key')?.toString() as keyof AttendancePolicyConfig | undefined;
+		const enabled = form.get('enabled') === 'true';
+
+		if (!key || !TOGGLEABLE.includes(key)) {
+			return fail(400, { error: 'Unknown attendance policy switch' });
+		}
+
+		try {
+			const before = await getAttendancePolicyConfig();
+			const after = await updateAttendancePolicyConfig({ [key]: enabled });
+
+			// Turning automated discipline back on is exactly the kind of change
+			// someone will want to trace later.
+			await audit({
+				userId: user.id,
+				action: 'update',
+				entityType: 'attendance_policy',
+				entityId: key,
+				beforeData: { [key]: before[key] },
+				afterData: { [key]: after[key] }
+			});
+
+			return { success: true, message: `Setting ${enabled ? 'enabled' : 'disabled'}.` };
+		} catch (err) {
+			return fail(500, {
+				error: err instanceof Error ? err.message : 'Failed to update attendance policy'
+			});
 		}
 	}
 };

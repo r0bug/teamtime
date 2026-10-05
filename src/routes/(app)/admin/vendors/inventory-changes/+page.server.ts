@@ -6,6 +6,7 @@ import {
 	markApplied,
 	reject,
 	autoApplyPendingCreatesViaApi,
+	applyPendingChange,
 	InventoryChangeError
 } from '$lib/server/services/inventory-change-service';
 
@@ -37,6 +38,24 @@ export const actions: Actions = {
 			throw err;
 		}
 		return { success: 'apply' };
+	},
+
+	// Re-drive a failed change through the live NRS write path (create/update/
+	// deactivate), rather than just marking it applied by hand.
+	retry: async ({ locals, request }) => {
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
+		const changeId = (await request.formData()).get('id') as string;
+		if (!changeId) return fail(400, { error: 'id required' });
+		try {
+			const result = await applyPendingChange(changeId, locals.user!.id);
+			if (!result.applied) {
+				return fail(502, { error: `NRS still refused it: ${result.error ?? 'unknown error'}` });
+			}
+			return { success: 'retry' };
+		} catch (err) {
+			if (err instanceof InventoryChangeError) return fail(400, { error: err.message });
+			throw err;
+		}
 	},
 
 	reject: async ({ locals, request }) => {

@@ -120,6 +120,22 @@
 			</div>
 		</a>
 
+		<a href="/admin/shift-coverage" class="card hover:shadow-md transition-shadow">
+			<div class="card-body">
+				<div class="flex items-center">
+					<div class="p-3 bg-primary-100 rounded-lg">
+						<svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+						</svg>
+					</div>
+					<div class="ml-4">
+						<h3 class="text-lg font-medium text-gray-900">Shift Coverage</h3>
+						<p class="text-sm text-gray-500">Call-outs, pickups and trades</p>
+					</div>
+				</div>
+			</div>
+		</a>
+
 		<a href="/admin/payroll" class="card hover:shadow-md transition-shadow">
 			<div class="card-body flex items-center">
 				<div class="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center mr-4">

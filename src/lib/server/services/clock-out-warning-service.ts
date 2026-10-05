@@ -1,9 +1,24 @@
 /**
  * Clock-Out Warning Service
  *
- * Handles clock-out warnings, demerit escalation, and related notifications.
- * Implements the policy: 2 warnings in 30 days = pending demerit for manager
- * review (nothing punitive happens until a manager approves it).
+ * Handles the overdue clock-out reminder, auto clock-out, and
+ * manager-initiated force clock-outs.
+ *
+ * Current policy (2026-10-01) — one nag, then close:
+ *   1. `nagDelayMinutes` past scheduled shift end, send ONE reminder SMS.
+ *   2. `autoCloseAfterNagMinutes` later, if the entry is still open and the
+ *      employee hasn't texted back, set clock-out to the scheduled shift end
+ *      and annotate the time entry so the timesheet says the system did it.
+ *   3. A reply defers the close until the `backstopMinutes` hard stop, so
+ *      nobody stays clocked in overnight because they answered "still here".
+ *
+ * Nothing here is punitive: no points are docked and the demerit engine is
+ * off. See attendance-policy-service for the switches.
+ *
+ * The reminder deliberately asks people to clock out in the app rather than to
+ * text a time back. Reply *content* is never parsed — shift-coverage owns the
+ * bare "YES"/claim-code reply space, and a competing parser here would swallow
+ * its claims. We only check whether any inbound text arrived.
  */
 
 import {
@@ -14,14 +29,16 @@ import {
 	timeEntries,
 	shifts,
 	appSettings,
-	breakEntries
+	breakEntries,
+	smsLogs
 } from '$lib/server/db';
 import { createLogger } from '$lib/server/logger';
-import { eq, and, gte, lte, isNull, count, desc } from 'drizzle-orm';
+import { eq, and, gt, gte, lte, isNull, count, desc } from 'drizzle-orm';
 import { awardPoints, POINT_VALUES } from './points-service';
 import { sendSMS, formatPhoneToE164 } from '$lib/server/twilio';
 import { notifyManagersOfPendingDemerit } from './demerit-review-service';
-import { toPacificTimeString, getPacificDayBounds } from '$lib/server/utils/timezone';
+import { getAttendancePolicyConfig } from './attendance-policy-service';
+import { getPacificDayBounds, toPacificTimeString } from '$lib/server/utils/timezone';
 import type { ClockOutWarning, Demerit } from '$lib/server/db/schema';
 
 const log = createLogger('services:clock-out-warning');
@@ -36,11 +53,9 @@ export const CLOCK_OUT_WARNING_CONFIG = {
 	DEMERIT_POINTS_DEDUCTED: 50,         // Points deducted for demerit
 	DEMERIT_EXPIRY_DAYS: 90,             // Days until demerit expires
 	GRACE_PERIOD_MINUTES: 30,            // Minutes after shift end before warning
-	MAX_HOURS_CLOCKED_IN: 10,            // Fallback for no scheduled shift
-	// Escalation intervals (minutes past shift end)
-	NAG_1_MINUTES: 30,                   // Friendly reminder
-	NAG_2_MINUTES: 90,                   // Firmer warning
-	NAG_3_MINUTES: 180                   // Auto clock-out at shift end
+	MAX_HOURS_CLOCKED_IN: 10             // Fallback for no scheduled shift
+	// Nag timing and the auto-close backstop live in attendance-policy-service
+	// so they can be tuned from the admin UI without a deploy.
 };
 
 // ============================================================================
@@ -48,23 +63,15 @@ export const CLOCK_OUT_WARNING_CONFIG = {
 // ============================================================================
 
 export const SMS_MESSAGES = {
-	nag1: (shiftEndTime: Date) =>
-		`Your shift ended at ${toPacificTimeString(shiftEndTime)}. Still working? Reply YES to clock out now, or reply with your actual clock-out time (e.g. "5:15 PM").`,
-	nag2: (shiftEndTime: Date, minutesPast: number) => {
-		// Show 1 decimal (e.g. 1.6 hrs for 95 min) but strip trailing .0 (2.0 → 2)
-		const hrs = (minutesPast / 60).toFixed(1).replace(/\.0$/, '');
-		return `You're still clocked in ${hrs} hrs past your shift. Reply with your clock-out time or YES to clock out now. No reply = auto clock-out at shift end.`;
-	},
-	nag3: (shiftEndTime: Date) =>
-		`Auto-clocking you out at ${toPacificTimeString(shiftEndTime)} (shift end). Reply with your actual clock-out time if different.`,
-	autoReminder: 'Reminder: You are still clocked in. Please clock out at the end of your shift.',
+	/**
+	 * The single overdue-clock-out reminder. Phrased to steer people to the app:
+	 * it must not invite a bare "YES" or a time, which shift-coverage claims own.
+	 */
+	clockOutNag: (shiftEndTime: Date, closeAfterMinutes: number) =>
+		`You're still clocked in from your shift that ended at ${toPacificTimeString(shiftEndTime)}. ` +
+		`Please clock out in the app. If nothing changes in ${closeAfterMinutes} min we'll close it at ${toPacificTimeString(shiftEndTime)} for you.`,
 	forceClockout: (managerName: string) =>
-		`${managerName} has clocked you out. Please remember to clock out at the end of your shift.`,
-	timeConfirmed: (time: string) =>
-		`Got it — clocked you out at ${time}. Thanks!`,
-	timeParseError: 'Sorry, couldn\'t understand that time. Reply with a time like "5:30 PM" or "17:30", or YES to clock out now.',
-	timeUpdated: (time: string) =>
-		`Got it — updated your clock-out to ${time}.`,
+		`${managerName} has clocked you out. Please remember to clock out at the end of your shift.`
 };
 
 // ============================================================================
@@ -95,20 +102,55 @@ export async function getWarningCount(
 }
 
 /**
- * Get the number of nag warnings (auto_reminder type) sent for a specific time entry.
- * Used to determine escalation level.
+ * The reminder row for a time entry, if one has already been sent. Its
+ * createdAt is the clock the auto-close window runs against, and its presence
+ * is the idempotency guard that keeps one overdue entry to one reminder.
+ *
+ * Takes the oldest row rather than the newest: if a bug ever wrote two, the
+ * first one is the real reminder and the window should not keep sliding.
  */
-export async function getNagCountForEntry(timeEntryId: string): Promise<number> {
-	const [result] = await db
-		.select({ count: count() })
+export async function getNagForEntry(timeEntryId: string): Promise<ClockOutWarning | null> {
+	const [warning] = await db
+		.select()
 		.from(clockOutWarnings)
 		.where(
 			and(
 				eq(clockOutWarnings.timeEntryId, timeEntryId),
 				eq(clockOutWarnings.warningType, 'auto_reminder')
 			)
-		);
-	return result?.count ?? 0;
+		)
+		.orderBy(clockOutWarnings.createdAt)
+		.limit(1);
+
+	return warning ?? null;
+}
+
+/**
+ * Did this person text us back after the reminder went out?
+ *
+ * Any inbound message counts. We never look at what it says: shift-coverage
+ * owns the "YES"/claim-code reply space and a second parser here would steal
+ * its claims. The point is only to tell "ignored the reminder" from "answered
+ * it", so a human can sort out the rest.
+ */
+export async function findReplySince(
+	userId: string,
+	since: Date
+): Promise<{ body: string | null; createdAt: Date } | null> {
+	const [row] = await db
+		.select({ body: smsLogs.body, createdAt: smsLogs.createdAt })
+		.from(smsLogs)
+		.where(
+			and(
+				eq(smsLogs.userId, userId),
+				eq(smsLogs.direction, 'inbound'),
+				gt(smsLogs.createdAt, since)
+			)
+		)
+		.orderBy(smsLogs.createdAt)
+		.limit(1);
+
+	return row ?? null;
 }
 
 /**
@@ -184,6 +226,14 @@ export async function checkAndEscalateToDemerit(
 	warningId: string,
 	issuedBy: string
 ): Promise<Demerit | null> {
+	// Kill switch: when the demerit engine is off, repeated warnings never
+	// become infractions and managers are not paged about them.
+	const policy = await getAttendancePolicyConfig();
+	if (!policy.demeritsEnabled) {
+		log.debug({ userId, warningId }, 'Demerit engine disabled — skipping clock-out escalation');
+		return null;
+	}
+
 	// Count warnings in lookback period
 	const warningCount = await getWarningCount(userId);
 
@@ -378,7 +428,7 @@ export async function forceClockOut(
 		const formatted = formatPhoneToE164(targetUser.phone);
 		if (formatted) {
 			const message = SMS_MESSAGES.forceClockout(issuerUser?.name ?? 'A manager');
-			smsResult = await sendSMS(formatted, message);
+			smsResult = await sendSMS(formatted, message, { sentByUserId: issuedByUserId });
 		}
 	}
 
@@ -476,29 +526,97 @@ export async function loadClockOutConfig(): Promise<{ gracePeriodMinutes: number
 // CRON CHECK FUNCTION
 // ============================================================================
 
+
 export interface CronCheckResult {
 	checked: number;
+	/** Reminders sent this pass. */
+	nagged: number;
+	/** Warning rows written this pass. Same events as `nagged`; kept for callers. */
 	warned: number;
 	skipped: number;
+	/** Entries left open because the employee texted back and the backstop is not up. */
+	deferred: number;
 	errors: string[];
 	demeritsIssued: number;
 	autoClockOuts: number;
 }
 
+/** Cap stored reply text so one long SMS can't bloat the warning row. */
+const MAX_STORED_REPLY_CHARS = 500;
+
 /**
- * Check for overdue clock-outs and send escalating reminders
- * Called by cron every 15 minutes
+ * Build the timesheet annotation for an auto-closed entry. It has to read
+ * clearly to whoever approves payroll, and say plainly that the system — not
+ * the employee and not a manager — set this clock-out.
+ */
+export function buildAutoCloseNote(params: {
+	shiftEndTime: Date;
+	/** Where the clock-out actually landed — shift end, or last contact. */
+	closeAt: Date;
+	minutesPastShiftEnd: number;
+	nagSentAt: Date;
+	repliedAt: Date | null;
+	/** False when the reminder SMS never actually went out. */
+	wasWarned: boolean;
+	/** Set when the employee gave a business reason for the overtime. */
+	justifiedReason: string | null;
+}): string {
+	const closedAt = toPacificTimeString(params.closeAt);
+
+	// Justified overtime is closed at last contact, not shift end, so the note
+	// has to say which it was and that the real end still needs confirming —
+	// payroll reads this when someone disputes their hours.
+	if (params.justifiedReason) {
+		return (
+			`[Office Manager] Auto clocked out at ${closedAt} — last contact, NOT the scheduled ` +
+			`shift end of ${toPacificTimeString(params.shiftEndTime)}. Reported working late: ` +
+			`${params.justifiedReason} A manager was notified at the time. ` +
+			`Confirm the real finish time with the employee before approving.`
+		);
+	}
+
+	// Never claim we texted someone when we didn't.
+	const outcome = !params.wasWarned
+		? 'no reminder could be sent (no phone on file or SMS failed)'
+		: params.repliedAt
+			? `reminder texted ${toPacificTimeString(params.nagSentAt)}, replied ${toPacificTimeString(params.repliedAt)} but was still clocked in at the cutoff`
+			: `reminder texted ${toPacificTimeString(params.nagSentAt)}, no reply`;
+
+	return (
+		`[Office Manager] Auto clocked out at ${closedAt} (scheduled shift end). ` +
+		`Still clocked in ${Math.floor(params.minutesPastShiftEnd)} min past shift end; ` +
+		`${outcome}. Edit this entry if the real time differs.`
+	);
+}
+
+/** The later of two instants. */
+function laterOf(a: Date, b: Date): Date {
+	return a.getTime() >= b.getTime() ? a : b;
+}
+
+/** Append to a time entry's existing notes without clobbering them. */
+export function appendNote(existing: string | null, addition: string): string {
+	const trimmed = (existing ?? '').trim();
+	return trimmed ? `${trimmed}\n${addition}` : addition;
+}
+
+/**
+ * Check for overdue clock-outs: send the one reminder, then close the entry.
+ * Called by cron every 15 minutes.
  *
- * Escalation levels:
- *   Nag 1 (NAG_1_MINUTES past shift end): Friendly reminder
- *   Nag 2 (NAG_2_MINUTES past shift end): Firmer warning with auto clock-out threat
- *   Nag 3 (NAG_3_MINUTES past shift end): Auto clock-out at shift end time + demerit check
+ * Pass 1 for an entry sends the reminder. A later pass — at least
+ * `autoCloseAfterNagMinutes` after that, so in practice the next 15-minute
+ * run — closes it at the scheduled shift end unless the employee has texted
+ * back. The clock-out time is the shift end, never "now", so a forgotten
+ * clock-out can't inflate someone's hours.
  */
 export async function checkOverdueClockOuts(systemUserId: string): Promise<CronCheckResult> {
 	const result: CronCheckResult = {
 		checked: 0,
+		nagged: 0,
 		warned: 0,
 		skipped: 0,
+		deferred: 0,
 		errors: [],
 		demeritsIssued: 0,
 		autoClockOuts: 0
@@ -506,6 +624,7 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 
 	const now = new Date();
 	const config = await loadClockOutConfig();
+	const policy = await getAttendancePolicyConfig();
 
 	// Find all active time entries (not clocked out)
 	const activeEntries = await db
@@ -558,7 +677,7 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 
 			// Fallback: if the ±2hr window missed (user clocked in very early/late),
 			// find the nearest shift for this user on the same Pacific calendar day
-			// as their clock-in. This prevents premature synthetic-shift-end warnings
+			// as their clock-in. This prevents premature synthetic-shift-end closes
 			// for edge-case clock-ins that still correspond to a real shift.
 			if (!userShift) {
 				const { start: dayStart, end: dayEnd } = getPacificDayBounds(clockInTime);
@@ -587,7 +706,7 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 				shiftEndTime = new Date(userShift.endTime);
 			} else {
 				// Fallback: no shift scheduled at all — use clockIn + maxHoursClockedIn
-				// as the synthetic shift end so nag intervals stay correctly spaced.
+				// as the synthetic shift end so the reminder has something to cite.
 				if (hoursClocked >= config.maxHoursClockedIn) {
 					shiftEndTime = new Date(clockInTime.getTime() + config.maxHoursClockedIn * 60 * 60 * 1000);
 				}
@@ -600,122 +719,180 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 			}
 
 			const minutesPastShiftEnd = (now.getTime() - shiftEndTime.getTime()) / 60000;
+			const nag = await getNagForEntry(timeEntry.id);
 
-			// Not past the first nag threshold yet
-			if (minutesPastShiftEnd < CLOCK_OUT_WARNING_CONFIG.NAG_1_MINUTES) {
-				result.skipped++;
-				continue;
-			}
-
-			// Get how many nags we've already sent for this entry
-			const nagCount = await getNagCountForEntry(timeEntry.id);
-
-			let message: string | undefined;
-			let shouldAutoClockOut = false;
-
-			if (nagCount === 0 && minutesPastShiftEnd >= CLOCK_OUT_WARNING_CONFIG.NAG_1_MINUTES) {
-				// Nag 1: Friendly reminder
-				message = hasShift && shiftEndTime
-					? SMS_MESSAGES.nag1(shiftEndTime)
-					: SMS_MESSAGES.autoReminder;
-			} else if (nagCount === 1 && minutesPastShiftEnd >= CLOCK_OUT_WARNING_CONFIG.NAG_2_MINUTES) {
-				// Nag 2: Firmer warning
-				message = SMS_MESSAGES.nag2(shiftEndTime, minutesPastShiftEnd);
-			} else if (nagCount >= 2 && minutesPastShiftEnd >= CLOCK_OUT_WARNING_CONFIG.NAG_3_MINUTES) {
-				// Nag 3: Auto clock-out
-				message = SMS_MESSAGES.nag3(shiftEndTime);
-				shouldAutoClockOut = true;
-			} else {
-				// Not time for the next nag yet
-				result.skipped++;
-				continue;
-			}
-
-			// Send SMS
-			let smsResult: { success: boolean; sid?: string; error?: string } | undefined;
-			if (user.phone && message) {
-				const formatted = formatPhoneToE164(user.phone);
-				if (formatted) {
-					smsResult = await sendSMS(formatted, message);
-				}
-			}
-
-			// Create warning record
-			const warning = await createWarning({
-				userId: user.id,
-				timeEntryId: timeEntry.id,
-				warningType: 'auto_reminder',
-				shiftEndTime,
-				minutesPastShiftEnd: Math.floor(minutesPastShiftEnd),
-				reason: `Escalation nag ${nagCount + 1}`,
-				smsResult
-			});
-
-			result.warned++;
-
-			// Auto clock-out at nag 3
-			if (shouldAutoClockOut) {
-				// Auto-end any active break before clocking out
-				const [activeBreakEntry] = await db
-					.select()
-					.from(breakEntries)
-					.where(
-						and(
-							eq(breakEntries.timeEntryId, timeEntry.id),
-							isNull(breakEntries.breakEnd)
-						)
-					)
-					.limit(1);
-
-				if (activeBreakEntry) {
-					await db
-						.update(breakEntries)
-						.set({ breakEnd: shiftEndTime })
-						.where(eq(breakEntries.id, activeBreakEntry.id));
+			// ---- Stage 1: the single reminder ----
+			if (!nag) {
+				if (minutesPastShiftEnd < policy.nagDelayMinutes) {
+					result.skipped++;
+					continue;
 				}
 
-				// Clock out at shift end time (not now) for accuracy
-				await db
-					.update(timeEntries)
-					.set({
-						clockOut: shiftEndTime,
-						updatedAt: now,
-						updatedBy: systemUserId
-					})
-					.where(eq(timeEntries.id, timeEntry.id));
+				let smsResult: { success: boolean; sid?: string; error?: string } | undefined;
+				if (policy.clockOutNagEnabled && user.phone) {
+					const formatted = formatPhoneToE164(user.phone);
+					if (formatted) {
+						smsResult = await sendSMS(
+							formatted,
+							SMS_MESSAGES.clockOutNag(shiftEndTime, policy.autoCloseAfterNagMinutes)
+						);
+					}
+				}
 
-				result.autoClockOuts++;
+				// Record the reminder even when no SMS went out (no phone on file,
+				// nag switched off, Twilio down). Its timestamp is what the
+				// auto-close window is measured from, so it must always exist.
+				await createWarning({
+					userId: user.id,
+					timeEntryId: timeEntry.id,
+					warningType: 'auto_reminder',
+					shiftEndTime,
+					minutesPastShiftEnd: Math.floor(minutesPastShiftEnd),
+					reason: `Clock-out reminder ${Math.floor(minutesPastShiftEnd)} min past shift end`,
+					smsResult
+				});
+
+				result.nagged++;
+				result.warned++;
 
 				log.info(
 					{
 						userId: user.id,
 						timeEntryId: timeEntry.id,
-						clockOutTime: shiftEndTime.toISOString()
+						minutesPastShiftEnd: Math.floor(minutesPastShiftEnd),
+						smsSent: smsResult?.success ?? false
 					},
-					'Auto clock-out executed at shift end time'
+					'Clock-out reminder sent'
 				);
 
-				// Deduct points for forgotten clock-out
+				// Give them the window — the close happens on a later pass.
+				continue;
+			}
+
+			// ---- Stage 2: close it at shift end ----
+			const nagSentAt = new Date(nag.createdAt);
+			const minutesSinceNag = (now.getTime() - nagSentAt.getTime()) / 60000;
+			const pastBackstop = minutesPastShiftEnd >= policy.backstopMinutes;
+
+			// The short window is only fair if the reminder actually reached them.
+			// When it didn't — no phone on file, reminder switched off, Twilio
+			// down — closing someone's entry 10 minutes later with no warning is
+			// not defensible, so those fall through to the backstop instead.
+			const wasWarned = nag.smsResult?.success === true;
+			const waitedLongEnough = wasWarned
+				? minutesSinceNag >= policy.autoCloseAfterNagMinutes
+				: pastBackstop;
+
+			if (!waitedLongEnough) {
+				result.skipped++;
+				continue;
+			}
+
+			// "No response or change": the entry is still open (it matched this
+			// query), so all that's left to check is whether they texted back.
+			const reply = nag.repliedAt
+				? { body: nag.userReply, createdAt: new Date(nag.repliedAt) }
+				: await findReplySince(user.id, nagSentAt);
+
+			if (reply && !nag.repliedAt) {
+				await db
+					.update(clockOutWarnings)
+					.set({
+						userReply: reply.body ? reply.body.slice(0, MAX_STORED_REPLY_CHARS) : null,
+						repliedAt: reply.createdAt
+					})
+					.where(eq(clockOutWarnings.id, nag.id));
+			}
+
+			// A reply buys time but not a free pass — the backstop still closes
+			// the entry so nobody is left clocked in overnight.
+			if (reply && !pastBackstop) {
+				result.deferred++;
+				log.info(
+					{ userId: user.id, timeEntryId: timeEntry.id },
+					'Employee replied to clock-out reminder — deferring auto-close to backstop'
+				);
+				continue;
+			}
+
+			// Overtime the shop asked for must not be closed at the scheduled
+			// shift end — that erases hours they actually worked. The last moment
+			// we have evidence they were working is their reply, so close there
+			// and say on the entry that the real end needs confirming. A manager
+			// was already texted when the reply came in (clock-out-reply-service),
+			// so they have had the whole backstop window to correct it properly.
+			const justified = nag.replyAnalysis?.justified === true;
+			const closeAt = justified && reply ? laterOf(reply.createdAt, shiftEndTime) : shiftEndTime;
+
+			// Auto-end any active break before clocking out
+			const [activeBreakEntry] = await db
+				.select()
+				.from(breakEntries)
+				.where(
+					and(
+						eq(breakEntries.timeEntryId, timeEntry.id),
+						isNull(breakEntries.breakEnd)
+					)
+				)
+				.limit(1);
+
+			if (activeBreakEntry) {
+				await db
+					.update(breakEntries)
+					.set({ breakEnd: closeAt })
+					.where(eq(breakEntries.id, activeBreakEntry.id));
+			}
+
+			// Clock out at the scheduled shift end (not "now"), so a forgotten
+			// clock-out can't inflate hours — unless the overtime was justified,
+			// in which case closeAt is their last contact. Either way the entry
+			// says the system did it.
+			await db
+				.update(timeEntries)
+				.set({
+					clockOut: closeAt,
+					notes: appendNote(
+						timeEntry.notes,
+						buildAutoCloseNote({
+							shiftEndTime,
+							closeAt,
+							minutesPastShiftEnd,
+							nagSentAt,
+							repliedAt: reply ? reply.createdAt : null,
+							wasWarned,
+							justifiedReason: justified ? (nag.replyAnalysis?.reason ?? null) : null
+						})
+					),
+					updatedAt: now,
+					updatedBy: systemUserId
+				})
+				.where(eq(timeEntries.id, timeEntry.id));
+
+			result.autoClockOuts++;
+
+			// Points penalty is off under the current policy; the switch is kept
+			// so docking can be restored without touching this function.
+			if (policy.clockOutPointsPenaltyEnabled) {
 				try {
 					await awardPoints({
 						userId: user.id,
 						basePoints: POINT_VALUES.CLOCK_OUT_FORGOTTEN,
 						category: 'attendance',
 						action: 'clock_out_forgotten',
-						description: 'Forgot to clock out (auto clock-out after escalating reminders)',
+						description: 'Forgot to clock out (auto clock-out at shift end)',
 						sourceType: 'time_entry',
 						sourceId: timeEntry.id,
-						metadata: { autoClockOut: true, nagCount: nagCount + 1 }
+						metadata: { autoClockOut: true }
 					});
 				} catch (err) {
 					log.error({ error: err, timeEntryId: timeEntry.id }, 'Failed to deduct points for auto clock-out');
 				}
+			}
 
-				// Check for demerit escalation
-				const demerit = await checkAndEscalateToDemerit(user.id, warning.id, systemUserId);
-				if (demerit) {
-					result.demeritsIssued++;
-				}
+			// No-op while the demerit engine is off; self-gates internally.
+			const demerit = await checkAndEscalateToDemerit(user.id, nag.id, systemUserId);
+			if (demerit) {
+				result.demeritsIssued++;
 			}
 
 			log.info(
@@ -724,11 +901,12 @@ export async function checkOverdueClockOuts(systemUserId: string): Promise<CronC
 					timeEntryId: timeEntry.id,
 					hoursClocked: hoursClocked.toFixed(1),
 					hasShift,
-					nagLevel: nagCount + 1,
-					smsSent: smsResult?.success ?? false,
-					autoClockOut: shouldAutoClockOut
+					minutesPastShiftEnd: Math.floor(minutesPastShiftEnd),
+					clockOutTime: shiftEndTime.toISOString(),
+					replied: !!reply,
+					viaBackstop: pastBackstop
 				},
-				`Escalating nag ${nagCount + 1} sent for overdue clock-out`
+				'Auto clock-out executed at shift end time'
 			);
 		} catch (err) {
 			const errorMsg = err instanceof Error ? err.message : 'Unknown error';

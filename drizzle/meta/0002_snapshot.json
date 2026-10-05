@@ -1,5 +1,5 @@
 {
-  "id": "39a4c745-bf07-4217-83b8-497d124752a7",
+  "id": "08378fe9-39de-4147-8fa0-060178462efd",
   "prevId": "940c7306-7c3a-4111-862b-d2363fa375b4",
   "version": "5",
   "dialect": "pg",
@@ -2721,185 +2721,6 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {}
     },
-    "consignment_groups": {
-      "name": "consignment_groups",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "consignor_id": {
-          "name": "consignor_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "code": {
-          "name": "code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "consignor_percent": {
-          "name": "consignor_percent",
-          "type": "numeric(5, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_active": {
-          "name": "is_active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "consignment_groups_consignor_id_consignors_id_fk": {
-          "name": "consignment_groups_consignor_id_consignors_id_fk",
-          "tableFrom": "consignment_groups",
-          "tableTo": "consignors",
-          "columnsFrom": [
-            "consignor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "consignment_groups_code_unique": {
-          "name": "consignment_groups_code_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
-        }
-      }
-    },
-    "consignors": {
-      "name": "consignors",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "type": {
-          "name": "type",
-          "type": "consignor_type",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'walkin'"
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "vendor_user_id": {
-          "name": "vendor_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "phone": {
-          "name": "phone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_active": {
-          "name": "is_active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "consignors_vendor_user_id_users_id_fk": {
-          "name": "consignors_vendor_user_id_users_id_fk",
-          "tableFrom": "consignors",
-          "tableTo": "users",
-          "columnsFrom": [
-            "vendor_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
-    },
     "conversation_participants": {
       "name": "conversation_participants",
       "schema": "",
@@ -3399,297 +3220,6 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {}
-    },
-    "ebay_lister_settings": {
-      "name": "ebay_lister_settings",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "comp_type": {
-          "name": "comp_type",
-          "type": "lister_comp_type",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'none'"
-        },
-        "commission_percent": {
-          "name": "commission_percent",
-          "type": "numeric(5, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "points_per_dollar": {
-          "name": "points_per_dollar",
-          "type": "numeric(6, 3)",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "'1.000'"
-        },
-        "is_active": {
-          "name": "is_active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "ebay_lister_settings_user_id_users_id_fk": {
-          "name": "ebay_lister_settings_user_id_users_id_fk",
-          "tableFrom": "ebay_lister_settings",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
-    },
-    "ebay_sale_settlements": {
-      "name": "ebay_sale_settlements",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "listflow_sale_id": {
-          "name": "listflow_sale_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ebay_order_id": {
-          "name": "ebay_order_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "line_item_id": {
-          "name": "line_item_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "sales_record_number": {
-          "name": "sales_record_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "account": {
-          "name": "account",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sku": {
-          "name": "sku",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "quantity": {
-          "name": "quantity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "basis": {
-          "name": "basis",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sold_at": {
-          "name": "sold_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "consignment_group_id": {
-          "name": "consignment_group_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "consignor_id": {
-          "name": "consignor_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "consignor_percent": {
-          "name": "consignor_percent",
-          "type": "numeric(5, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "consignor_amount": {
-          "name": "consignor_amount",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "yf_amount": {
-          "name": "yf_amount",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "lister_user_id": {
-          "name": "lister_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lister_comp_type": {
-          "name": "lister_comp_type",
-          "type": "lister_comp_type",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lister_commission_percent": {
-          "name": "lister_commission_percent",
-          "type": "numeric(5, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lister_commission_amount": {
-          "name": "lister_commission_amount",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "points_awarded": {
-          "name": "points_awarded",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "point_transaction_id": {
-          "name": "point_transaction_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "ebay_settlement_status",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "pay_period": {
-          "name": "pay_period",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "computed_at": {
-          "name": "computed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "ebay_sale_settlements_consignment_group_id_consignment_groups_id_fk": {
-          "name": "ebay_sale_settlements_consignment_group_id_consignment_groups_id_fk",
-          "tableFrom": "ebay_sale_settlements",
-          "tableTo": "consignment_groups",
-          "columnsFrom": [
-            "consignment_group_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "ebay_sale_settlements_consignor_id_consignors_id_fk": {
-          "name": "ebay_sale_settlements_consignor_id_consignors_id_fk",
-          "tableFrom": "ebay_sale_settlements",
-          "tableTo": "consignors",
-          "columnsFrom": [
-            "consignor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "ebay_sale_settlements_lister_user_id_users_id_fk": {
-          "name": "ebay_sale_settlements_lister_user_id_users_id_fk",
-          "tableFrom": "ebay_sale_settlements",
-          "tableTo": "users",
-          "columnsFrom": [
-            "lister_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "ebay_sale_settlements_listflow_sale_id_unique": {
-          "name": "ebay_sale_settlements_listflow_sale_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "listflow_sale_id"
-          ]
-        }
-      }
     },
     "floorplan_attr_defs": {
       "name": "floorplan_attr_defs",
@@ -12243,6 +11773,118 @@
         }
       }
     },
+    "vendor_inventory_snapshot": {
+      "name": "vendor_inventory_snapshot",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "vendor_id": {
+          "name": "vendor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nrs_vendor_id": {
+          "name": "nrs_vendor_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "inv_stock_id": {
+          "name": "inv_stock_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "part_number": {
+          "name": "part_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "retail_price_cents": {
+          "name": "retail_price_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "quantity_on_hand": {
+          "name": "quantity_on_hand",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "synced_at": {
+          "name": "synced_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_vendor_inventory_snapshot_vendor": {
+          "name": "idx_vendor_inventory_snapshot_vendor",
+          "columns": [
+            "vendor_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "vendor_inventory_snapshot_vendor_id_vendors_id_fk": {
+          "name": "vendor_inventory_snapshot_vendor_id_vendors_id_fk",
+          "tableFrom": "vendor_inventory_snapshot",
+          "tableTo": "vendors",
+          "columnsFrom": [
+            "vendor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uniq_vendor_inventory_snapshot_item": {
+          "name": "uniq_vendor_inventory_snapshot_item",
+          "nullsNotDistinct": false,
+          "columns": [
+            "vendor_id",
+            "inv_stock_id"
+          ]
+        }
+      }
+    },
     "vendor_newsletter_sends": {
       "name": "vendor_newsletter_sends",
       "schema": "",
@@ -13807,15 +13449,6 @@
         "force_clockout": "force_clockout"
       }
     },
-    "consignor_type": {
-      "name": "consignor_type",
-      "values": {
-        "vendor": "vendor",
-        "estate": "estate",
-        "walkin": "walkin",
-        "house": "house"
-      }
-    },
     "conversation_type": {
       "name": "conversation_type",
       "values": {
@@ -13843,14 +13476,6 @@
         "task_performance": "task_performance",
         "policy_violation": "policy_violation",
         "other": "other"
-      }
-    },
-    "ebay_settlement_status": {
-      "name": "ebay_settlement_status",
-      "values": {
-        "pending": "pending",
-        "approved": "approved",
-        "exported": "exported"
       }
     },
     "hold_cleared_reason": {
@@ -13921,14 +13546,6 @@
       "values": {
         "auto_reminder": "auto_reminder",
         "escalated": "escalated"
-      }
-    },
-    "lister_comp_type": {
-      "name": "lister_comp_type",
-      "values": {
-        "commission": "commission",
-        "points": "points",
-        "none": "none"
       }
     },
     "login_attempt_result": {

@@ -34,9 +34,16 @@ import {
 import {
 	saveInvStock,
 	getAllInvStockForVendor,
+	getInvStock,
 	type SaveInvStockInput,
 	type NrsInvStockDetail
 } from '$lib/server/services/nrs-api-client';
+import {
+	updateInvStockViaWeb,
+	setInvStockQuantityViaWeb,
+	type InvStockUpdate
+} from '$lib/server/services/nrs-web-client';
+import { toPacificDateString } from '$lib/server/utils/timezone';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('services:inventory-change');
@@ -80,6 +87,11 @@ export interface ChangePayload {
 	description?: string;
 	priceCents?: number;
 	quantity?: number;
+	/** Signed on-hand adjustment for `update` changes ("add stock" = +N). Applied
+	 *  against the live NRS on-hand at apply time and floored at 0. */
+	quantityDelta?: number;
+	/** Target active state for `update` changes (deactivate/reactivate). */
+	active?: boolean;
 	/** NRS inventory category id (invCategoryId), set from the desktop app. */
 	categoryId?: number;
 	/** Vendor-supplied reason, required on delete requests. */
@@ -307,6 +319,201 @@ export async function applyCreateViaApi(
 		});
 		log.error({ changeId, err: msg }, 'Auto-apply create via NRS API failed — left pending');
 		return { applied: false, nrsPartId: null, error: msg };
+	}
+}
+
+/** Convert a Pacific YYYY-MM-DD to the MM/DD/YYYY NRS forms expect. */
+function usDate(iso: string): string {
+	const [y, m, d] = iso.split('-');
+	return `${m}/${d}/${y}`;
+}
+
+/**
+ * Apply a pending `update` to NRS via the web edit form (price / description /
+ * name) and, when a quantity delta is present, the Physical Entry form.
+ *
+ * NRS has no REST update path (verified 2026-07-31, see nrs-pos-api-contract):
+ * edits round-trip through `invStockManagement?form=<id>`. Every attempt is
+ * journaled. On success the change flips to `applied`; on failure it stays
+ * `pending` for staff and this returns `{ applied:false, error }` (never throws
+ * for an apply failure). Quantity deltas are applied against the LIVE on-hand
+ * read at apply time (never a stale snapshot), floored at 0.
+ */
+export async function applyUpdateViaApi(
+	changeId: string,
+	triggeredByUserId: string
+): Promise<ApplyApiResult> {
+	return applyMutationViaWeb(changeId, triggeredByUserId, 'update');
+}
+
+/**
+ * Apply a pending `delete` as an NRS DEACTIVATION (frmHeadActive off) — never a
+ * hard delete, so NRS keeps the item's history and it simply drops off the
+ * active catalog. Same journaling / left-pending-on-failure contract as
+ * applyUpdateViaApi.
+ */
+export async function applyDeactivateViaApi(
+	changeId: string,
+	triggeredByUserId: string
+): Promise<ApplyApiResult> {
+	return applyMutationViaWeb(changeId, triggeredByUserId, 'delete');
+}
+
+async function applyMutationViaWeb(
+	changeId: string,
+	triggeredByUserId: string,
+	kind: 'update' | 'delete'
+): Promise<ApplyApiResult> {
+	const [change] = await db
+		.select()
+		.from(pendingInventoryChanges)
+		.where(eq(pendingInventoryChanges.id, changeId))
+		.limit(1);
+	if (!change) throw new InventoryChangeError('Change not found');
+	if (change.changeType !== kind) {
+		throw new InventoryChangeError(`applyMutationViaWeb(${kind}) got a ${change.changeType} change`);
+	}
+	if (change.status !== 'pending') {
+		return { applied: false, nrsPartId: change.nrsPartId, error: 'Change is no longer pending' };
+	}
+
+	const [vendor] = await db.select().from(vendors).where(eq(vendors.id, change.vendorId)).limit(1);
+	if (!vendor) throw new InventoryChangeError('Vendor not found');
+
+	const baseLog: NewNrsInventoryApiLog = {
+		vendorId: vendor.id,
+		pendingChangeId: change.id,
+		triggeredByUserId,
+		action: kind,
+		endpoint: 'web:invStockManagement',
+		partNumber: change.partNumber,
+		nrsVendorId: vendor.nrsVendorId ?? null,
+		nrsPartId: change.nrsPartId,
+		requestPayload: null,
+		responseBody: null,
+		httpStatus: null,
+		success: false,
+		errorMessage: null
+	};
+
+	if (!change.nrsPartId) {
+		const error = `${kind} change has no nrsPartId — cannot apply, left pending for staff`;
+		await writeApiLog({ ...baseLog, errorMessage: error });
+		return { applied: false, nrsPartId: null, error };
+	}
+
+	// Re-verify ownership right before mutating (the submit-time check may be
+	// stale, and nrsPartId is vendor-supplied).
+	if (vendor.nrsVendorId) {
+		const owns = await checkVendorOwnsNrsItem(vendor.nrsVendorId, change.nrsPartId);
+		if (owns === false) {
+			const error = 'Item no longer belongs to this vendor in NRS — not applied';
+			await writeApiLog({ ...baseLog, errorMessage: error });
+			return { applied: false, nrsPartId: change.nrsPartId, error };
+		}
+	}
+
+	const p = (change.payload ?? {}) as ChangePayload;
+	const update: InvStockUpdate = {};
+	if (kind === 'delete') {
+		update.active = false;
+	} else {
+		if (typeof p.partName === 'string') update.name = p.partName;
+		if (typeof p.description === 'string') update.description = p.description;
+		if (typeof p.priceCents === 'number') update.retailPriceDollars = p.priceCents / 100;
+		if (p.active === true || p.active === false) update.active = p.active;
+	}
+
+	const requestPayload: Record<string, unknown> = { invStockId: change.nrsPartId, update };
+
+	try {
+		// Field edits (price/description/name/active) — only when something changed.
+		const hasFieldEdit =
+			update.name !== undefined ||
+			update.description !== undefined ||
+			update.retailPriceDollars !== undefined ||
+			update.active !== undefined;
+		let after = null as Awaited<ReturnType<typeof updateInvStockViaWeb>> | null;
+		if (hasFieldEdit) {
+			after = await updateInvStockViaWeb(change.nrsPartId, update);
+		}
+
+		// Quantity delta (update changes only): apply against live on-hand, floor 0.
+		let qtyNote = '';
+		if (kind === 'update' && typeof p.quantityDelta === 'number' && p.quantityDelta !== 0) {
+			const live = await getInvStock(change.nrsPartId);
+			const current = live?.quantityOnHand ?? 0;
+			const target = Math.max(0, current + p.quantityDelta);
+			requestPayload.quantityFrom = current;
+			requestPayload.quantityTo = target;
+			const ok = await setInvStockQuantityViaWeb(change.nrsPartId, target, {
+				countDate: usDate(toPacificDateString(new Date()))
+			});
+			if (!ok) throw new Error('Physical-count form did not accept the quantity change');
+			qtyNote = ` qty ${current}→${target}`;
+		}
+
+		await writeApiLog({
+			...baseLog,
+			requestPayload,
+			responseBody: after
+				? { active: after.active, retailPrice: after.retailPrice, name: after.name }
+				: { quantityApplied: qtyNote.trim() || null },
+			httpStatus: 200,
+			success: true
+		});
+
+		const now = new Date();
+		await db
+			.update(pendingInventoryChanges)
+			.set({
+				status: 'applied',
+				reviewedAt: now,
+				appliedAt: now,
+				reviewedByUserId: triggeredByUserId,
+				appliedByUserId: triggeredByUserId,
+				nrsApplyNotes:
+					kind === 'delete'
+						? 'Auto-applied via NRS web form (deactivated — item kept, marked inactive)'
+						: `Auto-applied via NRS web form (invStockManagement)${qtyNote}`
+			})
+			.where(
+				and(eq(pendingInventoryChanges.id, change.id), eq(pendingInventoryChanges.status, 'pending'))
+			);
+
+		log.info({ changeId, vendorId: vendor.id, kind, nrsPartId: change.nrsPartId }, 'Auto-applied via NRS web form');
+		return { applied: true, nrsPartId: change.nrsPartId };
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		await writeApiLog({ ...baseLog, requestPayload, responseBody: { error: msg }, errorMessage: msg });
+		log.error({ changeId, kind, err: msg }, 'Auto-apply via NRS web form failed — left pending');
+		return { applied: false, nrsPartId: change.nrsPartId, error: msg };
+	}
+}
+
+/**
+ * Retry applying any pending change to NRS, dispatching by its type. Lets staff
+ * re-drive a change that failed to auto-apply at submit time (the failure lane).
+ */
+export async function applyPendingChange(
+	changeId: string,
+	triggeredByUserId: string
+): Promise<ApplyApiResult> {
+	const [change] = await db
+		.select({ changeType: pendingInventoryChanges.changeType })
+		.from(pendingInventoryChanges)
+		.where(eq(pendingInventoryChanges.id, changeId))
+		.limit(1);
+	if (!change) throw new InventoryChangeError('Change not found');
+	switch (change.changeType) {
+		case 'create':
+			return applyCreateViaApi(changeId, triggeredByUserId);
+		case 'update':
+			return applyUpdateViaApi(changeId, triggeredByUserId);
+		case 'delete':
+			return applyDeactivateViaApi(changeId, triggeredByUserId);
+		default:
+			throw new InventoryChangeError(`Unknown change type: ${change.changeType}`);
 	}
 }
 

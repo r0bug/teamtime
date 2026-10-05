@@ -89,6 +89,69 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
+	update: async ({ request, locals }) => {
+		if (!locals.user || !isManager(locals.user)) {
+			return fail(403, { error: 'Unauthorized' });
+		}
+
+		const formData = await request.formData();
+		const shiftId = formData.get('shiftId')?.toString();
+		const userId = formData.get('userId')?.toString();
+		const locationId = formData.get('locationId')?.toString() || null;
+		const startTime = formData.get('startTime')?.toString();
+		const endTime = formData.get('endTime')?.toString();
+		const notes = formData.get('notes')?.toString() || null;
+
+		if (!shiftId || !userId || !startTime || !endTime) {
+			return fail(400, { error: 'Shift, user, start time, and end time are required' });
+		}
+
+		if (await isVendorUser(userId)) {
+			return fail(400, { error: 'Vendors cannot be scheduled — scheduling is staff-only' });
+		}
+
+		const [before] = await db.select().from(shifts).where(eq(shifts.id, shiftId));
+		if (!before) {
+			return fail(404, { error: 'Shift not found' });
+		}
+
+		const [updated] = await db
+			.update(shifts)
+			.set({
+				userId,
+				locationId,
+				startTime: parsePacificDatetime(startTime),
+				endTime: parsePacificDatetime(endTime),
+				notes,
+				updatedAt: new Date()
+			})
+			.where(eq(shifts.id, shiftId))
+			.returning();
+
+		await audit({
+			userId: locals.user.id,
+			action: 'schedule_updated',
+			entityType: 'schedule',
+			entityId: shiftId,
+			beforeData: {
+				userId: before.userId,
+				locationId: before.locationId,
+				startTime: before.startTime.toISOString(),
+				endTime: before.endTime.toISOString(),
+				notes: before.notes
+			},
+			afterData: {
+				userId: updated.userId,
+				locationId: updated.locationId,
+				startTime: updated.startTime.toISOString(),
+				endTime: updated.endTime.toISOString(),
+				notes: updated.notes
+			}
+		});
+
+		return { success: true };
+	},
+
 	delete: async ({ request, locals }) => {
 		if (!locals.user || !isManager(locals.user)) {
 			return fail(403, { error: 'Unauthorized' });

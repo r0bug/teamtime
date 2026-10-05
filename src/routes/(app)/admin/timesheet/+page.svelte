@@ -205,6 +205,22 @@
 										</td>
 										<td class="px-4 py-2 text-right text-gray-700">{entry.hours.toFixed(2)}</td>
 									</tr>
+									{#if entry.notes}
+										<!-- System notes explain an auto clock-out and, for justified
+										     overtime, ask the approver to confirm the real finish time.
+										     They belong on the page where hours get approved. -->
+										<tr class="border-t-0">
+											<td></td>
+											<td
+												colspan="4"
+												class="px-4 pb-2 text-xs whitespace-pre-wrap break-words {entry.notes.includes('Confirm the real finish time')
+													? 'text-amber-700'
+													: 'text-gray-500'}"
+											>
+												{entry.notes}
+											</td>
+										</tr>
+									{/if}
 								{/each}
 								{#if day.entries.length > 1}
 									<tr class="bg-gray-50 border-t border-gray-200">

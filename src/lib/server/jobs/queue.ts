@@ -19,8 +19,11 @@ export interface JobPayload {
 	scheduled_sms: {
 		toUserId?: string;
 		toPhone?: string;
+		toVendorId?: string;
 		toAllStaff?: boolean;
+		toAllVendors?: boolean;
 		message: string;
+		/** User who scheduled it — recorded on the sms_logs row when it sends. */
 		scheduledBy: string;
 		aiRunId?: string;
 	};

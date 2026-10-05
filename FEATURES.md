@@ -20,8 +20,8 @@ This document provides detailed information about TeamTime features, their imple
 14. [Shoutouts & Recognition](#shoutouts--recognition)
 15. [Metrics & Analytics Module](#metrics--analytics-module)
 16. [Staffing Analytics](#staffing-analytics-extended-correlation-analytics)
-17. [Clock-Out Warning & Demerit System](#clock-out-warning--demerit-system)
-18. [Late Arrival Warning System](#late-arrival-warning-system)
+17. [Clock-Out Reminder & Auto Close](#clock-out-reminder--auto-close)
+18. [Late Arrival Warning System (disabled)](#late-arrival-warning-system-disabled)
 19. [Security Hardening](#security-hardening)
 20. [Toast Notifications](#toast-notifications)
 21. [Global Search](#global-search)
@@ -415,7 +415,7 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 
 *Communication:*
 - `send_message` — Send direct messages to users or all staff (with cooldowns)
-- `send_sms` — Send SMS messages to users or all staff
+- `send_sms` — Send SMS to a staff user, a booth vendor, a raw number, all staff, or all vendors
 - `schedule_sms` — Schedule SMS for future delivery (by delay or specific time)
 - `view_scheduled_sms` — View pending scheduled SMS messages
 - `cancel_scheduled_sms` — Cancel a pending scheduled SMS
@@ -475,7 +475,7 @@ TeamTime includes three AI agents ("Shackled Mentats") that provide intelligent 
 - `get_my_permissions` — Check what the AI is allowed to do
 
 **Broadcast Messaging**:
-- `send_message` and `send_sms` support `toAllStaff: true` parameter
+- `send_message` and `send_sms` support `toAllStaff: true`; `send_sms` and `schedule_sms` also take `toVendorId` / `toAllVendors: true`
 - Sends to all active non-admin staff members
 - Useful for team-wide announcements and urgent notifications
 
@@ -1772,61 +1772,174 @@ Staffing analytics computation runs weekly (Sundays) as part of the metrics cron
 
 ---
 
-## Clock-Out Warning & Demerit System
+## Clock-Out Reminder & Auto Close
 
 ### Overview
 
-The Clock-Out Warning system automatically detects employees who forget to clock out and sends SMS reminders. Repeated violations escalate to formal demerits with point deductions, creating accountability while giving employees a chance to self-correct.
+Employees who forget to clock out get **one** reminder text; if nothing changes
+they are clocked out at their scheduled shift end and the time entry says the
+system did it. Nothing about this is punitive — no points are docked and no
+demerit is raised.
 
-### Key Features
+> **Automated discipline is OFF.** As of 2026-10-01 the demerit engine and
+> late-arrival warnings are disabled by default. They are switches, not deleted
+> code: see [Attendance Policy Switches](#attendance-policy-switches).
 
-#### 3-Tier Escalating SMS Reminders
-- Cron job runs every 15 minutes during business hours
-- Looks up each user's scheduled shift from the `shifts` table
-- If no shift: falls back to synthetic shift end (clock-in + 8 hours) after `MAX_HOURS_CLOCKED_IN`
-- **Nag 1** (30 min past shift end): Friendly reminder — "Your shift ended at 5:00 PM. Reply YES to clock out now, or reply with your actual clock-out time (e.g. '5:15 PM')."
-- **Nag 2** (90 min past shift end): Firmer warning — "You're still clocked in 2 hrs past your shift. Reply with your clock-out time or YES to clock out now. No reply = auto clock-out at shift end."
-- **Nag 3** (180 min past shift end): Auto-clocks out at shift end time, deducts points (`CLOCK_OUT_FORGOTTEN = -15`), checks for demerit escalation
-- Escalation level tracked per time entry via `getNagCountForEntry()`
+### How it works
 
-#### Natural-Language Time Parsing
-- Employees can reply with their actual clock-out time instead of just YES
-- **Supported formats**: "5:30 PM", "5:30pm", "17:30", "530", "530pm", "5 PM", "5pm", bare number "5"
-- **Natural phrases**: "left at 3:30", "clocked out at 5pm", "headed out at 4"
-- **Business hour heuristics**: bare numbers 1-6 assume PM; "7:30" without meridian = 7:30 AM
-- **Validation**: parsed time must be after clock-in and not in the future (5-min tolerance)
-- **Post-auto-clock-out corrections**: if the system already auto-clocked out the employee, they can text their actual time and it updates the closed entry
-- **Late replies**: handles corrections within 4 hours even after initial reply
+Cron (`GET /api/clock/cron`) runs every 15 minutes and, for each still-open
+time entry, resolves the scheduled shift end from the `shifts` table — matching
+the shift that started within ±2hr of the clock-in, falling back to the nearest
+shift on the same Pacific day, and finally to `clock-in + MAX_HOURS_CLOCKED_IN`
+when the person was never scheduled.
 
-#### Admin-Configurable Thresholds
-- Grace period / escalation intervals configurable via constants (can be moved to Admin settings)
-- Stored escalation config: `NAG_1_MINUTES: 30`, `NAG_2_MINUTES: 90`, `NAG_3_MINUTES: 180`
-- No restart required — config is loaded from DB on each cron run
+**Pass 1 — the reminder** (`nagDelayMinutes`, default 30 min past shift end):
+one SMS, pointing at the app:
 
-#### Manager Force Clock-Out
-- Managers can force clock-out employees who forgot
-- Optionally sends SMS notification to employee
-- Records warning with reason
+> You're still clocked in from your shift that ended at 5:00 PM. Please clock
+> out in the app. If nothing changes in 10 min we'll close it at 5:00 PM for you.
 
-#### Demerit Escalation
-- 2 warnings within 30 days = automatic demerit
-- Demerit deducts 50 points from gamification system
-- Employee receives SMS notification of demerit
-- Demerits expire after 90 days
+If they text back, that reply is interpreted straight away — see
+[Replies are read by the Office Manager](#replies-are-read-by-the-office-manager)
+— and the outcome usually settles there rather than waiting for pass 2.
+
+A `clock_out_warnings` row of type `auto_reminder` records it. That row is
+written even when no text went out (no phone on file, reminder switched off,
+Twilio down), because its timestamp is the clock the close runs against.
+
+**Pass 2 — the close** (`autoCloseAfterNagMinutes`, default 10 min after the
+reminder; in practice the next 15-minute cron run):
+
+- Still open and no inbound text since the reminder → `clock_out` is set to the
+  **scheduled shift end**, not "now", so a forgotten clock-out can never
+  inflate hours. `updated_by` is the system user and `time_entries.notes` gains:
+  `[Office Manager] Auto clocked out at 5:00 PM (scheduled shift end). Still clocked in 45 min past shift end; reminder texted 5:35 PM, no reply. Edit this entry if the real time differs.`
+- They texted back → the close is deferred so a human can sort it out, up to the
+  `backstopMinutes` hard stop (default 180 min past shift end). Nobody stays
+  clocked in overnight because they replied "still here".
+- Any open break is ended at the shift end time first.
+
+If the reminder never actually went out — no phone on file, `clockOutNagEnabled`
+off, Twilio down — the 10-minute window does not apply and the entry waits for
+the `backstopMinutes` hard stop instead. Closing someone's entry ten minutes
+after a text they never received is not defensible, and the note says so rather
+than claiming a reminder was sent.
+
+#### Replies are read by the Office Manager
+
+The first text back after a reminder is interpreted, not just counted. The
+Office Manager's model classifies it and — crucially — judges whether working
+past shift end was the **business's** doing or the employee's oversight:
+
+| Verdict | What happens |
+|---|---|
+| **Justified** overtime (asked to stay, customers still in the store, mid-task, covering a shift) | Entry held open, a manager is texted immediately with the reason |
+| **Already left**, with a time | Closed at the time they gave, if it passes the bounds below |
+| **Already left**, no time | Held; they're asked for the time |
+| **About to clock out** | Held; they do it themselves |
+| **Forgot** / no business reason | Closed at the scheduled shift end |
+| **Unclear** | Held and flagged for a manager |
+
+The verdict is stored on `clock_out_warnings.reply_analysis` and summarised onto
+the time entry's notes, which `/admin/timesheet` renders under the row — amber
+when it needs confirming.
+
+**Justified overtime is never closed at the shift end.** Doing so would erase
+hours actually worked. At the backstop it closes at the employee's **last
+contact** instead, and the note says so explicitly: *"Auto clocked out at 5:40
+PM — last contact, NOT the scheduled shift end of 5:00 PM … Confirm the real
+finish time with the employee before approving."*
+
+#### Guardrails on the interpreter
+
+- **It is not the Office Manager agent.** It runs on the same model and voice
+  but gets **no tools**. The agent's SMS channel is admin/manager-only behind a
+  PIN; this path answers texts from *any* staff member, so tool access would let
+  anyone with a phone drive scheduling, tasks and points. It is a closed
+  classification: text in, fixed-shape verdict out.
+- **The reply is untrusted input.** It's delimited and the model is told to
+  classify rather than obey it, but the real protection is that nothing
+  downstream can do more than close or hold one time entry and text a manager.
+- **Every field is validated.** Unknown intents and categories coerce to
+  `unclear`/`other`; a verdict with no stated reason is discarded. A malformed
+  response or an unreachable model yields a cautious fallback — *hold for a
+  human*, never *close the entry*, so a failed API call can't cost someone pay.
+- **Escalation is forced, not advisory.** Justified overtime, low confidence and
+  unclear replies all set `needsManager` regardless of what the model returned.
+- **Self-reported times are bounded**: must parse as `HH:MM`, fall after
+  clock-in, not be in the future (5 min skew allowed), and not imply a shift
+  over 16 hours. It rolls past midnight for a shift that crosses the date line,
+  and resolves against the clock-in's **Pacific** calendar day. A rejected time
+  gets a plain-English reason and a manager follow-up.
+- **One text only.** The handler requires `replied_at IS NULL` and an open
+  entry, so it claims the first reply after a reminder and nothing else.
+  Shift-coverage claims still run **first** — a bare "YES" is a claim, and
+  reading it as a clock-out answer would lose it.
+
+#### Manager force clock-out
+
+Managers can force clock-out employees who forgot. Sends an SMS attributed to
+the manager and records a `force_clockout` warning with the reason.
+
+### Attendance Policy Switches
+
+Stored as JSON in `app_settings` under `attendance_policy_config`; edited at
+**/admin/demerits**. A malformed or unreadable setting falls back to the
+defaults below, so a failure can never silently re-enable discipline.
+
+| Setting | Default | Effect |
+|---|---|---|
+| `demeritsEnabled` | `false` | Escalate repeated warnings into demerits and text managers to review them |
+| `lateArrivalWarningsEnabled` | `false` | Detect late arrivals and text the employee |
+| `clockOutNagEnabled` | `true` | Send the single clock-out reminder (the auto-close runs either way) |
+| `clockOutPointsPenaltyEnabled` | `false` | Dock `CLOCK_OUT_FORGOTTEN` (-15) points on auto-close |
+| `nagDelayMinutes` | `30` | Minutes past shift end before the reminder |
+| `autoCloseAfterNagMinutes` | `10` | Minutes after the reminder before closing |
+| `backstopMinutes` | `180` | Hard stop that closes the entry even after a reply |
+
+Re-enabling `demeritsEnabled`, `lateArrivalWarningsEnabled` or the points
+penalty requires confirming a dialog, and the change is written to the audit log
+as `entityType: 'attendance_policy'`.
+
+### Demerit Engine (disabled)
+
+Retained for history and for manual review of the existing backlog. While
+`demeritsEnabled` is `false`, `checkAndEscalateToDemerit()` returns `null`
+before doing any work, in both the clock-out and late-arrival services.
+
+When enabled, repeated warnings create a **pending** demerit — 2 within 30 days
+for clock-out violations, 3 for late arrivals. Pending demerits deduct nothing
+and notify no employee; managers are texted to review them at /admin/demerits,
+where approving deducts 50 points and texts the employee, and dismissing marks
+the demerit `overturned`. This pending-first design dates from 2026-07-18, after
+incorrect schedule data produced months of wrongful automatic demerits (113 of
+131 late-arrival warnings fired on days the employee never clocked in at all).
+
+Approving and dismissing keep working while the engine is off, so the existing
+backlog can be cleared.
 
 ### Configuration
 
 ```typescript
+// src/lib/server/services/attendance-policy-service.ts — DB-backed, live
 {
-  WARNING_THRESHOLD_FOR_DEMERIT: 2,    // Warnings before demerit
+  demeritsEnabled: false,
+  lateArrivalWarningsEnabled: false,
+  clockOutNagEnabled: true,
+  clockOutPointsPenaltyEnabled: false,
+  nagDelayMinutes: 30,
+  autoCloseAfterNagMinutes: 10,
+  backstopMinutes: 180
+}
+
+// src/lib/server/services/clock-out-warning-service.ts — code constants
+{
+  WARNING_THRESHOLD_FOR_DEMERIT: 2,    // Warnings before demerit (when enabled)
   WARNING_LOOKBACK_DAYS: 30,           // Warning count period
-  DEMERIT_POINTS_DEDUCTED: 50,         // Points lost per demerit
+  DEMERIT_POINTS_DEDUCTED: 50,         // Points lost per approved demerit
   DEMERIT_EXPIRY_DAYS: 90,             // Demerit expiration
-  GRACE_PERIOD_MINUTES: 30,            // Minutes after shift before warning
-  MAX_HOURS_CLOCKED_IN: 10,            // Fallback when no scheduled shift
-  NAG_1_MINUTES: 30,                   // Friendly reminder
-  NAG_2_MINUTES: 90,                   // Firmer warning
-  NAG_3_MINUTES: 180                   // Auto clock-out at shift end
+  GRACE_PERIOD_MINUTES: 30,            // Legacy default for the reminder delay
+  MAX_HOURS_CLOCKED_IN: 10             // Fallback when no scheduled shift
 }
 ```
 
@@ -1902,25 +2015,31 @@ The Clock-Out Warning system automatically detects employees who forget to clock
 
 ---
 
-## Late Arrival Warning System
+## Late Arrival Warning System (disabled)
+
+> **Off by default since 2026-10-01.** `checkLateArrivals()` returns
+> `{ disabled: true }` immediately unless `lateArrivalWarningsEnabled` is set —
+> no texts, no warning rows, nothing for the demerit engine to count. Re-enable
+> at /admin/demerits; see [Attendance Policy Switches](#attendance-policy-switches).
 
 ### Overview
 
-The Late Arrival Warning system automatically detects employees who haven't clocked in after their shift starts and sends SMS reminders. Repeated late arrivals escalate to formal demerits with point deductions, mirroring the Clock-Out Warning system structure.
+When enabled, this detects employees who haven't clocked in after their shift
+starts and texts them a reminder. Repeated late arrivals escalate to pending
+demerits for manager review, mirroring the clock-out service's structure.
 
-### Key Features
+### Key Features (when enabled)
 
 #### Automatic SMS Reminders
-- Cron job runs every 15 minutes during business hours (shares cron with clock-out warnings)
+- Cron job runs every 15 minutes during business hours (shares cron with clock-out reminders)
 - Detects employees whose shift started more than 10 minutes ago with no clock-in
 - Sends SMS: "You are {N} minutes late for your shift. Please clock in as soon as possible or notify your manager."
-- One warning per shift per day (prevents duplicate SMS)
+- One warning per **user** per day — stacked back-to-back shifts must not multiply warnings for one late morning
 
 #### Demerit Escalation
-- 3 late arrival warnings within 30 days = automatic demerit
-- Demerit deducts 50 points from gamification system
-- Employee receives SMS notification of demerit
-- Demerits expire after 90 days
+- Gated on `demeritsEnabled`, which is also off
+- 3 late arrival warnings within 30 days = one **pending** demerit for manager review
+- Approving deducts 50 points and texts the employee; demerits expire after 90 days
 
 ### Configuration
 
@@ -2570,7 +2689,7 @@ The AI Token Usage Dashboard provides visibility into AI agent costs, run freque
 
 ## SMS Dashboard & Delivery Tracking
 
-Full SMS management dashboard at `/admin/sms` with six tabs:
+Full SMS management dashboard at `/admin/sms` with seven tabs:
 
 ### Overview Tab
 - **Configuration status** — green/red indicator for Twilio credentials
@@ -2578,6 +2697,17 @@ Full SMS management dashboard at `/admin/sms` with six tabs:
 - **Send test SMS** — verify Twilio connectivity with a test message
 - **Staff phone coverage** — shows which staff are missing phone numbers (with links to edit)
 - **Opt-out alerts** — warning when staff have texted STOP
+
+### Conversations Tab
+Threaded two-way log — the record of what was said to whom, as opposed to the
+per-message delivery tables below.
+
+- **One thread per counterparty**, outbound and inbound interleaved oldest-first, newest conversation on top
+- **Threaded by phone number**, normalised to the last 10 digits, so `(509) 555-1111`, `509-555-1111` and `+15095551111` are one person rather than three
+- **Vendors included** — inbound texts are matched against `vendors.contact_phone`, so a vendor with no TeamTime account still shows up by name and booth instead of as a bare number
+- **Sender attribution** — each outbound message names the staff member who caused it (`sms_logs.sent_by_user_id`); blank means a cron or system notification
+- **Awaiting-reply badge** — threads whose newest message is theirs, with a count on the tab
+- **TwiML replies included** — inline replies (shift-coverage confirmations) are logged too, so an inbound "YES" is never shown without its answer
 
 ### Delivery Tracking Tab
 - **Real-time delivery log** — outbound messages with status (queued → sent → delivered/failed)
@@ -2590,13 +2720,15 @@ Full SMS management dashboard at `/admin/sms` with six tabs:
 - **Opt-out detection** — STOP/UNSUBSCRIBE messages flagged and counted
 - **User matching** — links inbound phone numbers to known staff
 - **Webhook endpoint** — `/api/sms/webhook/inbound` receives Twilio inbound POSTs
-- **Clock-out reply handling** — YES/Y/YEAH/YEP replies auto-clock out; natural-language time replies (e.g. "5:30 PM", "left at 3:30") clock out at the specified time; post-auto-clock-out corrections update already-closed entries; unparseable replies get a help message with format examples
+- **Vendor matching** — inbound numbers are matched against vendor contact numbers as well as staff
+- **Routing order** — log, then shift-coverage claims, then the Office Manager AI for managers/admins. Everyone else is logged only
+- **Clock-out reply interpretation** — the first text back after a clock-out reminder is read by the Office Manager's model, which judges whether the overtime was the business's doing (see [Clock-Out Reminder & Auto Close](#clock-out-reminder--auto-close)). Runs after shift-coverage so a bare "YES" is still a claim, and before the agent branch so a manager's reply isn't swallowed by the LLM chat
 
 ### Scheduled Jobs Tab
 - **Job queue stats** — pending, running, completed, failed, cancelled counts
 - **Scheduled SMS history** — all AI-scheduled messages with payload and result details
 
-### AI Conversations Tab
+### AI Chat Sessions Tab
 - **SMS Office-Manager threads** — admin/manager SMS chats with the Office Manager AI
 - **Admin view** — admins see every manager's SMS conversation; managers see only their own
 - **Transcript drawer** — select a conversation to see the full message history inline

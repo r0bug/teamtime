@@ -1199,7 +1199,10 @@ export async function inviteVendorToPortal(input: {
 				`You'll set a new password on first login.`;
 			attempts.push({
 				channel: 'sms',
-				promise: sendSMS(phone, body).then((r) => ({
+				promise: sendSMS(phone, body, {
+					sentByUserId: input.sentByUserId,
+					vendorId: vendor.id
+				}).then((r) => ({
 					success: r.success,
 					error: r.success ? undefined : r.error ?? 'unknown SMS error'
 				}))

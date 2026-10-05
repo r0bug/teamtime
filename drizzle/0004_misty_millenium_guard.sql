@@ -1,1 +1,0 @@
-ALTER TABLE "ebay_sale_settlements" ADD COLUMN "refunds" numeric(10, 2);

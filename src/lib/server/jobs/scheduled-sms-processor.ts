@@ -5,7 +5,11 @@ import { eq } from 'drizzle-orm';
 import { registerHandler } from './processor';
 import type { JobPayload, JobResult } from './queue';
 import { sendSMS, formatPhoneToE164 } from '$lib/server/twilio';
-import { getBroadcastStaff } from '$lib/server/services/user-classification-service';
+import {
+	getBroadcastStaff,
+	getVendorSmsTarget,
+	getVendorSmsTargets
+} from '$lib/server/services/user-classification-service';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('jobs:scheduled-sms');
@@ -14,9 +18,17 @@ const log = createLogger('jobs:scheduled-sms');
 async function processScheduledSMS(
 	payload: JobPayload['scheduled_sms']
 ): Promise<JobResult['scheduled_sms']> {
-	const { toUserId, toPhone, toAllStaff, message, scheduledBy } = payload;
+	const { toUserId, toPhone, toVendorId, toAllStaff, toAllVendors, message, scheduledBy } = payload;
 
-	log.info({ toUserId, toPhone, toAllStaff, scheduledBy }, 'Processing scheduled SMS');
+	log.info(
+		{ toUserId, toPhone, toVendorId, toAllStaff, toAllVendors, scheduledBy },
+		'Processing scheduled SMS'
+	);
+
+	// The message is still attributable to whoever scheduled it, however long ago.
+	// scheduledBy carries a sentinel like "ai:office_manager" for autonomous runs
+	// with no human behind them; sendSMS drops anything that isn't a user id.
+	const meta = { sentByUserId: scheduledBy };
 
 	// Handle sending to all staff (vendors and admins are excluded)
 	if (toAllStaff) {
@@ -41,7 +53,7 @@ async function processScheduledSMS(
 			const formatted = formatPhoneToE164(user.phone!);
 			if (!formatted) continue;
 
-			const result = await sendSMS(formatted, message);
+			const result = await sendSMS(formatted, message, meta);
 			if (result.success) {
 				successCount++;
 			} else {
@@ -64,6 +76,78 @@ async function processScheduledSMS(
 			recipientCount: successCount,
 			recipientName: `all staff (${successCount} sent${failCount > 0 ? `, ${failCount} failed` : ''})`
 		};
+	}
+
+	// Handle sending to every active vendor
+	if (toAllVendors) {
+		const targets = await getVendorSmsTargets({ activeOnly: true });
+		const reachable = targets.filter((v) => v.phone && formatPhoneToE164(v.phone));
+
+		if (reachable.length === 0) {
+			log.warn({}, 'No active vendors with valid phone numbers found');
+			return { success: false, error: 'No active vendors with valid phone numbers found' };
+		}
+
+		let successCount = 0;
+		let failCount = 0;
+		const errors: string[] = [];
+
+		for (const vendor of reachable) {
+			const formatted = formatPhoneToE164(vendor.phone!);
+			if (!formatted) continue;
+
+			const result = await sendSMS(formatted, message, { ...meta, vendorId: vendor.vendorId });
+			if (result.success) {
+				successCount++;
+			} else {
+				failCount++;
+				errors.push(`${vendor.displayName}: ${result.error}`);
+			}
+		}
+
+		if (successCount === 0) {
+			log.error({ errors }, 'Failed to send SMS to any vendor');
+			return {
+				success: false,
+				error: `Failed to send SMS to any vendor. Errors: ${errors.join(', ')}`
+			};
+		}
+
+		log.info({ successCount, failCount }, 'Scheduled SMS sent to all vendors');
+		return {
+			success: true,
+			recipientCount: successCount,
+			recipientName: `all vendors (${successCount} sent${failCount > 0 ? `, ${failCount} failed` : ''})`
+		};
+	}
+
+	// Single vendor
+	if (toVendorId) {
+		const vendor = await getVendorSmsTarget(toVendorId);
+		if (!vendor) {
+			log.error({ toVendorId }, 'Vendor not found for scheduled SMS');
+			return { success: false, error: 'Vendor not found' };
+		}
+		if (!vendor.phone) {
+			return { success: false, error: `${vendor.displayName} has no phone number on file` };
+		}
+
+		const formatted = formatPhoneToE164(vendor.phone);
+		if (!formatted) {
+			return {
+				success: false,
+				error: `${vendor.displayName}'s phone number "${vendor.phone}" is not in a valid format`
+			};
+		}
+
+		const result = await sendSMS(formatted, message, { ...meta, vendorId: vendor.vendorId });
+		if (!result.success) {
+			log.error({ error: result.error, toVendorId }, 'Failed to send scheduled vendor SMS');
+			return { success: false, error: result.error || 'Failed to send SMS' };
+		}
+
+		log.info({ vendor: vendor.displayName, sid: result.sid }, 'Scheduled vendor SMS sent');
+		return { success: true, recipientName: vendor.displayName, messageSid: result.sid };
 	}
 
 	// Single recipient
@@ -108,7 +192,7 @@ async function processScheduledSMS(
 	}
 
 	// Send the SMS
-	const result = await sendSMS(phoneNumber, message);
+	const result = await sendSMS(phoneNumber, message, meta);
 
 	if (!result.success) {
 		log.error({ error: result.error, phoneNumber }, 'Failed to send scheduled SMS');

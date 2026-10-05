@@ -3,134 +3,45 @@ import { redirect } from '@sveltejs/kit';
 import { db, timeEntries, users, appSettings, clockOutWarnings, breakEntries } from '$lib/server/db';
 import { eq, and, gte, lte, desc, inArray } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
-import { toPacificDateString, toPacificTimeString } from '$lib/server/utils/timezone';
-
-interface PayPeriodConfig {
-	type: 'semi-monthly' | 'bi-weekly' | 'weekly' | 'monthly';
-	period1Start: number;
-	period1End: number;
-	period1Payday: number;
-	period2Start: number;
-	period2End: number;
-	period2Payday: number;
-}
-
-interface PayPeriod {
-	startDate: Date;
-	endDate: Date;
-	payday: Date;
-	label: string;
-	isCurrent: boolean;
-}
-
-const DEFAULT_CONFIG: PayPeriodConfig = {
-	type: 'semi-monthly',
-	period1Start: 26,
-	period1End: 10,
-	period1Payday: 1,
-	period2Start: 11,
-	period2End: 25,
-	period2Payday: 16
-};
-
-function calculatePayPeriods(config: PayPeriodConfig, count: number): PayPeriod[] {
-	const periods: PayPeriod[] = [];
-	const now = new Date();
-	const currentMonth = now.getMonth();
-	const currentYear = now.getFullYear();
-
-	if (config.type === 'semi-monthly') {
-		for (let monthOffset = -3; monthOffset <= 1; monthOffset++) {
-			const targetMonth = currentMonth + monthOffset;
-			const targetYear = currentYear + Math.floor(targetMonth / 12);
-			const adjustedMonth = ((targetMonth % 12) + 12) % 12;
-
-			// Period 1: crosses month boundary (e.g., 26th to 10th)
-			if (config.period1Start > config.period1End) {
-				const startDate = new Date(targetYear, adjustedMonth - 1, config.period1Start);
-				const endDate = new Date(targetYear, adjustedMonth, config.period1End, 23, 59, 59);
-				const payday = new Date(targetYear, adjustedMonth, config.period1Payday);
-				const isCurrent = now >= startDate && now <= endDate;
-
-				periods.push({
-					startDate,
-					endDate,
-					payday,
-					label: `${formatShortDate(startDate)} - ${formatShortDate(endDate)}`,
-					isCurrent
-				});
-			}
-
-			// Period 2: within same month (e.g., 11th to 25th)
-			const p2StartDate = new Date(targetYear, adjustedMonth, config.period2Start);
-			const p2EndDate = new Date(targetYear, adjustedMonth, config.period2End, 23, 59, 59);
-			const p2Payday = new Date(targetYear, adjustedMonth, config.period2Payday);
-			const p2IsCurrent = now >= p2StartDate && now <= p2EndDate;
-
-			periods.push({
-				startDate: p2StartDate,
-				endDate: p2EndDate,
-				payday: p2Payday,
-				label: `${formatShortDate(p2StartDate)} - ${formatShortDate(p2EndDate)}`,
-				isCurrent: p2IsCurrent
-			});
-		}
-	}
-
-	periods.sort((a, b) => b.startDate.getTime() - a.startDate.getTime());
-	return periods.slice(0, count);
-}
-
-function formatShortDate(date: Date): string {
-	return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
+import {
+	toPacificDateString,
+	toPacificTimeString,
+	parsePacificDate,
+	parsePacificEndOfDay
+} from '$lib/server/utils/timezone';
+import {
+	loadPayPeriodConfig,
+	calculatePayPeriods,
+	lastCompletedPayPeriod,
+	formatShortDate
+} from '$lib/server/utils/pay-periods';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!isManager(locals.user)) {
 		throw redirect(302, '/dashboard');
 	}
 
-	// Load pay period config
-	const setting = await db
-		.select()
-		.from(appSettings)
-		.where(eq(appSettings.key, 'pay_period_config'))
-		.limit(1);
-
-	let payPeriodConfig: PayPeriodConfig = DEFAULT_CONFIG;
-	if (setting.length > 0) {
-		try {
-			payPeriodConfig = JSON.parse(setting[0].value);
-		} catch {
-			payPeriodConfig = DEFAULT_CONFIG;
-		}
-	}
-
+	const payPeriodConfig = await loadPayPeriodConfig();
 	const payPeriods = calculatePayPeriods(payPeriodConfig, 8);
 
 	// Get date range from query params or default to previous (most recently completed) pay period
-	const startParam = url.searchParams.get('start');
-	const endParam = url.searchParams.get('end');
+	let startParam = url.searchParams.get('start');
+	let endParam = url.searchParams.get('end');
 
-	let startDate: Date;
-	let endDate: Date;
-
-	if (startParam && endParam) {
-		startDate = new Date(startParam + 'T00:00:00');
-		endDate = new Date(endParam + 'T23:59:59');
-	} else {
-		// Find the most recently completed pay period (first non-current past period)
-		const now = new Date();
-		const pastPeriods = payPeriods.filter(p => p.endDate < now && !p.isCurrent);
-		const previousPeriod = pastPeriods[0] || payPeriods[1] || payPeriods[0];
+	if (!startParam || !endParam) {
+		const previousPeriod = lastCompletedPayPeriod(payPeriods);
 		if (previousPeriod) {
-			startDate = previousPeriod.startDate;
-			endDate = previousPeriod.endDate;
+			startParam = previousPeriod.startDate;
+			endParam = previousPeriod.endDate;
 		} else {
-			endDate = new Date();
-			startDate = new Date(endDate.getTime() - 15 * 24 * 60 * 60 * 1000);
+			endParam = new Date().toISOString().split('T')[0];
+			startParam = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 		}
 	}
+
+	// Pacific-day boundaries: 00:00:00 on start day through 23:59:59 on end day
+	const startDate = parsePacificDate(startParam);
+	const endDate = parsePacificEndOfDay(endParam);
 
 	// Query time entries with user info
 	const entries = await db
@@ -299,19 +210,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		})
 		.sort((a, b) => a.name.localeCompare(b.name));
 
-	const periodLabel = `${formatShortDate(startDate)} - ${formatShortDate(endDate)}`;
+	const periodLabel = `${formatShortDate(startParam)} - ${formatShortDate(endParam)}`;
 
 	return {
 		employees,
-		startDate: startDate.toISOString().split('T')[0],
-		endDate: endDate.toISOString().split('T')[0],
+		startDate: startParam,
+		endDate: endParam,
 		periodLabel,
-		payPeriods: payPeriods.map(p => ({
-			startDate: p.startDate.toISOString().split('T')[0],
-			endDate: p.endDate.toISOString().split('T')[0],
-			label: p.label,
-			isCurrent: p.isCurrent
-		})),
+		payPeriods,
 		grandTotals: {
 			totalHours: Math.round(employees.reduce((sum, e) => sum + e.totalHours, 0) * 100) / 100,
 			employeeCount: employees.length

@@ -7,13 +7,21 @@ import { formatPhoneToE164, isValidPhoneNumber } from '$lib/server/twilio';
 import type { AITool, ToolExecutionContext } from '../../types';
 import { createLogger } from '$lib/server/logger';
 import { validateUserId } from '../utils/validation';
+import { getVendorSmsTarget } from '$lib/server/services/user-classification-service';
 
 const log = createLogger('ai:tools:schedule-sms');
+
+/** Only one target may be set per call. */
+const TARGET_KEYS = ['toUserId', 'toPhone', 'toVendorId', 'toAllStaff', 'toAllVendors'] as const;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface ScheduleSMSParams {
 	toUserId?: string;
 	toPhone?: string;
+	toVendorId?: string;
 	toAllStaff?: boolean;
+	toAllVendors?: boolean;
 	message: string;
 	// Scheduling options (mutually exclusive)
 	delayMinutes?: number;
@@ -32,7 +40,7 @@ interface ScheduleSMSResult {
 export const scheduleSMSTool: AITool<ScheduleSMSParams, ScheduleSMSResult> = {
 	name: 'schedule_sms',
 	description:
-		'Schedule an SMS to be sent at a future time. Useful for reminders, shift notifications, or time-sensitive alerts. Can schedule by delay (minutes/hours) or specific datetime. Maximum 7 days in advance.',
+		'Schedule an SMS to be sent at a future time, to staff or booth vendors. Useful for reminders, shift notifications, rent reminders, or time-sensitive alerts. Can schedule by delay (minutes/hours) or specific datetime. Maximum 7 days in advance.',
 	agent: 'office_manager',
 	parameters: {
 		type: 'object',
@@ -45,9 +53,17 @@ export const scheduleSMSTool: AITool<ScheduleSMSParams, ScheduleSMSResult> = {
 				type: 'string',
 				description: 'Direct phone number in E.164 format (e.g., +15551234567)'
 			},
+			toVendorId: {
+				type: 'string',
+				description: 'TeamTime vendor UUID (from list_vendors or get_vendor)'
+			},
 			toAllStaff: {
 				type: 'boolean',
 				description: 'Send to all active staff members with phone numbers'
+			},
+			toAllVendors: {
+				type: 'boolean',
+				description: 'Send to every active booth vendor with a phone number on file'
 			},
 			message: {
 				type: 'string',
@@ -89,9 +105,13 @@ export const scheduleSMSTool: AITool<ScheduleSMSParams, ScheduleSMSResult> = {
 
 		const recipientDesc = params.toAllStaff
 			? 'ALL STAFF'
-			: params.toUserId
-				? 'the specified user'
-				: params.toPhone;
+			: params.toAllVendors
+				? 'ALL VENDORS'
+				: params.toVendorId
+					? 'the specified vendor'
+					: params.toUserId
+						? 'the specified user'
+						: params.toPhone;
 
 		return `Schedule SMS to ${recipientDesc} ${timeDesc}?\n\nMessage: "${params.message}"`;
 	},
@@ -106,12 +126,18 @@ export const scheduleSMSTool: AITool<ScheduleSMSParams, ScheduleSMSResult> = {
 		}
 
 		// Recipient validation
-		if (!params.toUserId && !params.toPhone && !params.toAllStaff) {
-			return { valid: false, error: 'Either toUserId, toPhone, or toAllStaff is required' };
+		const targets = TARGET_KEYS.filter((k) => params[k]);
+		if (targets.length === 0) {
+			return {
+				valid: false,
+				error: 'One of toUserId, toPhone, toVendorId, toAllStaff, or toAllVendors is required'
+			};
 		}
-		const targetCount = [params.toUserId, params.toPhone, params.toAllStaff].filter(Boolean).length;
-		if (targetCount > 1) {
-			return { valid: false, error: 'Only one recipient type can be specified' };
+		if (targets.length > 1) {
+			return { valid: false, error: `Only one recipient type can be specified, got: ${targets.join(', ')}` };
+		}
+		if (params.toVendorId && !UUID_RE.test(params.toVendorId)) {
+			return { valid: false, error: 'toVendorId must be a vendor UUID — use list_vendors to find it' };
 		}
 
 		// User ID validation
@@ -183,6 +209,20 @@ export const scheduleSMSTool: AITool<ScheduleSMSParams, ScheduleSMSResult> = {
 			let recipientDescription: string;
 			if (params.toAllStaff) {
 				recipientDescription = 'all staff';
+			} else if (params.toAllVendors) {
+				recipientDescription = 'all vendors';
+			} else if (params.toVendorId) {
+				const vendor = await getVendorSmsTarget(params.toVendorId);
+				if (!vendor) {
+					return { success: false, error: 'Vendor not found' };
+				}
+				if (!vendor.phone) {
+					return {
+						success: false,
+						error: `${vendor.displayName} has no phone number on file — nothing would send`
+					};
+				}
+				recipientDescription = vendor.displayName;
 			} else if (params.toUserId) {
 				const [user] = await db
 					.select({ name: users.name })
@@ -200,7 +240,9 @@ export const scheduleSMSTool: AITool<ScheduleSMSParams, ScheduleSMSResult> = {
 				{
 					toUserId: params.toUserId,
 					toPhone: params.toPhone,
+					toVendorId: params.toVendorId,
 					toAllStaff: params.toAllStaff,
+					toAllVendors: params.toAllVendors,
 					message: params.message,
 					scheduledBy: context.userId || `ai:${context.agent}`,
 					aiRunId: context.runId

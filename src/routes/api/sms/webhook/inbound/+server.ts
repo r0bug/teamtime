@@ -6,25 +6,37 @@
  * Called by Twilio when someone sends a text TO our Twilio number.
  * This captures replies, STOP/opt-out messages, and any other inbound texts.
  *
- * Supports smart time parsing: employees can reply with their actual clock-out
- * time (e.g. "5:30 PM", "530", "left at 3:30") and the system will use that
- * time instead of NOW. Also handles replies after auto-clock-out.
+ * Every inbound message is logged first, attributed to a user and/or a vendor
+ * by phone number, so both halves of a conversation are on record even when
+ * the sender is a vendor with no TeamTime account.
+ *
+ * Routing after logging, in order:
+ *   1. shift-coverage claims  — conservative keyword/code parse, first-wins
+ *   2. clock-out reminder replies — only while a reminder is unanswered and
+ *      the entry is open, so it claims one text and no more
+ *   3. the Office Manager agent — admins and managers only, PIN-gated
+ *   4. everyone else: logged only
+ *
+ * Order matters. Shift-coverage owns the bare "YES"/code reply space outright;
+ * reading it as a clock-out answer would lose a claim. The office-manager
+ * branch swallows every text from a manager, so anything narrower must run
+ * ahead of it.
  *
  * Twilio sends application/x-www-form-urlencoded data.
  */
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db, smsLogs, users, clockOutWarnings, timeEntries } from '$lib/server/db';
-import { eq, and, gte, isNull, isNotNull, desc } from 'drizzle-orm';
-import { validateTwilioSignature, formatPhoneToE164, sendSMS } from '$lib/server/twilio';
+import { db, smsLogs, users } from '$lib/server/db';
+import { eq, isNotNull } from 'drizzle-orm';
+import {
+	validateTwilioSignature,
+	formatPhoneToE164,
+	sendSMS,
+	findVendorByPhone
+} from '$lib/server/twilio';
 import { env } from '$env/dynamic/private';
 import { createLogger } from '$lib/server/logger';
-import { awardClockOutPoints } from '$lib/server/services/points-service';
-import { checkAndAwardAchievements } from '$lib/server/services/achievements-service';
-import { auditClockEvent } from '$lib/server/services/audit-service';
-import { parseTimeReply } from '$lib/server/utils/parse-time-reply';
-import { SMS_MESSAGES } from '$lib/server/services/clock-out-warning-service';
 import { toPacificTimeString } from '$lib/server/utils/timezone';
 import {
 	getOrCreateSmsChat,
@@ -43,6 +55,18 @@ import {
 	rejectPendingAction,
 	getPendingAction
 } from '$lib/ai/office-manager/chat';
+import { parseClaimReply } from '$lib/server/utils/parse-claim-reply';
+import {
+	resolveInviteForReply,
+	claimShift,
+	declineRequest,
+	notifyLosers
+} from '$lib/server/services/shift-coverage-service';
+import {
+	findOpenClockOutReminder,
+	handleClockOutReply
+} from '$lib/server/services/clock-out-reply-service';
+import { resolveSystemUserId } from '$lib/server/services/system-user';
 import { isManager } from '$lib/server/auth/roles';
 import { validatePinFormat } from '$lib/server/auth/pin';
 
@@ -51,21 +75,10 @@ const log = createLogger('api:sms:webhook:inbound');
 // Words Twilio treats as opt-out (they handle blocking automatically)
 const OPT_OUT_WORDS = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit'];
 
-// Words that mean "yes, clock me out"
-const CLOCK_OUT_CONFIRM_WORDS = ['yes', 'y', 'yeah', 'yep'];
-
 /** Helper to build a TwiML response with a message */
 function twiml(message: string): Response {
 	return new Response(
 		`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(message)}</Message></Response>`,
-		{ status: 200, headers: { 'Content-Type': 'text/xml' } }
-	);
-}
-
-/** Helper to build an empty TwiML response */
-function twimlEmpty(): Response {
-	return new Response(
-		'<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
 		{ status: 200, headers: { 'Content-Type': 'text/xml' } }
 	);
 }
@@ -78,6 +91,14 @@ function escapeXml(str: string): string {
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&apos;');
+}
+
+/** Helper to build an empty TwiML response */
+function twimlEmpty(): Response {
+	return new Response(
+		'<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+		{ status: 200, headers: { 'Content-Type': 'text/xml' } }
+	);
 }
 
 export const POST: RequestHandler = async ({ request, url }) => {
@@ -136,6 +157,10 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		log.warn({ error: err }, 'Failed to look up user by phone');
 	}
 
+	// Also try to match a vendor. Most vendors have no user account, so without
+	// this their half of the conversation lands in the log unattributed.
+	const vendorId = await findVendorByPhone(from);
+
 	// Log the inbound message
 	try {
 		await db.insert(smsLogs).values({
@@ -146,269 +171,120 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			toNumber: to || '',
 			body,
 			userId,
+			vendorId,
 			segments: numSegments ? parseInt(numSegments, 10) : null
 		});
 	} catch (err) {
 		log.error({ error: err, messageSid }, 'Failed to log inbound SMS');
 	}
 
-	// Process clock-out warning replies
+	/**
+	 * Reply inline via TwiML, and record it.
+	 *
+	 * Twilio delivers a TwiML <Message> itself, so these never pass through
+	 * sendSMS and would otherwise be missing from sms_logs — leaving an inbound
+	 * "YES" in the conversation view with no visible answer. Logging failures
+	 * must not cost the user their reply, so they are swallowed.
+	 */
+	const twimlLogged = async (message: string): Promise<Response> => {
+		try {
+			await db.insert(smsLogs).values({
+				direction: 'outbound',
+				status: 'sent',
+				fromNumber: to || env.TWILIO_PHONE_NUMBER || 'unknown',
+				toNumber: from,
+				body: message,
+				userId,
+				vendorId
+			});
+		} catch (err) {
+			log.warn({ error: err, messageSid }, 'Failed to log TwiML reply');
+		}
+		return twiml(message);
+	};
+
+	// --- Shift coverage claims ---
+	// Must run BEFORE the office-manager branch: that branch swallows every
+	// text from a manager/admin, so a manager invited to cover a shift would
+	// otherwise have their "YES" sent to the LLM instead of claiming.
+	// Deliberately conservative — anything not clearly a claim falls through.
 	if (userId && !isOptOut) {
 		try {
-			const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
+			const claim = parseClaimReply(body);
+			if (claim) {
+				const invite = await resolveInviteForReply(userId, claim.code);
 
-			// Find recent clock-out warning for this user that hasn't been replied to
-			const [recentWarning] = await db
-				.select({
-					id: clockOutWarnings.id,
-					timeEntryId: clockOutWarnings.timeEntryId,
-					userId: clockOutWarnings.userId
-				})
-				.from(clockOutWarnings)
-				.where(
-					and(
-						eq(clockOutWarnings.userId, userId),
-						eq(clockOutWarnings.warningType, 'auto_reminder'),
-						gte(clockOutWarnings.createdAt, fourHoursAgo),
-						isNull(clockOutWarnings.userReply)
-					)
-				)
-				.orderBy(desc(clockOutWarnings.createdAt))
-				.limit(1);
-
-			if (recentWarning) {
-				const trimmedBody = normalizedBody.trim();
-				const now = new Date();
-
-				// --- YES/Y: clock out at NOW ---
-				if (CLOCK_OUT_CONFIRM_WORDS.includes(trimmedBody)) {
-					const [activeEntry] = await db
-						.select()
-						.from(timeEntries)
-						.where(
-							and(
-								eq(timeEntries.id, recentWarning.timeEntryId),
-								isNull(timeEntries.clockOut)
-							)
-						)
-						.limit(1);
-
-					if (activeEntry) {
-						await db
-							.update(timeEntries)
-							.set({ clockOut: now, updatedAt: now })
-							.where(eq(timeEntries.id, activeEntry.id));
-
-						try {
-							await awardClockOutPoints(userId, activeEntry.id, true);
-							await checkAndAwardAchievements(userId);
-						} catch (err) {
-							log.warn({ error: err, userId }, 'Failed to award points for SMS clock-out');
-						}
-
-						try {
-							await auditClockEvent({
-								userId,
-								timeEntryId: activeEntry.id,
-								action: 'clock_out'
-							});
-						} catch (err) {
-							log.warn({ error: err, userId }, 'Failed to audit SMS clock-out');
-						}
-
-						log.info({ userId, timeEntryId: activeEntry.id, warningId: recentWarning.id }, 'User clocked out via SMS YES reply');
-					}
-
-					await db
-						.update(clockOutWarnings)
-						.set({ userReply: body.trim(), repliedAt: now })
-						.where(eq(clockOutWarnings.id, recentWarning.id));
-
-					return twiml("Done! You've been clocked out.");
+				if (invite.kind === 'ambiguous') {
+					return twimlLogged(
+						`You have ${invite.codes.length} open shift offers. Reply YES plus the code, e.g. "YES ${invite.codes[0]}". Open: ${invite.codes.join(', ')}`
+					);
 				}
 
-				// --- Try to parse a time from the reply ---
-				const parsedTime = parseTimeReply(body);
-
-				if (parsedTime) {
-					// Check if the user still has an active (open) time entry
-					const [activeEntry] = await db
-						.select()
-						.from(timeEntries)
-						.where(
-							and(
-								eq(timeEntries.id, recentWarning.timeEntryId),
-								isNull(timeEntries.clockOut)
-							)
-						)
-						.limit(1);
-
-					if (activeEntry) {
-						const clockInTime = new Date(activeEntry.clockIn);
-
-						// Validate: parsed time must be after clock-in and not in the future
-						if (parsedTime <= clockInTime) {
-							log.warn({ userId, parsedTime, clockInTime }, 'Parsed time is before clock-in');
-							await db
-								.update(clockOutWarnings)
-								.set({ userReply: body.trim(), repliedAt: now })
-								.where(eq(clockOutWarnings.id, recentWarning.id));
-							return twiml(SMS_MESSAGES.timeParseError);
-						}
-
-						if (parsedTime > now) {
-							log.warn({ userId, parsedTime, now }, 'Parsed time is in the future');
-							await db
-								.update(clockOutWarnings)
-								.set({ userReply: body.trim(), repliedAt: now })
-								.where(eq(clockOutWarnings.id, recentWarning.id));
-							return twiml(SMS_MESSAGES.timeParseError);
-						}
-
-						// Clock out at the parsed time
-						await db
-							.update(timeEntries)
-							.set({ clockOut: parsedTime, updatedAt: now })
-							.where(eq(timeEntries.id, activeEntry.id));
-
-						// Award normal clock-out points (not penalty)
-						try {
-							await awardClockOutPoints(userId, activeEntry.id, true);
-							await checkAndAwardAchievements(userId);
-						} catch (err) {
-							log.warn({ error: err, userId }, 'Failed to award points for SMS time-parsed clock-out');
-						}
-
-						// Audit with note about SMS correction
-						try {
-							await auditClockEvent({
-								userId,
-								timeEntryId: activeEntry.id,
-								action: 'clock_out'
-							});
-						} catch (err) {
-							log.warn({ error: err, userId }, 'Failed to audit SMS time-parsed clock-out');
-						}
-
-						const timeStr = toPacificTimeString(parsedTime);
-						log.info({ userId, timeEntryId: activeEntry.id, parsedTime: timeStr, warningId: recentWarning.id }, 'User clocked out via SMS with parsed time');
-
-						await db
-							.update(clockOutWarnings)
-							.set({ userReply: body.trim(), repliedAt: now })
-							.where(eq(clockOutWarnings.id, recentWarning.id));
-
-						return twiml(SMS_MESSAGES.timeConfirmed(timeStr));
+				if (invite.kind === 'resolved') {
+					if (claim.intent === 'decline') {
+						await declineRequest({ requestId: invite.requestId, userId, viaSms: true });
+						return twimlLogged('No problem — thanks for letting us know.');
 					}
 
-					// --- Entry already clocked out (auto-clock-out happened) ---
-					// Update the most recent time entry's clockOut to the parsed time
-					const [closedEntry] = await db
-						.select()
-						.from(timeEntries)
-						.where(
-							and(
-								eq(timeEntries.id, recentWarning.timeEntryId),
-								isNotNull(timeEntries.clockOut)
-							)
-						)
-						.limit(1);
+					const outcome = await claimShift({
+						requestId: invite.requestId,
+						userId,
+						viaSms: true
+					});
 
-					if (closedEntry) {
-						const clockInTime = new Date(closedEntry.clockIn);
-
-						if (parsedTime > clockInTime && parsedTime <= now) {
-							await db
-								.update(timeEntries)
-								.set({ clockOut: parsedTime, updatedAt: now })
-								.where(eq(timeEntries.id, closedEntry.id));
-
-							const timeStr = toPacificTimeString(parsedTime);
-							log.info({ userId, timeEntryId: closedEntry.id, parsedTime: timeStr, warningId: recentWarning.id }, 'Updated already-closed time entry clock-out via SMS');
-
-							await db
-								.update(clockOutWarnings)
-								.set({ userReply: body.trim(), repliedAt: now })
-								.where(eq(clockOutWarnings.id, recentWarning.id));
-
-							return twiml(SMS_MESSAGES.timeUpdated(timeStr));
-						}
+					if (outcome.ok) {
+						// Fire-and-forget: telling everyone else can take longer
+						// than Twilio's ~15s webhook window.
+						notifyLosers(invite.requestId, userId).catch((err) => {
+							log.error({ err, requestId: invite.requestId }, 'Failed to notify non-winners');
+						});
+						const applied = outcome.autoApplied
+							? " It's on your schedule."
+							: ' A manager will confirm it.';
+						return twimlLogged(`You've got it.${applied}`);
 					}
 
-					// Time parsed but could not apply — invalid range
-					await db
-						.update(clockOutWarnings)
-						.set({ userReply: body.trim(), repliedAt: now })
-						.where(eq(clockOutWarnings.id, recentWarning.id));
-					return twiml(SMS_MESSAGES.timeParseError);
+					return twimlLogged(outcome.message);
 				}
-
-				// --- Could not parse time — reply with help message ---
-				await db
-					.update(clockOutWarnings)
-					.set({ userReply: body.trim(), repliedAt: now })
-					.where(eq(clockOutWarnings.id, recentWarning.id));
-
-				log.info({ userId, warningId: recentWarning.id, reply: body.trim() }, 'User replied to clock-out warning, could not parse time');
-
-				return twiml(SMS_MESSAGES.timeParseError);
-			}
-
-			// --- No unreplied warning, but check for recently replied warnings ---
-			// Handle replies AFTER auto-clock-out: user might text "I left at 4:30" later
-			const [recentRepliedWarning] = await db
-				.select({
-					id: clockOutWarnings.id,
-					timeEntryId: clockOutWarnings.timeEntryId,
-					userId: clockOutWarnings.userId
-				})
-				.from(clockOutWarnings)
-				.where(
-					and(
-						eq(clockOutWarnings.userId, userId),
-						gte(clockOutWarnings.createdAt, fourHoursAgo)
-					)
-				)
-				.orderBy(desc(clockOutWarnings.createdAt))
-				.limit(1);
-
-			if (recentRepliedWarning) {
-				const parsedTime = parseTimeReply(body);
-
-				if (parsedTime) {
-					const now = new Date();
-
-					// Find the time entry (should be closed by now)
-					const [closedEntry] = await db
-						.select()
-						.from(timeEntries)
-						.where(
-							and(
-								eq(timeEntries.id, recentRepliedWarning.timeEntryId),
-								isNotNull(timeEntries.clockOut)
-							)
-						)
-						.limit(1);
-
-					if (closedEntry) {
-						const clockInTime = new Date(closedEntry.clockIn);
-
-						if (parsedTime > clockInTime && parsedTime <= now) {
-							await db
-								.update(timeEntries)
-								.set({ clockOut: parsedTime, updatedAt: now })
-								.where(eq(timeEntries.id, closedEntry.id));
-
-							const timeStr = toPacificTimeString(parsedTime);
-							log.info({ userId, timeEntryId: closedEntry.id, parsedTime: timeStr }, 'Updated clock-out time via late SMS reply');
-
-							return twiml(SMS_MESSAGES.timeUpdated(timeStr));
-						}
-					}
-				}
+				// invite.kind === 'none' → not an invitee, fall through
 			}
 		} catch (err) {
-			log.error({ error: err, userId }, 'Error processing clock-out warning reply');
+			log.error({ error: err, userId }, 'Error processing shift coverage reply');
+		}
+	}
+
+	// --- Clock-out reminder replies ---
+	// Runs after shift-coverage (a bare "YES" is a claim, not a clock-out
+	// answer) and before the office-manager branch, which would otherwise
+	// swallow a manager's reply to their own clock-out reminder.
+	//
+	// Narrow by construction: findOpenClockOutReminder only matches while the
+	// reminder is unanswered and the entry is still open, so this claims the
+	// FIRST text after a reminder and nothing else. Everything afterwards falls
+	// through to normal routing.
+	if (userId && !isOptOut) {
+		try {
+			const reminder = await findOpenClockOutReminder(userId);
+			if (reminder) {
+				// Fire-and-forget: the LLM call outlasts Twilio's ~15s window.
+				handleClockOutReply({
+					userId,
+					replyText: body.trim(),
+					systemUserId: await resolveSystemUserId()
+				})
+					.then((outcome) => {
+						if (outcome.reply) {
+							return sendSMS(from, outcome.reply).then(() => undefined);
+						}
+					})
+					.catch((err) => {
+						log.error({ err, userId }, 'Clock-out reply handling failed');
+					});
+				return twimlEmpty();
+			}
+		} catch (err) {
+			// Fall through to normal routing rather than dropping their text.
+			log.error({ error: err, userId }, 'Error checking for open clock-out reminder');
 		}
 	}
 
@@ -452,18 +328,23 @@ function truncateForSms(body: string, max = 1400): string {
  * Called fire-and-forget; sends outbound SMS with the reply when done.
  */
 async function handleOfficeManagerInbound(userId: string, fromPhone: string, text: string): Promise<void> {
+	// Every message out of this handler goes back to the person who texted in,
+	// attributed to them — they are the human who caused it, so the thread in
+	// /admin/sms reads as their conversation rather than anonymous system noise.
+	const sendReply = (msg: string) => sendSMS(fromPhone, msg, { sentByUserId: userId });
+
 	// Lockout check
 	const lockStatus = await isSmsLocked(userId);
 	if (lockStatus.locked) {
 		const untilStr = lockStatus.until ? toPacificTimeString(lockStatus.until) : 'soon';
-		await sendSMS(fromPhone, `SMS commands locked until ~${untilStr} (too many wrong PIN attempts). Use the web app.`);
+		await sendReply(`SMS commands locked until ~${untilStr} (too many wrong PIN attempts). Use the web app.`);
 		return;
 	}
 
 	// Rate limit
 	const rateLimit = await checkSmsRateLimit(userId);
 	if (!rateLimit.allowed) {
-		await sendSMS(fromPhone, `Rate limit hit. Try again in a few minutes.`);
+		await sendReply(`Rate limit hit. Try again in a few minutes.`);
 		log.warn({ userId, fromPhone }, 'SMS office-manager rate limit exceeded');
 		return;
 	}
@@ -483,13 +364,12 @@ async function handleOfficeManagerInbound(userId: string, fromPhone: string, tex
 
 		if (lowerCleaned === 'cancel' || lowerCleaned === 'no' || lowerCleaned === 'n') {
 			await rejectPendingAction(awaiting.id);
-			await sendSMS(fromPhone, `Cancelled. No action taken.`);
+			await sendReply(`Cancelled. No action taken.`);
 			return;
 		}
 
 		if (!validatePinFormat(cleaned)) {
-			await sendSMS(
-				fromPhone,
+			await sendReply(
 				`Waiting for PIN to confirm: ${truncateForSms(awaiting.confirmationMessage, 200)}\nReply with your PIN (4-8 digits), or "cancel".`
 			);
 			return;
@@ -499,13 +379,11 @@ async function handleOfficeManagerInbound(userId: string, fromPhone: string, tex
 		if (!ok) {
 			const result = await recordPinAttempt(awaiting.id, userId, false);
 			if (result.lockedOut) {
-				await sendSMS(
-					fromPhone,
+				await sendReply(
 					`Wrong PIN. Action cancelled. SMS commands locked for 30 min after ${SMS_PIN_MAX_ATTEMPTS} wrong attempts.`
 				);
 			} else {
-				await sendSMS(
-					fromPhone,
+				await sendReply(
 					`Wrong PIN. ${result.attemptsRemaining} attempt${result.attemptsRemaining === 1 ? '' : 's'} left. Reply with your PIN or "cancel".`
 				);
 			}
@@ -515,17 +393,17 @@ async function handleOfficeManagerInbound(userId: string, fromPhone: string, tex
 		// PIN correct — execute the action
 		const pending = await getPendingAction(awaiting.id);
 		if (!pending) {
-			await sendSMS(fromPhone, `That pending action is no longer available.`);
+			await sendReply(`That pending action is no longer available.`);
 			return;
 		}
 		const exec = await executeConfirmedAction(pending.id, pending, userId);
 		// Mark approved regardless of success so it doesn't re-trigger
 		await approvePendingAction(pending.id, (exec.result as Record<string, unknown>) ?? {});
 		if (exec.success) {
-			await sendSMS(fromPhone, `Done. ${truncateForSms(awaiting.confirmationMessage, 1000)}`);
+			await sendReply(`Done. ${truncateForSms(awaiting.confirmationMessage, 1000)}`);
 		} else {
 			const err = (exec.result as { error?: string })?.error ?? 'unknown error';
-			await sendSMS(fromPhone, `Action failed: ${truncateForSms(err, 300)}`);
+			await sendReply(`Action failed: ${truncateForSms(err, 300)}`);
 		}
 		return;
 	}
@@ -552,9 +430,9 @@ async function handleOfficeManagerInbound(userId: string, fromPhone: string, tex
 			reply = result.response || '(no response)';
 		}
 
-		await sendSMS(fromPhone, truncateForSms(reply));
+		await sendReply(truncateForSms(reply));
 	} catch (err) {
 		log.error({ err, userId, chatId }, 'Office-manager SMS processing failed');
-		await sendSMS(fromPhone, `Sorry, something went wrong processing that. Try again or use the web app.`);
+		await sendReply(`Sorry, something went wrong processing that. Try again or use the web app.`);
 	}
 }

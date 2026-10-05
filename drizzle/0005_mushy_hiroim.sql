@@ -1,0 +1,1 @@
+ALTER TABLE "clock_out_warnings" ADD COLUMN "reply_analysis" jsonb;

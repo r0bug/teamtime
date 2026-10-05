@@ -303,28 +303,63 @@ export async function getSales(query: NrsSalesQuery): Promise<NrsPagedResponse> 
 	return apiPost<NrsPagedResponse>('possales/getall', query as unknown as Record<string, unknown>);
 }
 
-/** Fetch all pages of sales for given query. */
+/**
+ * Fetch all pages of sales for given query, collapsed to one row per real
+ * receipt line.
+ *
+ * possales/getall returns one row per invoice-history COPY, not per line: a
+ * re-post or reversal mints a new arInvHistDetailId for the same receipt line
+ * and NRS keeps returning every copy. Summing the raw list therefore counts
+ * re-rung sales two or three times — it inflated vendor totals and retained
+ * amounts, and the repeated arCashRegDetailId also violates the unique index
+ * on sales_transactions.
+ *
+ * A line is identified by (arCashRegId, arCashRegDetailId) — arCashRegDetailId
+ * is only stable WITHIN a receipt, so it must not be used alone. Of the copies
+ * we keep the highest arInvHistDetailId, i.e. the newest state of that line,
+ * which is the same rule the yf-forensic mirror uses.
+ */
 export async function getSalesAllPages(query: NrsSalesQuery): Promise<NrsSaleRecord[]> {
 	const pageSize = query.pagesize || 100;
 	let page = query.page || 1;
-	const allRecords: NrsSaleRecord[] = [];
+	const byLine = new Map<string, NrsSaleRecord>();
+	let fetched = 0;
+
+	const copyId = (r: NrsSaleRecord) => Number(r.arInvHistDetailId ?? 0);
 
 	while (true) {
 		const data = await getSales({ ...query, pagesize: pageSize, page });
 
 		if (!data.list || data.list.length === 0) break;
-		allRecords.push(...data.list);
+		fetched += data.list.length;
+		for (const record of data.list) {
+			const key = `${record.arCashRegId}:${record.arCashRegDetailId}`;
+			const seen = byLine.get(key);
+			// Keep the newest copy. Never rely on NRS response ordering for this.
+			if (!seen || copyId(record) >= copyId(seen)) {
+				byLine.set(key, record);
+			}
+		}
 
 		if (!data.nextPage) break;
 		page = data.nextPage;
 
 		if (page > 500) {
-			log.warn({ totalRecords: allRecords.length }, 'Hit pagination safety limit (500 pages)');
+			log.warn({ totalRecords: byLine.size }, 'Hit pagination safety limit (500 pages)');
 			break;
 		}
 	}
 
-	log.info({ totalRecords: allRecords.length, pages: page }, 'Fetched all sales pages');
+	const allRecords = [...byLine.values()];
+	const supersededCopies = fetched - allRecords.length;
+	if (supersededCopies > 0) {
+		log.warn(
+			{ ...query, fetched, supersededCopies },
+			'possales returned re-posted/reversed line copies — kept newest copy per line'
+		);
+	}
+
+	log.info({ totalRecords: allRecords.length, fetched, supersededCopies, pages: page }, 'Fetched all sales pages');
 	return allRecords;
 }
 

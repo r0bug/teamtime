@@ -20,6 +20,7 @@ import { createLogger } from '$lib/server/logger';
 import { eq, and, gte, sql, count } from 'drizzle-orm';
 import { sendSMS, formatPhoneToE164 } from '$lib/server/twilio';
 import { notifyManagersOfPendingDemerit } from './demerit-review-service';
+import { getAttendancePolicyConfig } from './attendance-policy-service';
 import type { LateArrivalWarning, Demerit } from '$lib/server/db/schema';
 
 const log = createLogger('services:late-arrival-warning');
@@ -171,6 +172,13 @@ export async function checkAndEscalateToDemerit(
 	warningId: string,
 	issuedBy: string
 ): Promise<Demerit | null> {
+	// Kill switch — see attendance-policy-service.
+	const policy = await getAttendancePolicyConfig();
+	if (!policy.demeritsEnabled) {
+		log.debug({ userId, warningId }, 'Demerit engine disabled — skipping late-arrival escalation');
+		return null;
+	}
+
 	const warningCount = await getLateWarningCount(userId);
 
 	log.info(
@@ -272,6 +280,8 @@ export interface LateArrivalCronResult {
 	skipped: number;
 	errors: string[];
 	demeritsIssued: number;
+	/** Set when the whole check is switched off by attendance policy. */
+	disabled?: boolean;
 }
 
 /**
@@ -292,6 +302,15 @@ export async function checkLateArrivals(systemUserId: string): Promise<LateArriv
 		errors: [],
 		demeritsIssued: 0
 	};
+
+	// Late-arrival warnings are off by default as of 2026-10-01. Nobody is
+	// texted about being late and no warning rows are written, so there is
+	// nothing for the demerit engine to count even if it is switched back on.
+	const policy = await getAttendancePolicyConfig();
+	if (!policy.lateArrivalWarningsEnabled) {
+		log.info('Late arrival warnings disabled by attendance policy — skipping check');
+		return { ...result, disabled: true };
+	}
 
 	const now = new Date();
 

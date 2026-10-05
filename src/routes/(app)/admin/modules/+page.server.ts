@@ -15,7 +15,8 @@ const DEFAULT_MODULES = [
 	{ key: 'module_purchase_requests', name: 'Purchase Requests', description: 'Purchase approval workflow', enabled: true },
 	{ key: 'module_notifications', name: 'Notifications', description: 'Push notifications and alerts', enabled: true },
 	{ key: 'module_locations', name: 'Locations', description: 'Location management', enabled: true },
-	{ key: 'module_reports', name: 'Reports', description: 'Analytics and reporting', enabled: true }
+	{ key: 'module_reports', name: 'Reports', description: 'Analytics and reporting', enabled: true },
+	{ key: 'module_shift_coverage', name: 'Shift Coverage', description: 'Call-outs, shift pickups and trades over SMS', enabled: true }
 ];
 
 export const load: PageServerLoad = async ({ locals }) => {
