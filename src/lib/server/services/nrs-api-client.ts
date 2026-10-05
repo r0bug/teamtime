@@ -239,7 +239,108 @@ export interface NrsVendorDetail {
 	notes: string;                 // free text — often holds commission rate
 	vendorNumber: string;
 	portalAccess: boolean;         // NRS's own concept of vendor portal access
+	// Custom metadata fields (see NRS_VENDOR_META / listVendorMetadataDefs).
+	// NRS returns 0 / null / false when unset.
+	meta13: number;                // Booth Rent — dollars
+	meta72: string | null;         // Booth Details — free text
+	meta73: string | null;         // Booth Size and Location — free text
+	meta74: boolean;               // Display in Teamtime Floorplan
 	[key: string]: unknown;
+}
+
+/**
+ * NRS vendor metadata field ids. The ids are stable per NRS company config;
+ * the human names come from `metadata/list`. Values ride along on
+ * `vendor/get` as top-level `meta<N>` keys and are written via `vendor/save`.
+ */
+export const NRS_VENDOR_META = {
+	boothRent: 'meta13',
+	boothDetails: 'meta72',
+	boothSizeLocation: 'meta73',
+	showInFloorplan: 'meta74'
+} as const;
+
+export type NrsVendorMetaId = (typeof NRS_VENDOR_META)[keyof typeof NRS_VENDOR_META];
+
+/** Writable subset of a vendor record: the metadata fields TeamTime owns. */
+export interface NrsVendorMetaPatch {
+	meta13?: number;        // dollars, 0 clears
+	meta72?: string | null; // null/'' clears
+	meta73?: string | null;
+	meta74?: boolean;
+}
+
+export interface NrsVendorMetadataDef {
+	metadataId: string;
+	name: string;
+}
+
+/** `GET metadata/list` — the vendor metadata field definitions (id → label). */
+export async function listVendorMetadataDefs(): Promise<NrsVendorMetadataDef[]> {
+	const data = await apiGet<{ list?: NrsVendorMetadataDef[] }>('metadata/list');
+	return Array.isArray(data.list) ? data.list : [];
+}
+
+/** Booth Rent (meta13, dollars) → cents, or null when unset/zero. */
+export function rentCentsFromMeta(detail: Pick<NrsVendorDetail, 'meta13'> | null | undefined): number | null {
+	const dollars = Number(detail?.meta13 ?? 0);
+	if (!Number.isFinite(dollars) || dollars <= 0) return null;
+	return Math.round(dollars * 100);
+}
+
+/** Normalize an NRS text meta value: '' and null both mean "unset". */
+export function metaText(value: unknown): string | null {
+	if (value === null || value === undefined) return null;
+	const s = String(value);
+	return s.length > 0 ? s : null;
+}
+
+export interface SaveVendorResult {
+	saved: boolean;
+	/** The record NRS holds after the save (re-read via vendor/get). */
+	detail: NrsVendorDetail;
+	raw: Record<string, unknown>;
+}
+
+/**
+ * Write vendor metadata via `POST vendor/save`.
+ *
+ * Contract (verified 2026-10-05 against vendors 17185 and 17009):
+ *  - Response is `{ saved: <vendorId> }`.
+ *  - The endpoint treats missing keys as blanks — a partial body wiped
+ *    `country`. So we ALWAYS re-read the full record and merge the patch in.
+ *  - `null` for a text meta is ignored by NRS; '' clears it. We normalize.
+ *  - meta13 accepts a number (decimals kept); meta74 a boolean.
+ *
+ * Only the metadata fields are writable through this helper on purpose:
+ * identity/contact fields stay owned by NRS (spec: NRS is source of truth for
+ * vendor identity).
+ */
+export async function saveVendorMeta(vendorId: number, patch: NrsVendorMetaPatch): Promise<SaveVendorResult> {
+	const current = await getVendorDetail(vendorId);
+	if (!current) throw new Error(`saveVendorMeta: NRS vendor ${vendorId} not found`);
+
+	const body: Record<string, unknown> = { ...current };
+	if (patch.meta13 !== undefined) body.meta13 = Number(patch.meta13) || 0;
+	if (patch.meta72 !== undefined) body.meta72 = patch.meta72 ?? '';
+	if (patch.meta73 !== undefined) body.meta73 = patch.meta73 ?? '';
+	if (patch.meta74 !== undefined) body.meta74 = Boolean(patch.meta74);
+	// Text metas that are currently null must go up as '' or NRS ignores them
+	// and we can't tell a no-op from a failure on re-read.
+	for (const k of [NRS_VENDOR_META.boothDetails, NRS_VENDOR_META.boothSizeLocation]) {
+		if (body[k] === null || body[k] === undefined) body[k] = '';
+	}
+
+	const raw = await apiPost<Record<string, unknown>>('vendor/save', body);
+	const saved = Number(raw.saved) === vendorId;
+	if (!saved) {
+		log.error({ vendorId, raw }, 'NRS vendor/save did not confirm');
+		throw new Error(`NRS vendor/save for ${vendorId} did not confirm (got ${JSON.stringify(raw).slice(0, 200)})`);
+	}
+
+	const after = await getVendorDetail(vendorId);
+	if (!after) throw new Error(`saveVendorMeta: vendor ${vendorId} vanished after save`);
+	return { saved, detail: after, raw };
 }
 
 /**

@@ -2,12 +2,14 @@
 	// Edit/Build paint controls: tool picker + active key/value pickers.
 	// Edit mode exposes operational keys only; Build mode adds geometry keys.
 	import type { AttrDef, Mode, Tool } from '$lib/floorplan/types';
+	import type { VendorOption } from '$lib/floorplan/vendor-filter';
+	import VendorCombobox from './VendorCombobox.svelte';
 	import { GEOMETRY_KEYS } from './geometry-keys';
 
 	export let mode: Mode;
 	export let tool: Tool = 'cell';
 	export let defs: AttrDef[] = [];
-	export let vendors: { nrsVendorId: number; displayName: string }[] = [];
+	export let vendors: VendorOption[] = [];
 	export let pools: { id: string; name: string; color: string }[] = [];
 	export let activeKey = 'vendor_id';
 	/** null = erase (delete the key at painted cells) */
@@ -61,12 +63,7 @@
 	{#if erase}
 		<span class="badge-danger">erasing {activeKey}</span>
 	{:else if activeKey === 'vendor_id'}
-		<select class="input !w-auto !py-1.5" bind:value={activeValue} aria-label="Vendor">
-			<option value="" disabled>pick vendor…</option>
-			{#each vendors as v}
-				<option value={String(v.nrsVendorId)}>{v.displayName} ({v.nrsVendorId})</option>
-			{/each}
-		</select>
+		<VendorCombobox {vendors} bind:value={activeValue} />
 	{:else if activeKey === 'pool'}
 		<select class="input !w-auto !py-1.5" bind:value={activeValue} aria-label="Pool">
 			<option value="" disabled>pick pool…</option>

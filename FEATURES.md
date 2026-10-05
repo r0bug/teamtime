@@ -2860,6 +2860,10 @@ The vendor page then shows a "next steps" banner:
 #### Vendor admin (`/admin/vendors`)
 
 - **List** with status filter, search, "Sync from NRS" action, and an onboarding banner that links to the queue when any vendors aren't fully configured.
+- **NRS vendor metadata (API)** — NRS exposes four custom vendor fields (`metadata/list` for the definitions; values ride on `vendor/get` and are written with `vendor/save`): Booth Rent `meta13`, Booth Details `meta72`, Booth Size and Location `meta73`, Display in Teamtime Floorplan `meta74`. `vendor/save` blanks any key you omit, so `saveVendorMeta()` in `nrs-api-client.ts` always re-reads the full record and merges the patch; `null` text metas are sent as `''`.
+  - **Booth rent** (`vendors.monthly_rent_cents`) is manager-only on the vendor page: the save asks for confirmation (`ConfirmDialog`), the server re-checks the role and a `confirmRent=true` field, pushes `meta13` to NRS first and only then updates TT (`setVendorRent()` in `vendor-nrs-metadata-service.ts`). Every change — including rent edited directly in NRS and mirrored on sync — lands in `vendor_nrs_metadata_log` with the acting user, shown as "Rent & NRS metadata history" on the vendor page.
+  - **Booth details / size & location / floorplan flag** — TeamTime's floorplan is the source of truth. `booth-summary.ts` derives per-vendor sq ft, footprint, grid bbox, zones, levels and pool membership from `floorplan_cell_attrs` + `floorplan_pools`; `formatBoothMeta()` renders the NRS strings; `reconcileBoothMeta()` writes only when NRS differs. Triggers: cell paints (`/api/floorplan/[planId]/cells`), pool saves/deletes, booth-# edits, every `syncFromNrs()`, and the "Push to NRS now" button. Vendors with no cells and no pools get blank text + `meta74=false`.
+  - The NRS web-UI scrape (`nrs-web-client.ts`) no longer reads Booth Rent (`frmMeta13`); it still supplies the Inactive flag, Pass-Through % and AR Customer, which the API doesn't expose yet.
 - **Detail** (`/admin/vendors/[id]`) with tabs:
   - **Overview** — contact + contract terms (booth, rent, max discount), edit-in-place
   - **Agreements** — current primary + current add-ons (signature thumbnail or "Paper on file" badge, signed-by, witnessed-by, expandable body + terms snapshot). Voided/historical collapsed below.
@@ -3305,7 +3309,8 @@ Tools: single cell, rectangle, wall (line), flood fill, **eyedropper** (pick the
 
 - **Attr defs** declare how each key renders/filters, who owns it (`floorplan` / `teamtime` / `nrs`), and who may see it (`public` / `staff` / `admin`). Attribute visibility is enforced on read.
 - **Vendor pools** — named groups of vendors for shared/in-store spaces, painted with key `pool` (pool name as value) and rendered in the pool's color.
-- **Picker curation & custom vendor colors** are stored on the `vendor_id` attr def's `render_hint`.
+- **Custom vendor colors** are stored on the `vendor_id` attr def's `render_hint`.
+- **Vendor picker** (`VendorCombobox.svelte`) — searchable by name or NRS id, arrow/Enter keyboard selection, each row shows rent / payment % / "on floor". Default list = `placeableVendors()` from `src/lib/floorplan/vendor-filter.ts`: `isBoothVendor` (monthly rent > 0 **or** vendor payment % ≥ 80, i.e. the 87/13 booth split) plus anyone already painted or in a pool. The "all vendors" checkbox widens to every active NRS-linked vendor (25/75 consignors, 50/50, house rows). The old hand-curated `render_hint.picker.include` list is no longer read; the NRS "Display in Teamtime Floorplan" flag is now an *output* (TeamTime pushes "is on the floorplan"), not a picker input.
 
 ### Saved Layout Snapshots (Build mode)
 

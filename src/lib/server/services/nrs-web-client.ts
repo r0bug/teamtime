@@ -333,12 +333,14 @@ export async function setInvStockQuantityViaWeb(
 	return true;
 }
 
+// Booth Rent is deliberately NOT here any more: it's a structured NRS
+// metadata field (meta13) that the JSON API now returns on vendor/get and
+// accepts on vendor/save. See nrs-api-client / vendor-nrs-metadata-service.
 export interface VendorWebFlags {
 	isInactive: boolean;
 	isPassThrough: boolean;
 	passThroughPercent: number | null;
 	arCustomerId: string | null;
-	monthlyRentCents: number | null;
 }
 
 function parseCheckbox(html: string, name: string): boolean | null {
@@ -424,19 +426,11 @@ export async function getVendorWebFlags(vendorId: number): Promise<VendorWebFlag
 
 	const arCustomerId = parseSelectedValue(html, 'frmHeadArCustomerId');
 
-	// Booth Rent lives on a metadata field (frmMeta13). Stored as a plain
-	// dollar string ("75", "100.00"); empty string means "no rent" / unset.
-	const rentRaw = parseTextField(html, 'frmMeta13');
-	const rentDollars = rentRaw !== null && rentRaw !== '' ? parseFloat(rentRaw) : NaN;
-	const monthlyRentCents =
-		Number.isFinite(rentDollars) && rentDollars > 0 ? Math.round(rentDollars * 100) : null;
-
 	return {
 		isInactive,
 		isPassThrough,
 		passThroughPercent: Number.isFinite(pct) ? pct : null,
-		arCustomerId,
-		monthlyRentCents
+		arCustomerId
 	};
 }
 

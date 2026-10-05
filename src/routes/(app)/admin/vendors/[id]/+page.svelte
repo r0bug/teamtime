@@ -4,6 +4,7 @@
 	import { enhance } from '$app/forms';
 	import { page } from '$app/stores';
 	import SignatureCapture from '$lib/components/SignatureCapture.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import SalesOverTimeChart from '$lib/components/SalesOverTimeChart.svelte';
 	import TopItemsBarChart from '$lib/components/TopItemsBarChart.svelte';
 	import { formatDate, formatDateTime } from '$lib/utils';
@@ -65,6 +66,62 @@
 
 	// ── Overview form state ────────────────────────────────────────
 	let monthlyRentDollars = data.vendor.monthlyRentCents !== null ? (data.vendor.monthlyRentCents / 100).toFixed(2) : '';
+
+	// ── Booth rent confirmation ────────────────────────────────────
+	// Rent is pushed to NRS and logged under the manager's name, so a change
+	// goes through a popup before the form submits. The server re-checks the
+	// role and requires confirmRent=true, so the popup can't be bypassed.
+	$: savedRentCents = data.vendor.monthlyRentCents ?? null;
+	function enteredRentCents(): number | null {
+		const n = parseFloat(monthlyRentDollars);
+		return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+	}
+	let rentConfirmOpen = false;
+	let rentConfirmed = false;
+	let rentSaving = false;
+	let termsFormEl: HTMLFormElement;
+	const fmtRent = (cents: number | null) => (cents === null ? 'no rent' : `$${(cents / 100).toFixed(2)}/mo`);
+	$: rentConfirmMessage = `Change monthly booth rent for ${data.vendor.displayName} from ${fmtRent(savedRentCents)} to ${fmtRent(enteredRentCents())}? ` +
+		(data.vendor.nrsVendorId !== null
+			? 'This is pushed to NRS (Booth Rent) immediately and recorded under your name.'
+			: 'This vendor has no NRS Vendor ID, so only TeamTime is updated. The change is recorded under your name.');
+
+	const onTermsSubmit: SubmitFunction = ({ formData, cancel }) => {
+		const rentDiffers = enteredRentCents() !== savedRentCents;
+		if (rentDiffers && !rentConfirmed) {
+			cancel();
+			rentConfirmOpen = true;
+			return;
+		}
+		if (rentConfirmed) formData.set('confirmRent', 'true');
+		rentSaving = true;
+		return async ({ update }) => {
+			rentConfirmed = false;
+			rentSaving = false;
+			rentConfirmOpen = false;
+			await update({ reset: false });
+		};
+	};
+	function confirmRentChange() {
+		rentConfirmed = true;
+		termsFormEl.requestSubmit();
+	}
+
+	// ── NRS metadata history display ──────────────────────────────
+	type MetaLogRow = (typeof data.nrsMetaLog)[number];
+	function metaLogWho(row: MetaLogRow): string {
+		if (row.changedBy) return row.changedBy.name;
+		if (row.source === 'nrs_sync') return 'NRS (edited in NRS, mirrored on sync)';
+		return 'TeamTime (automatic)';
+	}
+	function metaLogWhat(row: MetaLogRow): string {
+		const cents = (v: unknown) => (typeof v === 'number' ? `$${(v / 100).toFixed(2)}` : 'none');
+		if (row.fields.includes('meta13')) {
+			return `Booth rent ${cents(row.beforeData?.monthlyRentCents)} → ${cents(row.afterData?.monthlyRentCents)}`;
+		}
+		const on = row.afterData?.meta74 === true;
+		return on ? 'Booth details / size & location pushed; shown on floorplan' : 'Booth details cleared; not on floorplan';
+	}
 
 	// ── Onboarding form state ──────────────────────────────────────
 	let inventoryCodePrefix = data.vendor.inventoryCodePrefix ?? '';
@@ -269,7 +326,17 @@
 		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded text-sm">Signed copy uploaded.</div>
 	{/if}
 	{#if form && 'success' in form && form.success === 'updateTerms'}
-		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded text-sm">Vendor updated.</div>
+		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded text-sm">
+			Vendor updated.{#if form.rentChanged} Booth rent changed{form.rentPushed ? ' and pushed to NRS' : ''} — logged under your name.{/if}
+		</div>
+		{#if form.boothPushWarning}
+			<div class="mt-2 p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded text-sm">{form.boothPushWarning}</div>
+		{/if}
+	{/if}
+	{#if form && 'success' in form && form.success === 'pushBoothMeta' && form.boothPush}
+		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded text-sm">
+			{#if form.boothPush.pushed > 0}Booth info pushed to NRS.{:else if form.boothPush.failed > 0}Push to NRS failed — see history below.{:else}NRS already matches TeamTime — nothing to push.{/if}
+		</div>
 	{/if}
 	{#if form && 'success' in form && form.success === 'signAgreement'}
 		<div class="mt-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded text-sm">Agreement signed.</div>
@@ -294,7 +361,7 @@
 
 	<!-- OVERVIEW -->
 	{#if tab === 'overview'}
-		<form method="POST" action="?/updateTerms" use:enhance class="mt-6 space-y-6">
+		<form method="POST" action="?/updateTerms" use:enhance={onTermsSubmit} bind:this={termsFormEl} class="mt-6 space-y-6">
 			<div class="card">
 				<div class="card-header"><h2 class="font-semibold text-gray-900">Identity & Contact</h2></div>
 				<div class="card-body grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -350,7 +417,10 @@
 					</div>
 					<div>
 						<label class="label" for="monthlyRentDollars">Monthly rent ($)</label>
-						<input id="monthlyRentDollars" name="monthlyRentDollars" type="number" step="0.01" class="input" bind:value={monthlyRentDollars} />
+						<input id="monthlyRentDollars" name="monthlyRentDollars" type="number" step="0.01" min="0" class="input" bind:value={monthlyRentDollars} disabled={!data.canEditRent} />
+						<p class="text-xs text-gray-500 mt-1">
+							{#if data.canEditRent}Pushed to NRS Booth Rent on save (asks to confirm). Logged under your name.{:else}Manager only — pushed to NRS and logged.{/if}
+						</p>
 					</div>
 					<div>
 						<label class="label" for="maxDiscountPercent">Max discount (%)</label>
@@ -391,6 +461,80 @@
 				<button type="submit" class="btn btn-primary">Save Changes</button>
 			</div>
 		</form>
+
+		<!-- Booth info mirrored to NRS (TeamTime floorplan is the source of truth) -->
+		<div class="card mt-6">
+			<div class="card-header flex items-center justify-between">
+				<h2 class="font-semibold text-gray-900">Booth info in NRS</h2>
+				<div class="flex items-center gap-3">
+					<a href="/admin/vendors/{data.vendor.id}/floorplan" class="text-sm text-primary-600 hover:underline">View on floorplan</a>
+					{#if data.canEditRent && data.vendor.nrsVendorId !== null}
+						<form method="POST" action="?/pushBoothMeta" use:enhance>
+							<button type="submit" class="btn btn-secondary btn-sm">Push to NRS now</button>
+						</form>
+					{/if}
+				</div>
+			</div>
+			<div class="card-body text-sm space-y-3">
+				<p class="text-xs text-gray-500">TeamTime's floorplan is the source of truth. These values are what TeamTime writes into the NRS vendor metadata fields (automatically after floorplan, pool, or booth # changes, and on every NRS sync).</p>
+				<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+					<div>
+						<div class="text-xs font-medium text-gray-500 uppercase">Display in Teamtime Floorplan</div>
+						<div>{data.boothMeta.meta74 ? 'Yes' : 'No'}</div>
+					</div>
+					<div>
+						<div class="text-xs font-medium text-gray-500 uppercase">Booth Details</div>
+						<pre class="whitespace-pre-wrap font-sans">{data.boothMeta.meta72 || '— (not on floorplan)'}</pre>
+					</div>
+					<div>
+						<div class="text-xs font-medium text-gray-500 uppercase">Booth Size and Location</div>
+						<div>{data.boothMeta.meta73 || '—'}</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Rent + NRS metadata change history -->
+		<div class="card mt-6">
+			<div class="card-header"><h2 class="font-semibold text-gray-900">Rent &amp; NRS metadata history</h2></div>
+			<div class="card-body p-0">
+				{#if data.nrsMetaLog.length === 0}
+					<p class="p-4 text-sm text-gray-500">No changes recorded yet.</p>
+				{:else}
+					<table class="min-w-full text-sm">
+						<thead class="bg-gray-50 text-left text-xs text-gray-500 uppercase">
+							<tr><th class="px-4 py-2">When</th><th class="px-4 py-2">Who</th><th class="px-4 py-2">Change</th><th class="px-4 py-2">NRS</th></tr>
+						</thead>
+						<tbody>
+							{#each data.nrsMetaLog as row (row.id)}
+								<tr class="border-t border-gray-100">
+									<td class="px-4 py-2 whitespace-nowrap">{formatDateTime(row.createdAt)}</td>
+									<td class="px-4 py-2">{metaLogWho(row)}</td>
+									<td class="px-4 py-2">{metaLogWhat(row)}</td>
+									<td class="px-4 py-2">
+										{#if !row.success}<span class="text-red-600" title={row.errorMessage ?? ''}>Failed</span>
+										{:else if row.source === 'nrs_sync'}<span class="text-gray-500">From NRS</span>
+										{:else if row.afterData?.pushedToNrs === false}<span class="text-gray-500">Not linked</span>
+										{:else}<span class="text-green-700">Pushed</span>{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{/if}
+			</div>
+		</div>
+
+		<ConfirmDialog
+			open={rentConfirmOpen}
+			title="Change booth rent?"
+			message={rentConfirmMessage}
+			confirmLabel="Change rent"
+			variant="primary"
+			loading={rentSaving}
+			on:confirm={confirmRentChange}
+			on:cancel={() => { rentConfirmOpen = false; rentConfirmed = false; }}
+		/>
 
 		<!-- Onboarding & Portal -->
 		<form method="POST" action="?/updateOnboarding" use:enhance class="mt-6 space-y-4" id="portal-section">

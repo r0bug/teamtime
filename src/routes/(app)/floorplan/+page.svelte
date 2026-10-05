@@ -11,6 +11,7 @@
 	import { cellKey } from '$lib/floorplan/types';
 	import { PaintSession, rectCells, lineCells, floodCells } from '$lib/floorplan/paint';
 	import { checkReachability } from '$lib/floorplan/reachability';
+	import { placeableVendors } from '$lib/floorplan/vendor-filter';
 
 	export let data: PageData;
 
@@ -53,29 +54,21 @@
 	// painted (painting vendor_id with the kind overlay looks like a no-op).
 	$: if (mode !== 'view' && activeKey) overlayKey = activeKey;
 
-	// ---- vendor picker curation + custom colors (stored on the vendor_id
-	// attr def's renderHint: { picker: { include: [...] }, palette: {...} })
+	// ---- vendor picker: booth vendors by default (rent payers / 87-13 splits
+	// plus anyone already on the floor — see vendor-filter.ts), "show all" to
+	// widen. Custom vendor colors live on the vendor_id attr def's renderHint
+	// ({ palette: {...} }); the old hand-curated picker.include list is retired.
 	$: vendorDef = data.attrDefs.find((d) => d.key === 'vendor_id');
-	$: pickerInclude = (vendorDef?.renderHint as { picker?: { include?: string[] } } | null)?.picker?.include;
-	$: pickerVendors =
-		pickerInclude && pickerInclude.length > 0
-			? data.vendorOptions.filter((v) => pickerInclude.includes(String(v.nrsVendorId)))
-			: data.vendorOptions;
+	let showAllVendors = false;
+	$: pickerVendors = showAllVendors ? data.vendorOptions : placeableVendors(data.vendorOptions);
 	$: vendorPalette = (() => {
 		const palette = (vendorDef?.renderHint as { palette?: Record<string, string> | 'auto' } | null)?.palette;
 		return palette && palette !== 'auto' ? palette : {};
 	})();
 
-	let showPicker = false;
-	let pickerSelected: Set<string> = new Set();
 	let showPools = false;
 	let poolForm = { id: '', name: '', color: '#7C3AED', members: [] as string[] };
 	let savingConfig = false;
-
-	function openPicker(): void {
-		pickerSelected = new Set(pickerInclude?.length ? pickerInclude : data.vendorOptions.map((v) => String(v.nrsVendorId)));
-		showPicker = true;
-	}
 
 	async function saveVendorDef(renderHint: Record<string, unknown>): Promise<boolean> {
 		if (!data.plan || !vendorDef) return false;
@@ -101,18 +94,6 @@
 			return true;
 		} finally {
 			savingConfig = false;
-		}
-	}
-
-	async function savePicker(): Promise<void> {
-		const all = data.vendorOptions.map((v) => String(v.nrsVendorId));
-		const include = all.filter((id) => pickerSelected.has(id));
-		const rh = { ...((vendorDef?.renderHint as Record<string, unknown>) ?? {}) };
-		if (include.length === all.length) delete rh.picker;
-		else rh.picker = { include };
-		if (await saveVendorDef(rh)) {
-			showPicker = false;
-			notify.success(include.length === all.length ? 'Picker shows all vendors' : `Picker limited to ${include.length} vendors`);
 		}
 	}
 
@@ -574,8 +555,11 @@
 								<input type="color" value={vendorPalette[activeValue] ?? '#888888'} on:change={saveVendorColor} disabled={savingConfig} />
 							</label>
 						{/if}
-						{#if data.canBuild && activeKey === 'vendor_id'}
-							<button type="button" class="btn-ghost btn-sm" on:click={openPicker}>Picker vendors…</button>
+						{#if activeKey === 'vendor_id'}
+							<label class="flex items-center gap-1.5 text-sm text-gray-600" title="Default list = booth vendors (paying rent or on an 87/13 split) plus anyone already on the floor. Tick to list every active NRS vendor, e.g. 25/75 consignors.">
+								<input type="checkbox" bind:checked={showAllVendors} />
+								all vendors ({showAllVendors ? data.vendorOptions.length : `${pickerVendors.length} of ${data.vendorOptions.length}`})
+							</label>
 						{/if}
 						<button type="button" class="btn-ghost btn-sm" on:click={() => { editPool(); showPools = true; }}>Pools…</button>
 					</div>
@@ -679,33 +663,6 @@
 				clientY={hover.clientY}
 			/>
 		{/if}
-
-		<Modal bind:open={showPicker} title="Vendors shown in the picker" size="md" on:close={() => (showPicker = false)}>
-			<p class="text-sm text-gray-600 mb-3">
-				Untick vendors to hide them from the Edit-mode dropdown. This only affects the picker — existing paint is untouched.
-			</p>
-			<div class="max-h-80 overflow-y-auto space-y-1">
-				{#each data.vendorOptions as v}
-					<label class="flex items-center gap-2 text-sm">
-						<input
-							type="checkbox"
-							checked={pickerSelected.has(String(v.nrsVendorId))}
-							on:change={(e) => {
-								const id = String(v.nrsVendorId);
-								if (e.currentTarget.checked) pickerSelected.add(id);
-								else pickerSelected.delete(id);
-								pickerSelected = pickerSelected;
-							}}
-						/>
-						{v.displayName} ({v.nrsVendorId})
-					</label>
-				{/each}
-			</div>
-			<div slot="footer" class="flex justify-end gap-2">
-				<button type="button" class="btn-secondary btn-sm" on:click={() => (showPicker = false)}>Cancel</button>
-				<button type="button" class="btn-primary btn-sm" disabled={savingConfig} on:click={savePicker}>Save</button>
-			</div>
-		</Modal>
 
 		<Modal bind:open={showPools} title="Vendor pools (shared / in-store spaces)" size="lg" on:close={() => (showPools = false)}>
 			<p class="text-sm text-gray-600 mb-3">

@@ -41,6 +41,15 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	return json({ pools: pools.map(serialize) });
 };
 
+import { pushBoothMetaForNrsVendors } from '$lib/server/services/vendor-nrs-metadata-service';
+
+/** Mirror pool membership into NRS booth metadata (fire-and-forget; NRS
+ *  being down must never fail a pool save — the next NRS sync reconciles). */
+function pushMembers(ids: string[], userId: string) {
+	if (ids.length === 0) return;
+	pushBoothMetaForNrsVendors(ids, userId).catch(() => {});
+}
+
 /** POST — create or update a pool. Body: { id?, name, color, vendorIds } */
 export const POST: RequestHandler = async ({ locals, params, request }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
@@ -67,6 +76,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 	const vendorIds = body.vendorIds as string[];
 
 	let previousName: string | null = null;
+	let previousMembers: string[] = [];
 	let saved: FloorplanPool;
 	if (typeof body.id === 'string' && body.id) {
 		const [existing] = await db
@@ -76,6 +86,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 			.limit(1);
 		if (!existing) throw error(404, 'Pool not found');
 		previousName = existing.name;
+		previousMembers = memberIds(existing);
 		[saved] = await db
 			.update(floorplanPools)
 			.set({ name, color, vendorIds, updatedAt: new Date() })
@@ -90,6 +101,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 	}
 
 	await syncPoolPalette(plan.id, { setName: name, setColor: color, dropName: previousName !== name ? previousName : null });
+	pushMembers([...new Set([...previousMembers, ...vendorIds])], locals.user.id);
 	return json({ pool: serialize(saved) });
 };
 
@@ -111,6 +123,7 @@ export const DELETE: RequestHandler = async ({ locals, params, url }) => {
 
 	await db.delete(floorplanPools).where(eq(floorplanPools.id, existing.id));
 	await syncPoolPalette(plan.id, { dropName: existing.name });
+	pushMembers(memberIds(existing), locals.user.id);
 	return json({ ok: true });
 };
 

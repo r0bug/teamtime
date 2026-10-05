@@ -23,9 +23,17 @@ import {
 import { isUploadPath } from '$lib/uploads';
 import { listTemplates } from '$lib/server/services/agreement-template-service';
 import { listGroups } from '$lib/server/services/vendor-group-service';
-import { isAdmin } from '$lib/server/auth/roles';
+import { isAdmin, isManager } from '$lib/server/auth/roles';
 import { hasTechAccess, TECH } from '$lib/server/auth/tech';
 import { audit } from '$lib/server/services/audit-service';
+import {
+	setVendorRent,
+	listVendorMetaLog,
+	desiredBoothMeta,
+	pushBoothMetaForNrsVendors,
+	VendorRentError
+} from '$lib/server/services/vendor-nrs-metadata-service';
+import { computeBoothSummaries } from '$lib/server/floorplan/booth-summary';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	if (!locals.user) throw redirect(302, '/dashboard');
@@ -33,13 +41,15 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const vendor = await getVendor(params.id);
 	if (!vendor) throw error(404, 'Vendor not found');
 
-	const [agreements, templates, allGroups, vendorGroupRows, authStatus, linkableUsers] = await Promise.all([
+	const [agreements, templates, allGroups, vendorGroupRows, authStatus, linkableUsers, nrsMetaLog, boothSummaries] = await Promise.all([
 		getVendorAgreements(params.id),
 		listTemplates({ includeInactive: false, includeArchived: false }),
 		listGroups({ includeArchived: false }),
 		getVendorGroups(params.id),
 		getVendorAuthStatus(params.id),
-		listLinkableUsers()
+		listLinkableUsers(),
+		listVendorMetaLog(params.id),
+		computeBoothSummaries()
 	]);
 
 	const signedTemplateIds = new Set(
@@ -59,7 +69,12 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		allGroups,
 		vendorGroupIds: vendorGroupRows.map((g) => g.id),
 		authStatus,
-		linkableUsers
+		linkableUsers,
+		// Booth rent is pushed to NRS and logged by name — managers only.
+		canEditRent: isManager(locals.user),
+		nrsMetaLog,
+		// What TeamTime's floorplan says NRS should hold for this vendor right now.
+		boothMeta: desiredBoothMeta(vendor, boothSummaries)
 	};
 };
 
@@ -87,6 +102,23 @@ export const actions: Actions = {
 			return fail(403, { error: 'Admin role required to change the NRS Vendor ID' });
 		}
 
+		// Booth rent is pushed to NRS (meta13) and logged under the manager's
+		// name, so it's gated harder than the rest of the form: manager role +
+		// an explicit confirmation (the popup sets confirmRent=true).
+		if (monthlyRentDollarsStr && !Number.isFinite(monthlyRentCents as number)) {
+			return fail(400, { error: 'Monthly rent must be a number' });
+		}
+		const rentChanged = (before.monthlyRentCents ?? null) !== (monthlyRentCents && monthlyRentCents > 0 ? monthlyRentCents : null);
+		if (rentChanged && !isManager(locals.user)) {
+			return fail(403, { error: 'Manager role required to change booth rent' });
+		}
+		if (rentChanged && data.get('confirmRent') !== 'true') {
+			return fail(400, { error: 'Booth rent change was not confirmed — nothing saved' });
+		}
+
+		const boothNumber = ((data.get('boothNumber') as string) ?? '').trim() || null;
+		const boothNumberChanged = (before.boothNumber ?? null) !== boothNumber;
+
 		await updateVendor(params.id, {
 			displayName: ((data.get('displayName') as string) ?? '').trim(),
 			contactName: ((data.get('contactName') as string) ?? '').trim() || null,
@@ -97,8 +129,8 @@ export const actions: Actions = {
 			city: ((data.get('city') as string) ?? '').trim() || null,
 			state: ((data.get('state') as string) ?? '').trim() || null,
 			zip: ((data.get('zip') as string) ?? '').trim() || null,
-			boothNumber: ((data.get('boothNumber') as string) ?? '').trim() || null,
-			monthlyRentCents,
+			boothNumber,
+			// monthlyRentCents is deliberately NOT here — see setVendorRent below.
 			maxDiscountPercent: ((data.get('maxDiscountPercent') as string) ?? '').trim() || null,
 			vendorPaymentPercent: ((data.get('vendorPaymentPercent') as string) ?? '').trim() || null,
 			status: ((data.get('status') as string) ?? 'inactive') as 'active' | 'inactive' | 'terminated',
@@ -119,7 +151,41 @@ export const actions: Actions = {
 			});
 		}
 
-		return { success: 'updateTerms' };
+		// Booth number feeds the "Booth Details" text TeamTime mirrors into NRS.
+		let boothPushWarning: string | null = null;
+		const effectiveNrsId = nrsVendorId ?? before.nrsVendorId ?? null;
+		if (boothNumberChanged && effectiveNrsId !== null) {
+			const r = await pushBoothMetaForNrsVendors([effectiveNrsId], locals.user.id).catch(() => null);
+			if (!r || r.failed > 0) boothPushWarning = 'Booth number saved, but the booth info push to NRS failed (see history below).';
+		}
+
+		let rentPushed = false;
+		if (rentChanged) {
+			try {
+				const r = await setVendorRent({ vendorId: params.id, monthlyRentCents, userId: locals.user.id });
+				rentPushed = r.pushedToNrs;
+			} catch (err) {
+				const msg = err instanceof VendorRentError ? err.message : 'Rent change failed';
+				return fail(502, { error: `Other changes were saved. ${msg}` });
+			}
+		}
+
+		return { success: 'updateTerms', rentChanged, rentPushed, boothPushWarning };
+	},
+
+	/** Manager: push this vendor's floorplan booth info to NRS right now. */
+	pushBoothMeta: async ({ locals, params }) => {
+		if (!locals.user) return fail(403, { error: 'Not authorized' });
+		if (!isManager(locals.user)) return fail(403, { error: 'Manager role required' });
+		const vendor = await getVendor(params.id);
+		if (!vendor) return fail(404, { error: 'Vendor not found' });
+		if (vendor.nrsVendorId === null) return fail(400, { error: 'Vendor has no NRS Vendor ID — nothing to push' });
+		try {
+			const r = await pushBoothMetaForNrsVendors([vendor.nrsVendorId], locals.user.id);
+			return { success: 'pushBoothMeta', boothPush: r };
+		} catch (err) {
+			return fail(502, { error: err instanceof Error ? err.message : 'Push to NRS failed' });
+		}
 	},
 
 	signAgreement: async ({ locals, params, request }) => {

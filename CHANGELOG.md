@@ -2,6 +2,19 @@
 
 All notable changes to the TeamTime project will be documented in this file.
 
+## [Unreleased]
+
+### NRS vendor metadata via API
+- NRS added `metadata/list` and now returns/accepts custom vendor fields on `vendor/get` / `vendor/save`: Booth Rent (`meta13`), Booth Details (`meta72`), Booth Size and Location (`meta73`), Display in Teamtime Floorplan (`meta74`)
+- **Booth rent from TeamTime** — managers can change a vendor's monthly rent on the vendor page; a confirmation popup precedes the save, the value is pushed to NRS first (TT only updates once NRS confirms), and every change is logged with the manager's name in the new `vendor_nrs_metadata_log` table (visible as "Rent & NRS metadata history"). Rent edited in NRS is mirrored into TT on sync and logged as from-NRS
+- **Floorplan → NRS** — TeamTime's floorplan is the source of truth for booth data: Booth Details / Size & Location / Display flag are rendered from the cell store (sq ft, footprint, grid position, zone, level, pools, booth #) and pushed to NRS after cell paints, pool edits, booth-# changes, on every "Sync from NRS", and via a "Push to NRS now" button
+- Retired the NRS web-UI scrape of Booth Rent (`frmMeta13`); the inactive / pass-through % / AR-customer scrape stays until NRS exposes those via API
+- Migration `0007_vendor_nrs_metadata_log`
+
+### Floorplan vendor picker
+- Searchable vendor combobox in Edit/Build mode (type a name or NRS id; arrow keys + Enter), each row showing rent, payment % and whether the vendor is already on the floor
+- Default list is **booth vendors only** — rent payers or 87/13 splits, plus anyone already painted or pooled; an "all vendors" toggle shows the full active list (25/75 consignors etc.). Replaces the hand-curated picker list and the NRS "Display in Teamtime Floorplan" flag as the way to keep the list short
+
 ## [1.3.0] - 2026-07-24
 
 ### Floorplan (Booth Map)

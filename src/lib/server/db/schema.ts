@@ -3655,6 +3655,40 @@ export type NrsInventoryApiLog = typeof nrsInventoryApiLog.$inferSelect;
 export type NewNrsInventoryApiLog = typeof nrsInventoryApiLog.$inferInsert;
 
 // ============================================
+// VENDOR NRS METADATA LOG
+// ============================================
+// Every write TeamTime makes to the NRS vendor metadata fields (Booth Rent
+// meta13, Booth Details meta72, Booth Size and Location meta73, Display in
+// Teamtime Floorplan meta74), plus rent changes TeamTime picked up FROM NRS
+// on sync. Rent edits are manager-only and attributed via changedByUserId;
+// floorplan pushes and sync pulls are system-attributed (null user).
+export const vendorNrsMetadataLog = pgTable('vendor_nrs_metadata_log', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	vendorId: uuid('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+	nrsVendorId: integer('nrs_vendor_id').notNull(),
+	// The manager who made the change (rent edits). Null for system pushes.
+	changedByUserId: uuid('changed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+	// 'rent_edit' (manager set rent in TT) | 'floorplan_push' (TT pushed booth
+	// details) | 'nrs_sync' (rent changed in NRS, mirrored into TT).
+	source: text('source').notNull(),
+	// Which NRS metadata ids changed, e.g. ['meta13'] or ['meta72','meta73','meta74'].
+	fields: jsonb('fields').$type<string[]>().notNull(),
+	beforeData: jsonb('before_data').$type<Record<string, unknown>>(),
+	afterData: jsonb('after_data').$type<Record<string, unknown>>(),
+	// Raw NRS response (or captured error shape). Null for nrs_sync rows.
+	responseBody: jsonb('response_body').$type<Record<string, unknown>>(),
+	success: boolean('success').notNull(),
+	errorMessage: text('error_message'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+	idxVendor: index('idx_vendor_nrs_meta_log_vendor').on(table.vendorId),
+	idxCreated: index('idx_vendor_nrs_meta_log_created').on(table.createdAt)
+}));
+
+export type VendorNrsMetadataLog = typeof vendorNrsMetadataLog.$inferSelect;
+export type NewVendorNrsMetadataLog = typeof vendorNrsMetadataLog.$inferInsert;
+
+// ============================================
 // VENDOR TAG TEMPLATES (Stage 3)
 // ============================================
 // Per-vendor barcode tag template — what's on the tag, in what order, in

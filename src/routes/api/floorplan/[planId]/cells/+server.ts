@@ -17,6 +17,11 @@ import {
 	filterAttrsByRank,
 	defsByKey
 } from '$lib/server/floorplan/permissions';
+import { vendorIdsAtCells } from '$lib/server/floorplan/booth-summary';
+import { pushBoothMetaForNrsVendors } from '$lib/server/services/vendor-nrs-metadata-service';
+import { createLogger } from '$lib/server/logger';
+
+const log = createLogger('api:floorplan:cells');
 
 const MAX_OPS = 5000;
 // Keys whose changes push totals to the count cache (spec §3.3).
@@ -111,11 +116,28 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		return json({ error: 'vendor_id validation failed', violations }, { status: 400 });
 	}
 
+	// Vendors whose booth text in NRS may change: anyone painted at a touched
+	// cell before the batch, plus anyone being painted in it. Captured before
+	// applyOps so un-painting a booth still updates that vendor.
+	const touchedBefore = await vendorIdsAtCells(plan.id, ops.map((op) => ({ x: op.x, y: op.y })));
+	const touchedAfter = ops.filter((op) => op.key === 'vendor_id' && op.value !== null).map((op) => op.value as string);
+
 	const changedKeys = await applyOps(plan.id, ops);
 
 	// Measurement flows up: totals, never deltas (spec §3.3).
 	for (const key of SUBSCRIBED_KEYS) {
 		if (changedKeys.has(key)) await recomputeCountCache(plan.id, key);
+	}
+
+	// TeamTime is the source of truth for floorplan data — mirror the affected
+	// vendors' booth metadata into NRS. Fire-and-forget: NRS being down must
+	// never fail a floorplan save (the next NRS sync reconciles anyway).
+	const affected = [...new Set([...touchedBefore, ...touchedAfter])];
+	if (affected.length > 0) {
+		const userId = locals.user.id;
+		pushBoothMetaForNrsVendors(affected, userId).catch((err) =>
+			log.warn({ err: String(err), affected }, 'booth metadata push after paint failed')
+		);
 	}
 
 	return json({ ok: true, applied: ops.length });

@@ -57,6 +57,7 @@
 	{#if form && 'syncResult' in form && form.syncResult}
 		<div class="mb-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">
 			NRS sync: created {form.syncResult.created}, enriched {form.syncResult.enriched ?? 0}, filtered out {form.syncResult.filteredOut ?? 0}, skipped {form.syncResult.skipped}{form.syncResult.prefixCollisions ? `, ${form.syncResult.prefixCollisions} prefix collision${form.syncResult.prefixCollisions === 1 ? '' : 's'}` : ''}.
+			Rent mirrored from NRS: {form.syncResult.rentMirrored ?? 0}. Booth info pushed to NRS: {form.syncResult.boothPushed ?? 0}{form.syncResult.boothPushFailed ? ` (${form.syncResult.boothPushFailed} failed — see vendor history)` : ''}.
 		</div>
 	{/if}
 	{#if form && 'stubsResult' in form && form.stubsResult}

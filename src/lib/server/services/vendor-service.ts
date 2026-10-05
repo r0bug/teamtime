@@ -29,8 +29,10 @@ import {
 /** The db handle or a transaction handle — helpers that must join a caller's tx take this. */
 type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-import { getVendors as fetchNrsVendors, getVendorDetail, type NrsVendorDetail } from './nrs-api-client';
+import { getVendors as fetchNrsVendors, getVendorDetail, rentCentsFromMeta, type NrsVendorDetail } from './nrs-api-client';
 import { getVendorWebFlagsBatch } from './nrs-web-client';
+import { mirrorRentFromNrs, reconcileBoothMeta } from './vendor-nrs-metadata-service';
+import { computeBoothSummaries } from '$lib/server/floorplan/booth-summary';
 import { getPacificDateParts } from '$lib/server/utils/timezone';
 import { hashPin } from '$lib/server/auth/pin';
 import { sendVendorPortalInvitationEmail } from '$lib/server/email';
@@ -267,16 +269,19 @@ const NRS_AUTHORITATIVE_KEYS = [
 ] as const;
 
 // (Inventory prefix is the only TT-managed field worth backfilling from NRS —
-// rent/commission % come via the notes parser elsewhere. Special-cased inline
-// in nrsDetailToPatch.)
+// commission % comes via the notes parser; booth rent comes from the NRS
+// metadata field meta13 (see vendor-nrs-metadata-service). Special-cased
+// inline in nrsDetailToPatch / syncFromNrs.)
 
 const PREFIX_RE_INNER = /^[A-Z0-9]{2,8}$/;
 
 /**
  * Best-effort parse of the NRS `notes` field for booth rent + commission %.
  *
- * NRS doesn't expose Booth Rent and Vendor Payment % structured via the API,
- * but staff often record them in `notes` like:
+ * NRS doesn't expose Vendor Payment % structured via the API (Booth Rent now
+ * arrives as metadata field meta13 — the rent parse here is only a fallback
+ * for vendors whose meta13 is still blank), but staff often record them in
+ * `notes` like:
  *   "13% commissions ... 100. rent ... *04/01/25 Rent Increased to 175"
  *
  * Strategy: scan the entire notes string, capture every dollar/% match
@@ -364,11 +369,10 @@ function nrsDetailToPatch(
 		}
 	}
 
-	// Best-effort parse of rent + payment % from NRS notes — only fill blanks.
+	// Best-effort parse of payment % from NRS notes — only fill blanks.
+	// (Rent is reconciled from meta13 in syncFromNrs, not here — it needs to
+	// write a log row, which is async.)
 	const parsed = parseRentAndPaymentFromNotes(detail.notes);
-	if (current.monthlyRentCents === null && parsed.suggestedMonthlyRentCents !== null) {
-		patch.monthlyRentCents = parsed.suggestedMonthlyRentCents;
-	}
 	if (current.vendorPaymentPercent === null && parsed.suggestedVendorPaymentPercent !== null) {
 		patch.vendorPaymentPercent = String(parsed.suggestedVendorPaymentPercent);
 	}
@@ -392,6 +396,11 @@ export interface SyncFromNrsResult {
 	inactiveFlagged: number;
 	inactiveDeleted: number;
 	inactiveKept: number;
+	/** Rent values that changed in NRS and were mirrored into TT. */
+	rentMirrored: number;
+	/** Booth metadata (details / size & location / floorplan flag) pushed to NRS. */
+	boothPushed: number;
+	boothPushFailed: number;
 }
 
 /**
@@ -421,9 +430,10 @@ async function getPassThroughVendorIds(): Promise<Set<number>> {
  * are logged and skipped — admin can resolve manually.
  */
 export async function syncFromNrs(): Promise<SyncFromNrsResult> {
-	const [nrsVendors, passThroughIds] = await Promise.all([
+	const [nrsVendors, passThroughIds, boothSummaries] = await Promise.all([
 		fetchNrsVendors(),
-		getPassThroughVendorIds()
+		getPassThroughVendorIds(),
+		computeBoothSummaries()
 	]);
 	const existing = await db
 		.select()
@@ -439,6 +449,20 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 	let enriched = 0;
 	let filteredOut = 0;
 	let prefixCollisions = 0;
+	let rentMirrored = 0;
+	let boothPushed = 0;
+	let boothPushFailed = 0;
+
+	// TeamTime is the source of truth for floorplan data: after each vendor is
+	// reconciled, push its booth metadata to NRS if NRS has drifted.
+	const pushBooth = async (
+		v: { id: string; nrsVendorId: number | null; boothNumber: string | null; displayName: string },
+		detail: NrsVendorDetail
+	) => {
+		const outcome = await reconcileBoothMeta(v, detail, boothSummaries);
+		if (outcome === 'pushed') boothPushed++;
+		else if (outcome === 'failed') boothPushFailed++;
+	};
 
 	for (const summary of nrsVendors) {
 		// Skip system rows like "*** Not-on-File Vendor ***"
@@ -477,7 +501,7 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 			}
 
 			const parsedNew = parseRentAndPaymentFromNotes(detail.notes);
-			await db.insert(vendors).values({
+			const [inserted] = await db.insert(vendors).values({
 				nrsVendorId: detail.vendorId,
 				displayName: summary.name || `NRS Vendor ${detail.vendorId}`,
 				contactName: detail.contact || null,
@@ -489,20 +513,30 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 				state: detail.state || null,
 				zip: detail.zipCode || null,
 				inventoryCodePrefix,
-				monthlyRentCents: parsedNew.suggestedMonthlyRentCents,
+				// Booth Rent is a structured NRS metadata field (meta13); the notes
+				// parse only backstops vendors whose meta13 is still blank.
+				monthlyRentCents: rentCentsFromMeta(detail) ?? parsedNew.suggestedMonthlyRentCents,
 				vendorPaymentPercent:
 					parsedNew.suggestedVendorPaymentPercent !== null
 						? String(parsedNew.suggestedVendorPaymentPercent)
 						: null,
 				notes: detail.notes?.trim() || null,
 				status: 'inactive'
-			});
+			}).returning({ id: vendors.id, nrsVendorId: vendors.nrsVendorId, boothNumber: vendors.boothNumber, displayName: vendors.displayName });
 			created++;
+			if (inserted) await pushBooth(inserted, detail);
 			continue;
 		}
 
 		// Existing row — backfill empty fields only.
 		const patch = nrsDetailToPatch(detail, current);
+		// Booth Rent: NRS meta13 is authoritative when set (manager edits in TT
+		// are pushed there first, so this only catches edits made in NRS).
+		const mirroredRent = await mirrorRentFromNrs(current, detail);
+		if (mirroredRent !== undefined) {
+			patch.monthlyRentCents = mirroredRent;
+			rentMirrored++;
+		}
 		if (patch.inventoryCodePrefix && usedPrefixes.has(patch.inventoryCodePrefix as string)) {
 			prefixCollisions++;
 			log.warn(
@@ -520,10 +554,12 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 				.where(eq(vendors.id, current.id));
 			enriched++;
 		}
+		await pushBooth(current, detail);
 	}
 
-	// Scrape the NRS web UI for the per-vendor "Inactive" flag (the JSON API
-	// doesn't expose this). Apply to TT in two steps:
+	// Scrape the NRS web UI for the per-vendor "Inactive" flag, Pass-Through %
+	// and AR Customer (the JSON API doesn't expose these — Booth Rent used to be
+	// scraped here too but now arrives via the API as meta13). Apply in two steps:
 	//   1) Flip `nrs_inactive` per scrape result.
 	//   2) Delete newly-inactive vendors that have no TT-side data attached
 	//      (mirrors the safety rules in `importVendorsFromCsv`).
@@ -531,16 +567,17 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 
 	const skipped = nrsVendors.length - created - enriched - filteredOut;
 	log.info(
-		{ created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept },
+		{ created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept, rentMirrored, boothPushed, boothPushFailed },
 		'NRS sync complete'
 	);
-	return { created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept };
+	return { created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept, rentMirrored, boothPushed, boothPushFailed };
 }
 
 /**
- * After API-driven sync, scrape the NRS web UI to populate `nrs_inactive` and
- * remove vendors that are inactive AND have no TT-side data (no portal user,
- * no signed agreements, no booth metadata worth keeping).
+ * After API-driven sync, scrape the NRS web UI to populate `nrs_inactive`,
+ * `vendor_payment_percent` and `nrs_ar_customer_id` (none of which the JSON
+ * API exposes yet) and remove vendors that are inactive AND have no TT-side
+ * data (no portal user, no signed agreements, no sales history).
  *
  * Best-effort: if web login fails, we log and skip — the API-driven enrich
  * already ran, so the user gets the contact-info refresh either way.
@@ -556,8 +593,7 @@ async function applyNrsInactivityFromWeb(): Promise<{
 			nrsVendorId: vendors.nrsVendorId,
 			nrsInactive: vendors.nrsInactive,
 			vendorPaymentPercent: vendors.vendorPaymentPercent,
-			nrsArCustomerId: vendors.nrsArCustomerId,
-			monthlyRentCents: vendors.monthlyRentCents
+			nrsArCustomerId: vendors.nrsArCustomerId
 		})
 		.from(vendors)
 		.where(sql`${vendors.nrsVendorId} IS NOT NULL`);
@@ -597,14 +633,6 @@ async function applyNrsInactivityFromWeb(): Promise<{
 		// AR Customer ID — surface what NRS has so onboarding can flag missing.
 		if (scraped.arCustomerId !== v.nrsArCustomerId) {
 			updates.nrsArCustomerId = scraped.arCustomerId;
-		}
-		// Booth rent — NRS is authoritative. Empty NRS doesn't wipe TT
-		// (legacy records may have rent we want to keep until staff clears it).
-		if (
-			scraped.monthlyRentCents !== null &&
-			scraped.monthlyRentCents !== v.monthlyRentCents
-		) {
-			updates.monthlyRentCents = scraped.monthlyRentCents;
 		}
 		if (Object.keys(updates).length > 0) {
 			updates.updatedAt = new Date();
@@ -674,10 +702,9 @@ async function applyNrsInactivityFromWeb(): Promise<{
 	return { inactiveFlagged, inactiveDeleted, inactiveKept };
 }
 
-// CSV-import workflow removed — `syncFromNrs` now scrapes the NRS web UI
-// for every field the CSV used to backfill (Inactive flag, Pass-Through %,
-// Booth Rent, AR Customer, contact info). See vendor-stats-service / web
-// client for the new scrape path.
+// CSV-import workflow removed — `syncFromNrs` now pulls contact info and
+// Booth Rent (meta13) from the NRS API and scrapes the NRS web UI only for
+// the fields the API still lacks (Inactive flag, Pass-Through %, AR Customer).
 
 /**
  * Remove "stub" vendor rows that are inactive AND empty AND don't match the
