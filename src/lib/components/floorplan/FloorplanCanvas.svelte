@@ -31,6 +31,9 @@
 	/** cells to outline (reachability warning by default; read-only views use it to frame a booth) */
 	export let highlight: Set<string> = new Set();
 	export let highlightColor = '#ef4444';
+	/** door marker (small centered square). Yellow by default; vendor views
+	 *  override it so doors can't be mistaken for the amber booth highlight. */
+	export let doorColor = '#F5B301';
 	/** live tool preview: cells to tint while dragging */
 	export let preview: Set<string> = new Set();
 
@@ -61,7 +64,7 @@
 
 	$: defByKey = new Map(defs.map((d) => [d.key, d]));
 	// Any input change repaints.
-	$: cells, overlayKey, renderLayer, highlight, highlightColor, preview, gridW, gridH, invalidate();
+	$: cells, overlayKey, renderLayer, highlight, highlightColor, doorColor, preview, gridW, gridH, invalidate();
 	$: spacerW = gridW * scale;
 	$: spacerH = gridH * scale;
 
@@ -189,7 +192,7 @@
 			ctx.fillStyle = color;
 			ctx.fillRect(sx, sy, s, s);
 			if (attrs.door === 'true') {
-				ctx.fillStyle = '#F5B301';
+				ctx.fillStyle = doorColor;
 				ctx.fillRect(sx + s * 0.25, sy + s * 0.25, s * 0.5, s * 0.5);
 			}
 		}

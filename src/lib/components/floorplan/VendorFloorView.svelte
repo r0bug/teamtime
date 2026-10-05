@@ -31,6 +31,9 @@
 	// pool color; everything else is the muted 'kind' building outline.
 	const BOOTH_COLOR = '#F59E0B';
 	const BOOTH_OUTLINE = '#FFFFFF';
+	// Doors are yellow on the editor, which reads as "another booth cell"
+	// next to the amber highlight — use a neutral gray here instead.
+	const DOOR_COLOR = '#9CA3AF';
 
 	let canvas: FloorplanCanvas;
 	let hover: { x: number; y: number; clientX: number; clientY: number } | null = null;
@@ -41,6 +44,7 @@
 	$: focusKeys = new Set([...boothKeys, ...poolColorByKey.keys()]);
 	$: hoverAttrs = hover ? (cellMap.get(cellKey(hover.x, hover.y)) ?? {}) : {};
 	$: kindDef = attrDefs.find((d) => d.key === 'kind');
+	$: hasDoors = cells.some((c) => c.attrs.door === 'true');
 
 	$: renderLayer = (() => {
 		const layer = new Map<string, string>();
@@ -134,6 +138,7 @@
 					{renderLayer}
 					highlight={boothSet}
 					highlightColor={BOOTH_OUTLINE}
+					doorColor={DOOR_COLOR}
 					on:hover={(e) => (hover = e.detail)}
 					on:hoverend={() => (hover = null)}
 				/>
@@ -149,8 +154,14 @@
 					{:else}
 						<div class="flex items-center gap-2">
 							<span class="inline-block h-3 w-3 rounded-sm" style="background:{BOOTH_COLOR}"></span>
-							<span class="text-gray-600">Highlighted cells</span>
+							<span class="text-gray-600">Your booth</span>
 						</div>
+						{#if hasDoors}
+							<div class="flex items-center gap-2">
+								<span class="inline-flex h-3 w-3 items-center justify-center rounded-sm bg-gray-800"><span class="h-1.5 w-1.5" style="background:{DOOR_COLOR}"></span></span>
+								<span class="text-gray-600">Door</span>
+							</div>
+						{/if}
 						<dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
 							<dt class="text-gray-500">Size</dt>
 							<dd class="font-medium">{boothKeys.length} sq ft</dd>
