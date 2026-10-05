@@ -3,6 +3,8 @@ import { error, json } from '@sveltejs/kit';
 import { getPlan, getCellAttrs, getAttrDefs } from '$lib/server/floorplan/core';
 import { canView, viewerRank, filterAttrsByRank, defsByKey } from '$lib/server/floorplan/permissions';
 import { getConnectorsForPlan } from '$lib/server/floorplan/connectors/registry';
+import { boothRevenueLastMonth } from '$lib/server/floorplan/revenue';
+import { formatCurrency } from '$lib/utils';
 
 const CONNECTOR_TIMEOUT_MS = 3000;
 
@@ -45,6 +47,26 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 			}
 		})
 	);
+
+	// Booth economics (previous calendar month): store share of sales + rent,
+	// per painted square foot. Pre-formatted so the popover prints it as-is.
+	if (visible.vendor_id !== undefined) {
+		try {
+			const rev = await withTimeout(boothRevenueLastMonth(plan.id, visible.vendor_id), CONNECTOR_TIMEOUT_MS);
+			if (rev) {
+				sources[`Revenue / sq ft · ${rev.monthLabel}`] = {
+					booth: `${rev.sqft} sq ft`,
+					'vendor sales': formatCurrency(rev.grossSales),
+					'store share': formatCurrency(rev.storeShare),
+					rent: formatCurrency(rev.rent),
+					'store revenue': formatCurrency(rev.storeRevenue),
+					'per sq ft': rev.perSqft === null ? '— (no cells)' : formatCurrency(rev.perSqft)
+				};
+			}
+		} catch (err) {
+			sources['Revenue / sq ft'] = { error: err instanceof Error ? err.message : 'Revenue lookup failed' };
+		}
+	}
 
 	return json({ x, y, attrs: visible, sources });
 };
