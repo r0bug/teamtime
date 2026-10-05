@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('$env/dynamic/private', () => ({ env: { NRS_API_KEY: 'test-key', NRS_STORE_ID: '20' } }));
+const mockEnv = vi.hoisted((): Record<string, string> => ({ NRS_API_KEY: 'test-key', NRS_STORE_ID: '20', NRS_VENDOR_SAVE_ENABLED: 'true' }));
+vi.mock('$env/dynamic/private', () => ({ env: mockEnv }));
 
 import {
 	saveVendorMeta,
@@ -92,5 +93,17 @@ describe('saveVendorMeta', () => {
 	it('throws when the vendor does not exist', async () => {
 		vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ err: { num: 201, msg: 'No Data Received' } }))));
 		await expect(saveVendorMeta(1, { meta13: 5 })).rejects.toThrow(/not found/);
+	});
+});
+
+describe('saveVendorMeta kill switch', () => {
+	it('refuses to write unless NRS_VENDOR_SAVE_ENABLED=true', async () => {
+		mockEnv.NRS_VENDOR_SAVE_ENABLED = 'false';
+		try {
+			await expect(saveVendorMeta(17009, { meta13: 5 })).rejects.toThrow(/disabled/);
+			expect(calls.filter((c) => c.url.endsWith('/vendor/save'))).toHaveLength(0);
+		} finally {
+			mockEnv.NRS_VENDOR_SAVE_ENABLED = 'true';
+		}
 	});
 });

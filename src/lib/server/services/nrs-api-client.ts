@@ -317,6 +317,14 @@ export interface SaveVendorResult {
  * vendor identity).
  */
 export async function saveVendorMeta(vendorId: number, patch: NrsVendorMetaPatch): Promise<SaveVendorResult> {
+	// KILL SWITCH (2026-10-05): vendor/save blanks fields that vendor/get does
+	// not return — Is Pass-Through, Pass-Through Vendor %, AR Customer ID —
+	// so a full-record merge still wipes them. Writes stay off until NRS
+	// either returns those fields on vendor/get or confirms save ignores
+	// omitted keys. Set NRS_VENDOR_SAVE_ENABLED=true to re-enable.
+	if (env.NRS_VENDOR_SAVE_ENABLED !== 'true') {
+		throw new Error('NRS vendor/save is disabled (it clears pass-through % / AR customer in NRS). Rent and booth info are not pushed to NRS until NRS fixes vendor/save.');
+	}
 	const current = await getVendorDetail(vendorId);
 	if (!current) throw new Error(`saveVendorMeta: NRS vendor ${vendorId} not found`);
 
