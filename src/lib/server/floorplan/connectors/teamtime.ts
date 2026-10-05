@@ -27,6 +27,7 @@ export const teamtimeConnector: Connector = {
 	schema() {
 		return [
 			{ name: 'displayName', type: 'string' },
+			{ name: 'code', type: 'string' },
 			{ name: 'sales30d', type: 'number' },
 			{ name: 'transactions30d', type: 'number' }
 		];
@@ -38,7 +39,7 @@ export const teamtimeConnector: Connector = {
 
 		const [names, sales] = await Promise.all([
 			db
-				.select({ nrsVendorId: vendors.nrsVendorId, displayName: vendors.displayName })
+				.select({ nrsVendorId: vendors.nrsVendorId, displayName: vendors.displayName, code: vendors.inventoryCodePrefix })
 				.from(vendors)
 				.where(inArray(vendors.nrsVendorId, numeric)),
 			db
@@ -54,7 +55,7 @@ export const teamtimeConnector: Connector = {
 
 		const out: ConnectorResult = {};
 		for (const row of names) {
-			out[String(row.nrsVendorId)] = { displayName: row.displayName, sales30d: 0, transactions30d: 0 };
+			out[String(row.nrsVendorId)] = { displayName: row.displayName, code: row.code ?? '—', sales30d: 0, transactions30d: 0 };
 		}
 		for (const row of sales) {
 			const key = String(row.vendorId);

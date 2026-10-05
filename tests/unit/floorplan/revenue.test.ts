@@ -24,3 +24,28 @@ describe('previousMonthRange', () => {
 		expect(r.start).toBe('2026-08-01');
 	});
 });
+
+import { summarizeBooth } from '$lib/server/floorplan/revenue';
+
+describe('summarizeBooth (shared booths)', () => {
+	const rosie = { nrsVendorId: 17160, code: 'ROSIE', name: 'Christina McCarthy', grossSales: 400, storeShare: 52, rent: 0 };
+	const bmc = { nrsVendorId: 17159, code: 'BMC', name: 'Tami Swartz', grossSales: 600, storeShare: 78, rent: 250 };
+
+	it('sums every occupant\'s store share and all rent over the shared cells', () => {
+		const b = summarizeBooth('Sep 2026', [bmc, rosie], 90, ['McCarthy / Swartz']);
+		expect(b.shared).toBe(true);
+		expect(b.grossSales).toBe(1000);
+		expect(b.storeShare).toBe(130);
+		expect(b.rent).toBe(250);
+		expect(b.storeRevenue).toBe(380);
+		expect(b.perSqft).toBeCloseTo(380 / 90);
+		expect(b.occupants.map((o) => o.code)).toEqual(['BMC', 'ROSIE']);
+	});
+
+	it('is a plain booth for a lone vendor and null per sq ft with no cells', () => {
+		const b = summarizeBooth('Sep 2026', [rosie], 0, []);
+		expect(b.shared).toBe(false);
+		expect(b.perSqft).toBeNull();
+		expect(b.storeRevenue).toBe(52);
+	});
+});

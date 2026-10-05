@@ -3,8 +3,7 @@ import { error, json } from '@sveltejs/kit';
 import { getPlan, getCellAttrs, getAttrDefs } from '$lib/server/floorplan/core';
 import { canView, viewerRank, filterAttrsByRank, defsByKey } from '$lib/server/floorplan/permissions';
 import { getConnectorsForPlan } from '$lib/server/floorplan/connectors/registry';
-import { boothRevenueLastMonth } from '$lib/server/floorplan/revenue';
-import { formatCurrency } from '$lib/utils';
+import { boothOccupantsForCell, boothEconomicsLastMonth, type BoothEconomics } from '$lib/server/floorplan/revenue';
 
 const CONNECTOR_TIMEOUT_MS = 3000;
 
@@ -49,26 +48,21 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	);
 
 	// Booth economics (previous calendar month): store share of sales + rent,
-	// per painted square foot. Pre-formatted so the popover prints it as-is.
-	if (visible.vendor_id !== undefined) {
+	// per square foot of the booth. A vendor in a pool resolves the whole
+	// shared booth — every co-tenant's code and sales, totals across all of
+	// them — so a space with one rent payer and two sellers is priced right.
+	let booth: BoothEconomics | null = null;
+	let boothError: string | null = null;
+	if (visible.vendor_id !== undefined || visible.pool !== undefined) {
 		try {
-			const rev = await withTimeout(boothRevenueLastMonth(plan.id, visible.vendor_id), CONNECTOR_TIMEOUT_MS);
-			if (rev) {
-				sources[`Revenue / sq ft · ${rev.monthLabel}`] = {
-					booth: `${rev.sqft} sq ft`,
-					'vendor sales': formatCurrency(rev.grossSales),
-					'store share': formatCurrency(rev.storeShare),
-					rent: formatCurrency(rev.rent),
-					'store revenue': formatCurrency(rev.storeRevenue),
-					'per sq ft': rev.perSqft === null ? '— (no cells)' : formatCurrency(rev.perSqft)
-				};
-			}
+			const { vendorIds, poolNames } = await boothOccupantsForCell(plan.id, visible);
+			booth = await withTimeout(boothEconomicsLastMonth(plan.id, vendorIds, poolNames), CONNECTOR_TIMEOUT_MS);
 		} catch (err) {
-			sources['Revenue / sq ft'] = { error: err instanceof Error ? err.message : 'Revenue lookup failed' };
+			boothError = err instanceof Error ? err.message : 'Revenue lookup failed';
 		}
 	}
 
-	return json({ x, y, attrs: visible, sources });
+	return json({ x, y, attrs: visible, sources, booth, boothError });
 };
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

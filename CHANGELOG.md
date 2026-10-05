@@ -11,6 +11,10 @@ All notable changes to the TeamTime project will be documented in this file.
 - Retired the NRS web-UI scrape of Booth Rent (`frmMeta13`); the inactive / pass-through % / AR-customer scrape stays until NRS exposes those via API
 - Migration `0007_vendor_nrs_metadata_log`
 
+### Floorplan shared booths & hover popover
+- Pools now double as shared booths: hovering any cell of a vendor who belongs to a pool resolves every co-tenant — each vendor's code, name, last-month sales and store share in their own row, all rent summed, and store revenue **per sq ft across the whole shared space** (cells under any member's `vendor_id` or the pool name). No repainting needed: define the pool with both members and the existing paint works
+- Hover popover now leads with the vendor code(s) (e.g. `ROSIE + BMC · shared`); the TeamTime connector also returns `code`
+
 ### Floorplan vendor picker
 - Searchable vendor combobox in Edit/Build mode (type a name or NRS id; arrow keys + Enter), each row showing rent, payment % and whether the vendor is already on the floor
 - Default list is **booth vendors only** — rent payers or 87/13 splits, plus anyone already painted or pooled; an "all vendors" toggle shows the full active list (25/75 consignors etc.). Replaces the hand-curated picker list and the NRS "Display in Teamtime Floorplan" flag as the way to keep the list short
