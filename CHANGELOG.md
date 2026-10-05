@@ -11,6 +11,10 @@ All notable changes to the TeamTime project will be documented in this file.
 - Retired the NRS web-UI scrape of Booth Rent (`frmMeta13`); the inactive / pass-through % / AR-customer scrape stays until NRS exposes those via API
 - Migration `0007_vendor_nrs_metadata_log`
 
+### Sales → "Revenue / sq ft" tab
+- New tab on `/sales` (`?view=sqft`): per booth and per month, store revenue = retained share of the booth's sales + booth rent, divided by the booth's painted sq ft. Shared booths (pools) combine every occupant. Sortable by last month, average, 3-vs-3-month trend, total, sq ft, rent or name; search by code or vendor; 3 / 6 / 12-month window; store-wide per-sq-ft trend chart and summary tiles (store-wide rate, change vs prior month, total booth sq ft, best booth)
+- Sales come from NRS daily snapshots by calendar month; rent and sq ft are today's values applied to every month (TeamTime has no rent history before the NRS-metadata log began)
+
 ### Floorplan shared booths & hover popover
 - Pools now double as shared booths: hovering any cell of a vendor who belongs to a pool resolves every co-tenant — each vendor's code, name, last-month sales and store share in their own row, all rent summed, and store revenue **per sq ft across the whole shared space** (cells under any member's `vendor_id` or the pool name). No repainting needed: define the pool with both members and the existing paint works
 - Hover popover now leads with the vendor code(s) (e.g. `ROSIE + BMC · shared`); the TeamTime connector also returns `code`

@@ -3,9 +3,13 @@ import type { PageServerLoad } from './$types';
 import { db, salesSnapshots, timeEntries, users } from '$lib/server/db';
 import { desc, gte, lte, and, or, isNull, gt, lt, eq, sql } from 'drizzle-orm';
 import { createPacificDateTime, getPacificToday } from '$lib/server/utils/timezone';
+import { revenuePerSqftReport } from '$lib/server/floorplan/revenue-trends';
 
 const ALLOWED_RANGE_DAYS = [7, 14, 30, 60, 90, 180, 365, 730] as const;
 const DEFAULT_RANGE_DAYS = 30;
+// "Revenue / sq ft" tab window, in complete calendar months.
+const ALLOWED_SQFT_MONTHS = [3, 6, 12] as const;
+const DEFAULT_SQFT_MONTHS = 6;
 
 export const load: PageServerLoad = async ({ url, locals }) => {
 	// Range window, clamped to the allowed set to avoid unbounded queries
@@ -16,6 +20,17 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 
 	// Anchor the window to Pacific "today" (UTC-midnight anchor for drift-free
 	// date math), so the range boundary doesn't shift a day after ~5pm PT.
+	const sqftMonthsParam = parseInt(url.searchParams.get('sqftMonths') ?? '', 10);
+	const sqftMonths: number = ALLOWED_SQFT_MONTHS.includes(sqftMonthsParam as (typeof ALLOWED_SQFT_MONTHS)[number])
+		? sqftMonthsParam
+		: DEFAULT_SQFT_MONTHS;
+	// Booth economics (rent + retained per sq ft) — floorplan booths × NRS
+	// monthly snapshots. Independent of the daily range above.
+	const sqftReportPromise = revenuePerSqftReport(sqftMonths).catch((err) => {
+		console.error('revenue per sq ft report failed', err);
+		return null;
+	});
+
 	const todayStr = getPacificToday();
 	const [ty, tm, td] = todayStr.split('-').map(Number);
 	const windowStartDate = new Date(Date.UTC(ty, tm - 1, td));
@@ -178,6 +193,9 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		topVendors,
 		rangeDays,
 		allowedRangeDays: ALLOWED_RANGE_DAYS as readonly number[],
+		sqftReport: await sqftReportPromise,
+		sqftMonths,
+		allowedSqftMonths: ALLOWED_SQFT_MONTHS as readonly number[],
 		summary: {
 			totalRetained: totalRetainedSum,
 			totalSales: totalSalesSum,

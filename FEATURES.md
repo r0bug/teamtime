@@ -3305,6 +3305,10 @@ values and counts — never rent, sales, or commission (that lives in connectors
 
 Tools: single cell, rectangle, wall (line), flood fill, **eyedropper** (pick the brush value from a painted cell), plus **per-stroke undo**, zoom/pan with a scrollbar camera, and a **reachability check** (every sellable cell must be reachable from a door). Vendor strokes skip non-sellable cells and report what was skipped rather than dropping a stroke silently.
 
+### Revenue per square foot (Sales → "Revenue / sq ft")
+
+`src/lib/server/floorplan/revenue-trends.ts` → the fourth tab on `/sales` (`?view=sqft&sqftMonths=3|6|12`). `buildBooths()` turns the floorplan into booths — every pool is one shared booth (members' `vendor_id` cells + pool-painted cells, rent summed) and every other painted vendor is a booth of its own. `retainedByVendorByMonth()` folds `sales_snapshots` (latest capture per day) into retained-per-vendor-per-month, and `buildReport()` produces, per booth and month, store revenue = retained + rent and per sq ft = store revenue / cells, plus last / average / 3-vs-3-month trend / total and a store-wide series (all booth revenue / all booth sq ft). Rent and sq ft are current values applied to every month (no history). The tab sorts on any column, filters by code or name, and charts the store-wide rate with `SalesOverTimeChart`.
+
 ### Attributes, Pools & Colors
 
 - **Attr defs** declare how each key renders/filters, who owns it (`floorplan` / `teamtime` / `nrs`), and who may see it (`public` / `staff` / `admin`). Attribute visibility is enforced on read.

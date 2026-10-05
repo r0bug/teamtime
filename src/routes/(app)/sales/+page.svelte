@@ -3,11 +3,76 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import type { PageData } from './$types';
+	import SalesOverTimeChart from '$lib/components/SalesOverTimeChart.svelte';
 
 	export let data: PageData;
 
 	// View mode: daily, weekly, vendor
-	let viewMode: 'daily' | 'weekly' | 'vendor' = 'daily';
+	let viewMode: 'daily' | 'weekly' | 'vendor' | 'sqft' = 'daily';
+	// Deep link: /sales?view=sqft opens the Revenue / sq ft tab.
+	$: if (browser && $page.url.searchParams.get('view') === 'sqft') viewMode = 'sqft';
+
+	// ── Revenue / sq ft tab ─────────────────────────────────────────
+	type SqftRow = NonNullable<PageData['sqftReport']>['rows'][number];
+	type SqftSort = 'last' | 'avg' | 'trend' | 'total' | 'sqft' | 'rent' | 'label';
+	let sqftSort: SqftSort = 'last';
+	let sqftDesc = true;
+	let sqftSearch = '';
+	const sqftHeadLeft: [SqftSort, string, string][] = [['label', 'Booth', 'text-left'], ['sqft', 'Sq ft', 'text-right'], ['rent', 'Rent', 'text-right']];
+	const sqftHeadRight: [SqftSort, string, string][] = [['last', 'Last / sq ft', 'text-right'], ['avg', 'Avg / sq ft', 'text-right'], ['trend', 'Trend', 'text-right'], ['total', 'Store rev. total', 'text-right']];
+	function setSqftSort(col: SqftSort): void {
+		if (sqftSort === col) sqftDesc = !sqftDesc;
+		else {
+			sqftSort = col;
+			sqftDesc = col !== 'label';
+		}
+	}
+	function sqftSortValue(r: SqftRow, col: SqftSort): number | string | null {
+		switch (col) {
+			case 'last': return r.lastPerSqft;
+			case 'avg': return r.avgPerSqft;
+			case 'trend': return r.trendPct;
+			case 'total': return r.totalStoreRevenue;
+			case 'sqft': return r.sqft;
+			case 'rent': return r.rent;
+			case 'label': return r.label.toLowerCase();
+		}
+	}
+	$: sqftRows = (() => {
+		const rows = (data.sqftReport?.rows ?? []).filter((r) => {
+			const q = sqftSearch.trim().toLowerCase();
+			return !q || r.label.toLowerCase().includes(q) || r.names.some((n) => n.toLowerCase().includes(q));
+		});
+		return [...rows].sort((a, b) => {
+			const av = sqftSortValue(a, sqftSort);
+			const bv = sqftSortValue(b, sqftSort);
+			if (av === null && bv === null) return 0;
+			if (av === null) return 1; // nulls (no cells / no trend) sink regardless of direction
+			if (bv === null) return -1;
+			const cmp = typeof av === 'string' ? av.localeCompare(bv as string) : (av as number) - (bv as number);
+			return sqftDesc ? -cmp : cmp;
+		});
+	})();
+	$: sqftStore = data.sqftReport?.storeSeries ?? [];
+	$: sqftLast = sqftStore[sqftStore.length - 1] ?? null;
+	$: sqftPrev = sqftStore[sqftStore.length - 2] ?? null;
+	$: sqftChangePct =
+		sqftLast?.perSqft != null && sqftPrev?.perSqft ? ((sqftLast.perSqft - sqftPrev.perSqft) / sqftPrev.perSqft) * 100 : null;
+	$: sqftBest = [...(data.sqftReport?.rows ?? [])].filter((r) => r.lastPerSqft !== null).sort((a, b) => b.lastPerSqft! - a.lastPerSqft!)[0] ?? null;
+	function monthLabel(m: string): string {
+		const [y, mo] = m.split('-').map(Number);
+		return new Date(Date.UTC(y, mo - 1, 1)).toLocaleString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+	}
+	function perSqft(v: number | null): string {
+		return v === null ? '—' : `$${v.toFixed(2)}`;
+	}
+	function changeSqftMonths(e: Event): void {
+		const months = (e.currentTarget as HTMLSelectElement).value;
+		const url = new URL($page.url);
+		url.searchParams.set('sqftMonths', months);
+		url.searchParams.set('view', 'sqft');
+		goto(url.toString(), { keepFocus: true, noScroll: true });
+	}
 
 	// Server-fetched range (days)
 	$: serverRange = data.rangeDays;
@@ -259,8 +324,113 @@
 				>
 					By Vendor
 				</button>
+				<button
+					on:click={() => (viewMode = 'sqft')}
+					class="px-4 py-3 text-sm font-medium border-b-2 transition-colors {viewMode === 'sqft'
+						? 'border-primary-500 text-primary-600'
+						: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
+				>
+					Revenue / sq ft
+				</button>
 			</nav>
 		</div>
+
+		<!-- Revenue per square foot: (retained + rent) / booth cells, by month -->
+		{#if viewMode === 'sqft'}
+			<div class="card-body">
+				{#if !data.sqftReport}
+					<p class="text-gray-500 text-center py-8">Revenue per sq ft is unavailable right now (report failed to load).</p>
+				{:else}
+					<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+						<div>
+							<h3 class="font-semibold text-gray-900">Store revenue per square foot</h3>
+							<p class="text-xs text-gray-500">Store revenue = retained share of the booth's sales + booth rent, divided by the booth's painted sq ft. Shared booths (pools) combine every occupant's sales. {data.sqftReport.note}</p>
+						</div>
+						<div class="flex items-center gap-3">
+							<input class="input !w-44 !py-1.5" placeholder="find booth / vendor…" bind:value={sqftSearch} aria-label="Filter booths" />
+							<label class="flex items-center gap-2 text-sm text-gray-700">
+								Months
+								<select class="input !w-auto !py-1.5" value={data.sqftMonths} on:change={changeSqftMonths}>
+									{#each data.allowedSqftMonths as n}<option value={n}>{n}</option>{/each}
+								</select>
+							</label>
+						</div>
+					</div>
+
+					<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+						<div class="card"><div class="card-body text-center">
+							<p class="text-2xl font-bold text-primary-600">{perSqft(sqftLast?.perSqft ?? null)}</p>
+							<p class="text-sm text-gray-600">Store-wide / sq ft{sqftLast ? ` (${monthLabel(sqftLast.month)})` : ''}</p>
+						</div></div>
+						<div class="card"><div class="card-body text-center">
+							<p class="text-2xl font-bold {sqftChangePct === null ? 'text-gray-400' : sqftChangePct >= 0 ? 'text-emerald-600' : 'text-red-700'}">
+								{sqftChangePct === null ? '—' : `${sqftChangePct >= 0 ? '+' : ''}${sqftChangePct.toFixed(1)}%`}
+							</p>
+							<p class="text-sm text-gray-600">vs prior month</p>
+						</div></div>
+						<div class="card"><div class="card-body text-center">
+							<p class="text-2xl font-bold text-gray-900">{data.sqftReport.totalSqft.toLocaleString()}</p>
+							<p class="text-sm text-gray-600">Booth sq ft · {data.sqftReport.rows.length} booths</p>
+						</div></div>
+						<div class="card"><div class="card-body text-center">
+							<p class="text-2xl font-bold text-emerald-600">{sqftBest ? perSqft(sqftBest.lastPerSqft) : '—'}</p>
+							<p class="text-sm text-gray-600 truncate" title={sqftBest?.names.join(', ')}>Best booth{sqftBest ? `: ${sqftBest.label}` : ''}</p>
+						</div></div>
+					</div>
+
+					<h4 class="text-sm font-semibold text-gray-700 mb-1">Store-wide revenue per sq ft by month</h4>
+					<SalesOverTimeChart data={sqftStore.map((m) => ({ date: monthLabel(m.month), total: m.perSqft ?? 0 }))} height={140} />
+
+					<div class="overflow-x-auto mt-6">
+						<table class="min-w-full text-sm">
+							<thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+								<tr>
+									{#each sqftHeadLeft as [col, title, align] (col)}
+										<th class="px-3 py-2 {align} cursor-pointer select-none hover:text-gray-800" on:click={() => setSqftSort(col)}>
+											{title}{sqftSort === col ? (sqftDesc ? ' ▼' : ' ▲') : ''}
+										</th>
+									{/each}
+									{#each data.sqftReport.months as m (m)}
+										<th class="px-3 py-2 text-right whitespace-nowrap font-normal">{monthLabel(m)}</th>
+									{/each}
+									{#each sqftHeadRight as [col, title, align] (col)}
+										<th class="px-3 py-2 {align} cursor-pointer select-none whitespace-nowrap hover:text-gray-800" on:click={() => setSqftSort(col)}>
+											{title}{sqftSort === col ? (sqftDesc ? ' ▼' : ' ▲') : ''}
+										</th>
+									{/each}
+								</tr>
+							</thead>
+							<tbody>
+								{#each sqftRows as r (r.key)}
+									<tr class="border-t border-gray-100 hover:bg-gray-50">
+										<td class="px-3 py-2">
+											<span class="font-mono font-medium">{r.label}</span>
+											{#if r.shared}<span class="badge-primary ml-1">shared</span>{/if}
+											<div class="text-xs text-gray-500 truncate max-w-[16rem]" title={r.names.join(', ')}>{r.names.join(', ')}</div>
+										</td>
+										<td class="px-3 py-2 text-right">{r.sqft}</td>
+										<td class="px-3 py-2 text-right">{r.rent > 0 ? formatCurrency(r.rent) : '—'}</td>
+										{#each r.months as m (m.month)}
+											<td class="px-3 py-2 text-right font-mono" title={`retained ${formatCurrency(m.retained)} + rent ${formatCurrency(m.rent)} = ${formatCurrency(m.storeRevenue)}`}>{perSqft(m.perSqft)}</td>
+										{/each}
+										<td class="px-3 py-2 text-right font-mono font-semibold">{perSqft(r.lastPerSqft)}</td>
+										<td class="px-3 py-2 text-right font-mono">{perSqft(r.avgPerSqft)}</td>
+										<td class="px-3 py-2 text-right font-mono {r.trendPct === null ? 'text-gray-400' : r.trendPct >= 0 ? 'text-emerald-600' : 'text-red-700'}">
+											{r.trendPct === null ? '—' : `${r.trendPct >= 0 ? '+' : ''}${r.trendPct.toFixed(0)}%`}
+										</td>
+										<td class="px-3 py-2 text-right font-mono">{formatCurrency(r.totalStoreRevenue)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+						{#if sqftRows.length === 0}
+							<p class="text-gray-500 text-center py-8">No booths on the floorplan yet — paint vendors on /floorplan to see revenue per sq ft.</p>
+						{/if}
+					</div>
+					<p class="text-xs text-gray-500 mt-2">Trend compares the mean of the latest 3 months with the 3 before (needs 6 months). Hover a month for the retained + rent breakdown.</p>
+				{/if}
+			</div>
+		{/if}
 
 		<!-- Daily View -->
 		{#if viewMode === 'daily'}
