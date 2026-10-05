@@ -16,6 +16,7 @@
 import { env } from '$env/dynamic/private';
 import { createLogger } from '$lib/server/logger';
 import type { VendorSalesData } from '$lib/server/db/schema';
+import { setVendorWebFlags } from './nrs-web-client';
 
 const log = createLogger('services:nrs-api');
 
@@ -316,14 +317,40 @@ export interface SaveVendorResult {
  * identity/contact fields stay owned by NRS (spec: NRS is source of truth for
  * vendor identity).
  */
+/**
+ * Whether saveVendorMeta may use the JSON `vendor/save` endpoint. OFF by
+ * default — see saveVendorMeta; the web-form path is used instead.
+ */
+export function isVendorSaveEnabled(): boolean {
+	return env.NRS_VENDOR_SAVE_ENABLED === 'true';
+}
+
 export async function saveVendorMeta(vendorId: number, patch: NrsVendorMetaPatch): Promise<SaveVendorResult> {
-	// KILL SWITCH (2026-10-05): vendor/save blanks fields that vendor/get does
-	// not return — Is Pass-Through, Pass-Through Vendor %, AR Customer ID —
-	// so a full-record merge still wipes them. Writes stay off until NRS
-	// either returns those fields on vendor/get or confirms save ignores
-	// omitted keys. Set NRS_VENDOR_SAVE_ENABLED=true to re-enable.
-	if (env.NRS_VENDOR_SAVE_ENABLED !== 'true') {
-		throw new Error('NRS vendor/save is disabled (it clears pass-through % / AR customer in NRS). Rent and booth info are not pushed to NRS until NRS fixes vendor/save.');
+	// 2026-10-05: the JSON `vendor/save` blanks fields that `vendor/get` does
+	// not return — Is Pass-Through, Pass-Through Vendor %, AR Customer ID,
+	// 1099 category — so even a full-record merge wipes them (33 vendors hit
+	// on the first prod sync). Until NRS fixes that, metadata is written
+	// through the AP Vendor Management WEB FORM, which round-trips every
+	// field. Set NRS_VENDOR_SAVE_ENABLED=true to go back to the API path.
+	if (!isVendorSaveEnabled()) {
+		const before = await getVendorDetail(vendorId);
+		if (!before) throw new Error(`saveVendorMeta: NRS vendor ${vendorId} not found`);
+		const r = await setVendorWebFlags(vendorId, {
+			meta: {
+				meta13: patch.meta13,
+				meta72: patch.meta72,
+				meta73: patch.meta73,
+				meta74: patch.meta74
+			}
+		});
+		const unexpected = Object.keys(r.changed).filter((k) => !/^frmMeta(13|72|73|74)$/.test(k));
+		if (unexpected.length > 0) {
+			log.error({ vendorId, unexpected, changed: r.changed }, 'NRS web vendor save changed fields it should not have');
+			throw new Error(`NRS web save for ${vendorId} changed unexpected fields: ${unexpected.join(', ')}`);
+		}
+		const after = await getVendorDetail(vendorId);
+		if (!after) throw new Error(`saveVendorMeta: vendor ${vendorId} vanished after save`);
+		return { saved: true, detail: after, raw: { via: 'web-form', changed: Object.keys(r.changed) } };
 	}
 	const current = await getVendorDetail(vendorId);
 	if (!current) throw new Error(`saveVendorMeta: NRS vendor ${vendorId} not found`);

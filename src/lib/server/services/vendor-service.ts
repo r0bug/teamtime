@@ -401,6 +401,8 @@ export interface SyncFromNrsResult {
 	/** Booth metadata (details / size & location / floorplan flag) pushed to NRS. */
 	boothPushed: number;
 	boothPushFailed: number;
+	/** Booth pushes skipped because NRS vendor writes are switched off. */
+	boothPushDisabled: number;
 }
 
 /**
@@ -452,6 +454,7 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 	let rentMirrored = 0;
 	let boothPushed = 0;
 	let boothPushFailed = 0;
+	let boothPushDisabled = 0;
 
 	// TeamTime is the source of truth for floorplan data: after each vendor is
 	// reconciled, push its booth metadata to NRS if NRS has drifted.
@@ -462,6 +465,7 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 		const outcome = await reconcileBoothMeta(v, detail, boothSummaries);
 		if (outcome === 'pushed') boothPushed++;
 		else if (outcome === 'failed') boothPushFailed++;
+		else if (outcome === 'disabled') boothPushDisabled++;
 	};
 
 	for (const summary of nrsVendors) {
@@ -567,10 +571,10 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 
 	const skipped = nrsVendors.length - created - enriched - filteredOut;
 	log.info(
-		{ created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept, rentMirrored, boothPushed, boothPushFailed },
+		{ created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept, rentMirrored, boothPushed, boothPushFailed, boothPushDisabled },
 		'NRS sync complete'
 	);
-	return { created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept, rentMirrored, boothPushed, boothPushFailed };
+	return { created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept, rentMirrored, boothPushed, boothPushFailed, boothPushDisabled };
 }
 
 /**

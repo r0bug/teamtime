@@ -188,7 +188,7 @@ export async function mirrorRentFromNrs(
 
 // ── Booth details / floorplan ───────────────────────────────────────────────
 
-export type BoothPushOutcome = 'pushed' | 'unchanged' | 'failed' | 'unlinked';
+export type BoothPushOutcome = 'pushed' | 'unchanged' | 'failed' | 'unlinked' | 'disabled';
 
 /** The values TeamTime wants NRS to hold for this vendor right now. */
 export function desiredBoothMeta(vendor: Pick<Vendor, 'nrsVendorId' | 'boothNumber'>, summaries: Map<string, BoothSummary>): BoothMetaValues {
@@ -264,6 +264,8 @@ export interface BoothPushResult {
 	pushed: number;
 	unchanged: number;
 	failed: number;
+	/** Would have pushed, but NRS writes are switched off. */
+	disabled: number;
 }
 
 /**
@@ -276,7 +278,7 @@ export async function pushBoothMetaForNrsVendors(
 	changedByUserId: string | null = null
 ): Promise<BoothPushResult> {
 	const ids = [...new Set(nrsVendorIds.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
-	const result: BoothPushResult = { checked: 0, pushed: 0, unchanged: 0, failed: 0 };
+	const result: BoothPushResult = { checked: 0, pushed: 0, unchanged: 0, failed: 0, disabled: 0 };
 	if (ids.length === 0) return result;
 
 	const rows = await db
@@ -301,6 +303,7 @@ export async function pushBoothMetaForNrsVendors(
 		const outcome = await reconcileBoothMeta(v, detail, summaries, changedByUserId);
 		if (outcome === 'pushed') result.pushed++;
 		else if (outcome === 'failed') result.failed++;
+		else if (outcome === 'disabled') result.disabled++;
 		else result.unchanged++;
 	}
 	return result;

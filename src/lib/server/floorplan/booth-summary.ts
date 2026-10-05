@@ -174,7 +174,7 @@ export function formatBoothMeta(
 	if (zones.length) details.push(`Zone: ${zones.join(', ')}`);
 	if (s.pools.length) details.push(`Pools: ${s.pools.join(', ')}`);
 	if (levels.length) details.push(`Level: ${levels.join(', ')}`);
-	const meta72 = `${details.join(' | ')}\n${MANAGED_NOTE}`;
+	const meta72 = `${details.join(' | ')} | ${MANAGED_NOTE}`;
 
 	const footprints = s.plans.map((p) => {
 		const [minX, minY, maxX, maxY] = p.bbox;

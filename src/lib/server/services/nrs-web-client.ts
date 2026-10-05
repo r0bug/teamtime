@@ -435,6 +435,111 @@ export async function getVendorWebFlags(vendorId: number): Promise<VendorWebFlag
 }
 
 /**
+ * Capture every submittable field of an NRS web form (text/hidden inputs,
+ * textareas, selected <select> options, CHECKED checkboxes/radios) so a
+ * change can be POSTed back without disturbing anything else. Unchecked
+ * boxes are omitted, exactly as a browser would.
+ */
+function decodeAttr(v: string): string {
+	// Attribute values are HTML-escaped by NRS; posting them back verbatim
+	// would double-encode (bit us once: "Michelle &amp; Miranda").
+	return v
+		.replace(/&mdash;/g, '—')
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&#0?39;/g, "'")
+		.replace(/&amp;/g, '&');
+}
+
+function captureFormFields(html: string): Record<string, string> {
+	const body = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+	const out: Record<string, string> = {};
+	for (const m of body.matchAll(/<input[^>]*name=["']([^"']+)["'][^>]*>/gi)) {
+		const tag = m[0];
+		const name = m[1];
+		const type = (tag.match(/type=["']([^"']+)["']/i)?.[1] ?? 'text').toLowerCase();
+		const value = decodeAttr(tag.match(/value=["']([^"']*)["']/i)?.[1] ?? '');
+		if (type === 'submit' || type === 'button' || type === 'file') continue;
+		if (type === 'checkbox' || type === 'radio') {
+			if (/\bchecked\b/i.test(tag)) out[name] = value || '1';
+			continue;
+		}
+		out[name] = value;
+	}
+	for (const m of body.matchAll(/<select[^>]*name=["']([^"']+)["'][^>]*>([\s\S]*?)<\/select>/gi)) {
+		const opt = m[2].match(/<option\s+([^>]*\bselected\b[^>]*)>/i);
+		out[m[1]] = opt ? (opt[1].match(/value=["']([^"']*)["']/i)?.[1] ?? '') : '';
+	}
+	for (const m of body.matchAll(/<textarea[^>]*name=["']([^"']+)["'][^>]*>([\s\S]*?)<\/textarea>/gi)) {
+		out[m[1]] = (parseTextarea(body, m[1]) ?? '');
+	}
+	return out;
+}
+
+export interface VendorWebFlagsUpdate {
+	isPassThrough?: boolean;
+	passThroughPercent?: number | null; // null/undefined = leave as is
+	arCustomerId?: string | null;        // null = clear
+	inactive?: boolean;
+	/** Vendor metadata (Booth Rent / Details / Size & Location / floorplan flag). */
+	meta?: { meta13?: number; meta72?: string | null; meta73?: string | null; meta74?: boolean };
+	/** Escape hatch: raw frmHead* overrides (e.g. repairing a mangled contact). */
+	rawFields?: Record<string, string>;
+}
+
+/**
+ * Set the pass-through / AR-customer flags on a vendor via the NRS AP Vendor
+ * Management web form — the only write path for these fields: the JSON API's
+ * vendor/save ignores them and, worse, blanks them. Reads the form, overrides
+ * only the given fields, POSTs the whole form back, re-reads, and returns the
+ * new flags plus a diff of every captured field so callers can prove nothing
+ * else moved.
+ */
+export async function setVendorWebFlags(
+	vendorId: number,
+	update: VendorWebFlagsUpdate
+): Promise<{ flags: VendorWebFlags | null; changed: Record<string, [string, string]> }> {
+	const path = `ap/apVendorManagement?form=${vendorId}`;
+	const beforeHtml = await authedGet(path, 'frmHeadInactive');
+	if (!beforeHtml.includes('frmHeadInactive')) throw new Error(`NRS vendor ${vendorId} form not found`);
+	const before = captureFormFields(beforeHtml);
+
+	const fields: Record<string, string> = { ...before, ReturnTo: '', form: String(vendorId), go: '1' };
+	if (update.isPassThrough !== undefined) {
+		if (update.isPassThrough) fields['frmHeadIsPassThrough'] = '1';
+		else delete fields['frmHeadIsPassThrough'];
+	}
+	if (update.passThroughPercent !== undefined && update.passThroughPercent !== null) {
+		fields['frmHeadPassThroughVendorPercent'] = update.passThroughPercent.toFixed(2);
+	}
+	if (update.arCustomerId !== undefined) fields['frmHeadArCustomerId'] = update.arCustomerId ?? '';
+	if (update.inactive !== undefined) {
+		if (update.inactive) fields['frmHeadInactive'] = '1';
+		else delete fields['frmHeadInactive'];
+	}
+	if (update.meta) {
+		const m = update.meta;
+		if (m.meta13 !== undefined) fields['frmMeta13'] = m.meta13 > 0 ? String(Number(m.meta13.toFixed(2))) : '';
+		if (m.meta72 !== undefined) fields['frmMeta72'] = m.meta72 ?? '';
+		if (m.meta73 !== undefined) fields['frmMeta73'] = m.meta73 ?? '';
+		if (m.meta74 !== undefined) fields['frmMeta74'] = m.meta74 ? '1' : '0';
+	}
+	for (const [k, v] of Object.entries(update.rawFields ?? {})) fields[k] = v;
+
+	await authedPostForm('ap/apVendorManagement?', fields);
+
+	const afterHtml = await authedGet(path, 'frmHeadInactive');
+	const after = captureFormFields(afterHtml);
+	const changed: Record<string, [string, string]> = {};
+	for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) {
+		if ((before[k] ?? '') !== (after[k] ?? '')) changed[k] = [before[k] ?? '', after[k] ?? ''];
+	}
+	log.info({ vendorId, update, changed: Object.keys(changed) }, 'NRS web: vendor flags updated');
+	return { flags: await getVendorWebFlags(vendorId), changed };
+}
+
+/**
  * Fetch web flags for many vendors with a small concurrency limit.
  * Vendors that fail to parse are omitted from the returned Map.
  */

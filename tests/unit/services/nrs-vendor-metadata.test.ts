@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+const { setVendorWebFlags } = vi.hoisted(() => ({ setVendorWebFlags: vi.fn() }));
+vi.mock('$lib/server/services/nrs-web-client', () => ({ setVendorWebFlags }));
 const mockEnv = vi.hoisted((): Record<string, string> => ({ NRS_API_KEY: 'test-key', NRS_STORE_ID: '20', NRS_VENDOR_SAVE_ENABLED: 'true' }));
 vi.mock('$env/dynamic/private', () => ({ env: mockEnv }));
 
@@ -96,12 +98,25 @@ describe('saveVendorMeta', () => {
 	});
 });
 
-describe('saveVendorMeta kill switch', () => {
-	it('refuses to write unless NRS_VENDOR_SAVE_ENABLED=true', async () => {
+describe('saveVendorMeta write path', () => {
+	it('uses the NRS web form (never vendor/save) unless NRS_VENDOR_SAVE_ENABLED=true', async () => {
 		mockEnv.NRS_VENDOR_SAVE_ENABLED = 'false';
 		try {
-			await expect(saveVendorMeta(17009, { meta13: 5 })).rejects.toThrow(/disabled/);
+			setVendorWebFlags.mockResolvedValueOnce({ flags: null, changed: { frmMeta13: ['0', '5'] } });
+			const r = await saveVendorMeta(17009, { meta13: 5 });
+			expect(setVendorWebFlags).toHaveBeenCalledWith(17009, { meta: { meta13: 5, meta72: undefined, meta73: undefined, meta74: undefined } });
 			expect(calls.filter((c) => c.url.endsWith('/vendor/save'))).toHaveLength(0);
+			expect(r.raw).toMatchObject({ via: 'web-form' });
+		} finally {
+			mockEnv.NRS_VENDOR_SAVE_ENABLED = 'true';
+		}
+	});
+
+	it('refuses a web save that touched anything beyond the meta fields', async () => {
+		mockEnv.NRS_VENDOR_SAVE_ENABLED = 'false';
+		try {
+			setVendorWebFlags.mockResolvedValueOnce({ flags: null, changed: { frmMeta13: ['0', '5'], frmHeadContact: ['a', 'b'] } });
+			await expect(saveVendorMeta(17009, { meta13: 5 })).rejects.toThrow(/unexpected fields/);
 		} finally {
 			mockEnv.NRS_VENDOR_SAVE_ENABLED = 'true';
 		}

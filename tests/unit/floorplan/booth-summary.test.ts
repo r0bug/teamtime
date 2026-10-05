@@ -56,7 +56,8 @@ describe('formatBoothMeta', () => {
 		).get('17009');
 		const m = formatBoothMeta(summary, { boothNumber: '12' });
 		expect(m.meta74).toBe(true);
-		expect(m.meta72).toContain('Booth #12 | 2 sq ft | Zone: Main | Pools: Jewelry Case');
+		expect(m.meta72).toContain('Booth #12 | 2 sq ft | Zone: Main | Pools: Jewelry Case | Managed');
+		expect(m.meta72).not.toContain('\n');
 		expect(m.meta72).toContain('Managed by TeamTime floorplan');
 		expect(m.meta73).toBe('2 sq ft, 2 ft x 1 ft footprint, grid (10,20)-(11,20), zone Main, plan "Yakima Finds"; Shared pool space: Jewelry Case');
 	});
