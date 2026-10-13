@@ -285,6 +285,27 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		return !isNaN(d.getTime()) && d >= startDate && d <= endDate;
 	};
 
+	// Older audit rows only stored the employee's user id; resolve names for those.
+	const idsToName = new Set<string>();
+	for (const c of rawChanges) {
+		for (const d of [c.afterData, c.beforeData]) {
+			if (d && !str(d.employeeName)) {
+				const id = str(d.employeeId) ?? str(d.userId);
+				if (id) idsToName.add(id);
+			}
+		}
+	}
+	const nameById = new Map<string, string>();
+	if (idsToName.size > 0) {
+		const rows = await db
+			.select({ id: users.id, name: users.name })
+			.from(users)
+			.where(inArray(users.id, [...idsToName]));
+		for (const r of rows) nameById.set(r.id, r.name);
+	}
+	const employeeOf = (d: Record<string, unknown>) =>
+		str(d.employeeName) ?? nameById.get(str(d.employeeId) ?? str(d.userId) ?? '') ?? null;
+
 	const changes = rawChanges
 		.filter((c) => {
 			const a = c.afterData ?? {};
@@ -307,7 +328,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 				when: toPacificDateTimeString(c.createdAt),
 				by: c.actorName ?? (str(a.source) === 'ai_edit' ? 'Office Manager (AI)' : 'System'),
 				what: `${isShift ? 'Shift' : 'Time entry'} ${verb}`,
-				employee: str(a.employeeName) ?? str(b.employeeName) ?? '—',
+				employee: employeeOf(a) ?? employeeOf(b) ?? '—',
 				before: verb === 'added' ? null : `${fmtDt(fromStart)} → ${fmtDt(fromEnd)}`,
 				after: verb === 'deleted' ? null : `${fmtDt(toStart)} → ${fmtDt(toEnd)}`,
 				reason: str(a.reason) ?? str(a.notes) ?? null
