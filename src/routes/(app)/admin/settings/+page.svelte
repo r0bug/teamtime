@@ -12,6 +12,7 @@
 	$: managersCanResetPins = data.settings['managers_can_reset_pins'] === 'true';
 	$: siteTitle = data.settings['site_title'] || 'TeamTime';
 	$: clockOutGracePeriod = parseInt(data.settings['clock_out_grace_period_minutes'] || '30', 10);
+	$: targetPerSqft = Number(data.settings['floorplan_target_per_sqft']) > 0 ? Number(data.settings['floorplan_target_per_sqft']) : 3;
 
 	// Break allowance config
 	$: breakAllowanceRaw = data.settings['break_allowance_config'];
@@ -352,6 +353,42 @@
 						</div>
 					</form>
 				</div>
+			</div>
+		</div>
+
+		<div class="card mt-6">
+			<div class="card-header">
+				<h2 class="font-semibold">Floorplan</h2>
+			</div>
+			<div class="card-body">
+				<form method="POST" action="?/updateTargetPerSqft" use:enhance={() => {
+					return async ({ update }) => {
+						await update();
+						await invalidateAll();
+					};
+				}} class="space-y-3">
+					<div>
+						<label for="targetPerSqft" class="font-medium text-sm">Target store revenue per sq ft (monthly)</label>
+						<p class="text-xs text-gray-500 mt-1">
+							Store revenue = retained share of a booth's sales + its rent. Hovering a booth on the floorplan shows how much more sales or rent it needs to reach this.
+						</p>
+					</div>
+					<div class="flex items-center space-x-2">
+						<span class="text-sm text-gray-500">$</span>
+						<input
+							type="number"
+							id="targetPerSqft"
+							name="targetPerSqft"
+							value={targetPerSqft}
+							min="0.01"
+							max="1000"
+							step="0.01"
+							class="input w-24"
+						/>
+						<span class="text-sm text-gray-500">/ sq ft</span>
+						<button type="submit" class="btn-primary text-sm">Save</button>
+					</div>
+				</form>
 			</div>
 		</div>
 

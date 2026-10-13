@@ -1,6 +1,6 @@
 <!--
   VendorCombobox - searchable "pick a vendor" input for the floorplan paint
-  toolbar. Type part of a name or NRS id to filter; arrow keys + Enter select;
+  toolbar. Type part of a name, vendor code or NRS id to filter; arrow keys + Enter select;
   Esc closes. `value` is the NRS vendor id as a string ('' = none).
 -->
 <script lang="ts">
@@ -79,7 +79,7 @@
 					on:mousedown|preventDefault={() => choose(v)}
 					on:mouseenter={() => (highlight = i)}
 				>
-					<span class="truncate">{v.displayName} <span class="text-gray-400">({v.nrsVendorId})</span></span>
+					<span class="truncate">{v.displayName} <span class="text-gray-400">({v.inventoryCodePrefix ? `${v.inventoryCodePrefix} · ` : ''}{v.nrsVendorId})</span></span>
 					<span class="text-xs text-gray-500 whitespace-nowrap">{vendorHint(v)}</span>
 				</li>
 			{/each}

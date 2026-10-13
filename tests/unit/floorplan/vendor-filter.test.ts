@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { isBoothVendor, placeableVendors, matchVendor, vendorHint, type VendorOption } from '$lib/floorplan/vendor-filter';
 
 const v = (o: Partial<VendorOption>): VendorOption => ({
-	nrsVendorId: 1, displayName: 'X', vendorPaymentPercent: null, monthlyRentCents: null, placed: false, ...o
+	nrsVendorId: 1, displayName: 'X', inventoryCodePrefix: null, vendorPaymentPercent: null, monthlyRentCents: null, placed: false, ...o
 });
 
 describe('isBoothVendor', () => {
@@ -38,6 +38,11 @@ describe('matchVendor / vendorHint', () => {
 		expect(matchVendor(a, '1700')).toBe(true);
 		expect(matchVendor(a, 'zzz')).toBe(false);
 		expect(matchVendor(a, '  ')).toBe(true);
+	});
+	it('matches on the vendor code', () => {
+		const g = v({ nrsVendorId: 17286, displayName: 'Geanette Strosahl', inventoryCodePrefix: 'GSE' });
+		expect(matchVendor(g, 'gse')).toBe(true);
+		expect(matchVendor(g, 'GSE')).toBe(true);
 	});
 	it('renders rent, percent and placement', () => {
 		expect(vendorHint(v({ monthlyRentCents: 17500, vendorPaymentPercent: 87, placed: true }))).toBe('$175/mo · 87% · on floor');

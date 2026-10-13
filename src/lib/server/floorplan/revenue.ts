@@ -40,6 +40,8 @@ export interface BoothOccupant {
 	grossSales: number;
 	storeShare: number;
 	rent: number;
+	/** NRS "Vendor Payment %" (vendor's share of gross), when known. */
+	vendorPaymentPercent?: number | null;
 }
 
 export interface BoothEconomics {
@@ -54,6 +56,8 @@ export interface BoothEconomics {
 	rent: number;
 	storeRevenue: number;
 	perSqft: number | null;
+	/** Store's share of gross sales (0–1): actual when there were sales, else from the configured split. */
+	retainedRate: number | null;
 }
 
 // drizzle 0.29 + postgres-js may return jsonb as a JSON string.
@@ -115,6 +119,9 @@ export function summarizeBooth(
 	const storeShare = occupants.reduce((a, o) => a + o.storeShare, 0);
 	const rent = occupants.reduce((a, o) => a + o.rent, 0);
 	const storeRevenue = storeShare + rent;
+	const pcts = occupants.map((o) => o.vendorPaymentPercent).filter((p): p is number => p !== null && p !== undefined);
+	const retainedRate =
+		grossSales > 0 ? storeShare / grossSales : pcts.length ? 1 - pcts.reduce((a, p) => a + p, 0) / pcts.length / 100 : null;
 	return {
 		monthLabel,
 		shared: occupants.length > 1 || poolNames.length > 0,
@@ -125,7 +132,8 @@ export function summarizeBooth(
 		storeShare,
 		rent,
 		storeRevenue,
-		perSqft: sqft > 0 ? storeRevenue / sqft : null
+		perSqft: sqft > 0 ? storeRevenue / sqft : null,
+		retainedRate
 	};
 }
 
@@ -158,7 +166,8 @@ export async function boothEconomicsLastMonth(
 						nrsVendorId: vendors.nrsVendorId,
 						displayName: vendors.displayName,
 						code: vendors.inventoryCodePrefix,
-						monthlyRentCents: vendors.monthlyRentCents
+						monthlyRentCents: vendors.monthlyRentCents,
+						vendorPaymentPercent: vendors.vendorPaymentPercent
 					})
 					.from(vendors)
 					.where(inArray(vendors.nrsVendorId, ids))
@@ -192,7 +201,8 @@ export async function boothEconomicsLastMonth(
 			name: v?.displayName ?? `NRS vendor ${id}`,
 			grossSales: Number(sale?.gross ?? 0),
 			storeShare: Number(sale?.retained ?? 0),
-			rent: (v?.monthlyRentCents ?? 0) / 100
+			rent: (v?.monthlyRentCents ?? 0) / 100,
+			vendorPaymentPercent: v?.vendorPaymentPercent != null ? Number(v.vendorPaymentPercent) : null
 		};
 	});
 	// Rent payers first, then by sales — the person on the lease leads the list.

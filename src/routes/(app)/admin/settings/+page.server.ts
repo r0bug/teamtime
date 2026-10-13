@@ -3,6 +3,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { db, appSettings } from '$lib/server/db';
 import { eq } from 'drizzle-orm';
 import { isManager } from '$lib/server/auth/roles';
+import { TARGET_PER_SQFT_KEY } from '$lib/server/floorplan/target';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!isManager(locals.user)) {
@@ -170,6 +171,37 @@ export const actions: Actions = {
 				.where(eq(appSettings.key, key));
 		} else {
 			await db.insert(appSettings).values({ key, value });
+		}
+
+		return { success: true };
+	},
+
+	updateTargetPerSqft: async ({ request, locals }) => {
+		if (!isManager(locals.user)) {
+			return fail(403, { error: 'Unauthorized' });
+		}
+
+		const formData = await request.formData();
+		const target = Number(formData.get('targetPerSqft')?.toString() ?? '');
+
+		if (!Number.isFinite(target) || target <= 0 || target > 1000) {
+			return fail(400, { error: 'Target must be a dollar amount above $0' });
+		}
+
+		const value = String(Math.round(target * 100) / 100);
+		const [existing] = await db
+			.select()
+			.from(appSettings)
+			.where(eq(appSettings.key, TARGET_PER_SQFT_KEY))
+			.limit(1);
+
+		if (existing) {
+			await db
+				.update(appSettings)
+				.set({ value, updatedAt: new Date() })
+				.where(eq(appSettings.key, TARGET_PER_SQFT_KEY));
+		} else {
+			await db.insert(appSettings).values({ key: TARGET_PER_SQFT_KEY, value });
 		}
 
 		return { success: true };

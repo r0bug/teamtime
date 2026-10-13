@@ -10,6 +10,8 @@
 export interface VendorOption {
 	nrsVendorId: number;
 	displayName: string;
+	/** NRS vendor code / inventory prefix, e.g. "GSE" — what staff usually type. */
+	inventoryCodePrefix: string | null;
 	/** % the vendor receives of gross sales (NRS "Vendor Payment %"), or null if unknown. */
 	vendorPaymentPercent: number | null;
 	monthlyRentCents: number | null;
@@ -30,11 +32,18 @@ export function placeableVendors<T extends VendorOption>(all: T[]): T[] {
 	return all.filter((v) => v.placed || isBoothVendor(v));
 }
 
-/** Case-insensitive match on name or NRS id; empty query matches everything. */
-export function matchVendor(v: Pick<VendorOption, 'nrsVendorId' | 'displayName'>, query: string): boolean {
+/** Case-insensitive match on name, vendor code or NRS id; empty query matches everything. */
+export function matchVendor(
+	v: Pick<VendorOption, 'nrsVendorId' | 'displayName'> & { inventoryCodePrefix?: string | null },
+	query: string
+): boolean {
 	const q = query.trim().toLowerCase();
 	if (!q) return true;
-	return v.displayName.toLowerCase().includes(q) || String(v.nrsVendorId).includes(q);
+	return (
+		v.displayName.toLowerCase().includes(q) ||
+		(v.inventoryCodePrefix ?? '').toLowerCase().includes(q) ||
+		String(v.nrsVendorId).includes(q)
+	);
 }
 
 /** One-line hint shown next to a vendor in the picker: "$175/mo · 87%" */

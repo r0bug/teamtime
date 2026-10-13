@@ -4,11 +4,13 @@
 	import { onDestroy } from 'svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import { formatCurrency } from '$lib/utils';
+	import { sqftTarget } from '$lib/floorplan/sqft-target';
 
 	interface BoothOccupant { nrsVendorId: number; code: string | null; name: string; grossSales: number; storeShare: number; rent: number }
 	interface Booth {
 		monthLabel: string; shared: boolean; poolNames: string[]; sqft: number; occupants: BoothOccupant[];
 		grossSales: number; storeShare: number; rent: number; storeRevenue: number; perSqft: number | null;
+		retainedRate: number | null;
 	}
 
 	export let planId: string;
@@ -18,6 +20,8 @@
 	/** anchor position in viewport coords */
 	export let clientX = 0;
 	export let clientY = 0;
+	/** $/sq ft goal: when set, the booth section shows the sales or rent needed to reach it (staff floorplan only). */
+	export let targetPerSqft: number | null = null;
 
 	let sources: Record<string, Record<string, unknown> | null> | null = null;
 	let booth: Booth | null = null;
@@ -25,6 +29,8 @@
 	let loading = false;
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let seq = 0;
+
+	$: target = booth && targetPerSqft ? sqftTarget(booth, targetPerSqft) : null;
 
 	const RESOLVE_DEBOUNCE_MS = 250;
 
@@ -122,6 +128,24 @@
 					<dt class="text-gray-400">store revenue</dt><dd class="font-mono">{formatCurrency(booth.storeRevenue)} <span class="text-gray-500">({booth.monthLabel})</span></dd>
 					<dt class="text-gray-400">per sq ft</dt><dd class="font-mono">{booth.perSqft === null ? '— (no cells)' : formatCurrency(booth.perSqft)}</dd>
 				</dl>
+				{#if target}
+					<div class="mt-1.5 border-t border-gray-700 pt-1.5">
+						{#if target.atTarget}
+							<div class="text-emerald-400">✓ at or above {formatCurrency(targetPerSqft ?? 0)} / sq ft</div>
+						{:else}
+							<div class="text-amber-300">To reach {formatCurrency(targetPerSqft ?? 0)} / sq ft ({formatCurrency(target.targetRevenue)}/mo): short {formatCurrency(target.gap)}</div>
+							<dl class="mt-0.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+								<dt class="text-gray-400">sales needed</dt>
+								<dd class="font-mono">
+									{#if target.salesNeeded === null}—{:else}{formatCurrency(target.salesNeeded)}/mo <span class="text-gray-500">(+{formatCurrency(Math.max(0, target.salesNeeded - booth.grossSales))})</span>{/if}
+								</dd>
+								<dt class="text-gray-400">or rent</dt>
+								<dd class="font-mono">{formatCurrency(target.rentNeeded)}/mo <span class="text-gray-500">(+{formatCurrency(target.rentNeeded - booth.rent)})</span></dd>
+							</dl>
+							<div class="text-gray-500 mt-0.5">each at the other's current level{booth.retainedRate !== null ? `; store keeps ${(booth.retainedRate * 100).toFixed(0)}% of sales` : ''}</div>
+						{/if}
+					</div>
+				{/if}
 			{:else}
 				<div class="text-red-400">{boothError}</div>
 			{/if}

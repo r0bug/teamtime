@@ -5,6 +5,7 @@ import { db, vendors, floorplanPools, type FloorplanPool } from '$lib/server/db'
 import { listPlans, getAttrDefs, queryCells } from '$lib/server/floorplan/core';
 import { canView, canBuild, viewerRank, visibleDefs, filterAttrsByRank, defsByKey } from '$lib/server/floorplan/permissions';
 import type { VendorOption } from '$lib/floorplan/vendor-filter';
+import { loadTargetPerSqft } from '$lib/server/floorplan/target';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');
@@ -16,7 +17,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	if (planId && !plan) throw error(404, 'Plan not found');
 
 	if (!plan) {
-		return { plans: [], plan: null, cells: [], attrDefs: [], vendorOptions: [], pools: [], canEdit: false, canBuild: false };
+		return { plans: [], plan: null, cells: [], attrDefs: [], vendorOptions: [], pools: [], canEdit: false, canBuild: false, targetPerSqft: null };
 	}
 
 	const rank = viewerRank(locals.user);
@@ -46,6 +47,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		.select({
 			nrsVendorId: vendors.nrsVendorId,
 			displayName: vendors.displayName,
+			inventoryCodePrefix: vendors.inventoryCodePrefix,
 			vendorPaymentPercent: vendors.vendorPaymentPercent,
 			monthlyRentCents: vendors.monthlyRentCents
 		})
@@ -55,6 +57,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const vendorOptions: VendorOption[] = vendorRows.map((v) => ({
 		nrsVendorId: v.nrsVendorId!,
 		displayName: v.displayName,
+		inventoryCodePrefix: v.inventoryCodePrefix,
 		vendorPaymentPercent: v.vendorPaymentPercent !== null ? Number(v.vendorPaymentPercent) : null,
 		monthlyRentCents: v.monthlyRentCents,
 		placed: placedIds.has(String(v.nrsVendorId))
@@ -68,7 +71,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		vendorOptions,
 		pools: poolRows.map((p) => ({ id: p.id, name: p.name, color: p.color, vendorIds: normalizeIds(p) })),
 		canEdit: true, // any staff-side user (vendor-portal users never reach here)
-		canBuild: canBuild(locals.user)
+		canBuild: canBuild(locals.user),
+		targetPerSqft: await loadTargetPerSqft()
 	};
 };
 

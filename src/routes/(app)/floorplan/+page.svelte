@@ -661,6 +661,7 @@
 				attrs={hoverAttrs}
 				clientX={hover.clientX}
 				clientY={hover.clientY}
+				targetPerSqft={data.targetPerSqft}
 			/>
 		{/if}
 
