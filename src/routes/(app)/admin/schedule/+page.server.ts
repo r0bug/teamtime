@@ -16,6 +16,21 @@ import {
 
 const log = createLogger('admin:schedule');
 
+function shiftSnapshot(s: typeof shifts.$inferSelect) {
+	return {
+		userId: s.userId,
+		locationId: s.locationId,
+		startTime: s.startTime.toISOString(),
+		endTime: s.endTime.toISOString(),
+		notes: s.notes
+	};
+}
+
+async function userName(userId: string): Promise<string | null> {
+	const [u] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId)).limit(1);
+	return u?.name ?? null;
+}
+
 function formatShortDate(date: Date): string {
 	return date.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' });
 }
@@ -215,13 +230,25 @@ export const actions: Actions = {
 		}
 
 		try {
-			await db.insert(shifts).values({
+			const [created] = await db.insert(shifts).values({
 				userId,
 				locationId: locationId || null,
 				startTime: parsePacificDatetime(startTime),
 				endTime: parsePacificDatetime(endTime),
 				notes: notes || null,
 				createdBy: locals.user?.id
+			}).returning();
+
+			await audit({
+				userId: locals.user!.id,
+				action: 'schedule_created',
+				entityType: 'schedule',
+				entityId: created.id,
+				afterData: {
+					...shiftSnapshot(created),
+					employeeName: await userName(created.userId),
+					affectedDate: toPacificDateString(created.startTime)
+				}
 			});
 
 			return { success: true, message: 'Shift created successfully' };
@@ -252,9 +279,9 @@ export const actions: Actions = {
 					entityType: 'schedule',
 					entityId: shiftId,
 					beforeData: {
-						userId: deleted.userId,
-						startTime: deleted.startTime.toISOString(),
-						endTime: deleted.endTime.toISOString()
+						...shiftSnapshot(deleted),
+						employeeName: await userName(deleted.userId),
+						affectedDate: toPacificDateString(deleted.startTime)
 					}
 				});
 			}
@@ -283,7 +310,10 @@ export const actions: Actions = {
 		}
 
 		try {
-			await db
+			const [before] = await db.select().from(shifts).where(eq(shifts.id, shiftId)).limit(1);
+			if (!before) return fail(404, { error: 'Shift not found' });
+
+			const [after] = await db
 				.update(shifts)
 				.set({
 					userId: userId || undefined,
@@ -293,7 +323,26 @@ export const actions: Actions = {
 					notes: notes || null,
 					updatedAt: new Date()
 				})
-				.where(eq(shifts.id, shiftId));
+				.where(eq(shifts.id, shiftId))
+				.returning();
+
+			// Past-shift edits feed payroll, so every change is logged with before/after.
+			await audit({
+				userId: locals.user!.id,
+				action: 'schedule_updated',
+				entityType: 'schedule',
+				entityId: shiftId,
+				beforeData: {
+					...shiftSnapshot(before),
+					employeeName: await userName(before.userId),
+					affectedDate: toPacificDateString(before.startTime)
+				},
+				afterData: {
+					...shiftSnapshot(after),
+					employeeName: await userName(after.userId),
+					affectedDate: toPacificDateString(after.startTime)
+				}
+			});
 
 			return { success: true, message: 'Shift updated successfully' };
 		} catch (error) {
