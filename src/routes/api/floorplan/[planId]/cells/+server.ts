@@ -20,6 +20,7 @@ import {
 import { vendorIdsAtCells } from '$lib/server/floorplan/booth-summary';
 import { pushBoothMetaForNrsVendors } from '$lib/server/services/vendor-nrs-metadata-service';
 import { createLogger } from '$lib/server/logger';
+import { captureBoothHistoryInBackground } from '$lib/server/floorplan/booth-history';
 
 const log = createLogger('api:floorplan:cells');
 
@@ -123,6 +124,8 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 	const touchedAfter = ops.filter((op) => op.key === 'vendor_id' && op.value !== null).map((op) => op.value as string);
 
 	const changedKeys = await applyOps(plan.id, ops);
+	// Occupancy changed → refresh this month's booth archive (async, best effort).
+	if (changedKeys.has('vendor_id') || changedKeys.has('pool')) captureBoothHistoryInBackground('save');
 
 	// Measurement flows up: totals, never deltas (spec §3.3).
 	for (const key of SUBSCRIBED_KEYS) {

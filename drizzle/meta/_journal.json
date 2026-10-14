@@ -57,6 +57,13 @@
       "when": 1791185712659,
       "tag": "0007_vendor_nrs_metadata_log",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1791965353912,
+      "tag": "0008_floorplan_booth_history",
+      "breakpoints": true
     }
   ]
 }

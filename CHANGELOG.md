@@ -4,6 +4,17 @@ All notable changes to the TeamTime project will be documented in this file.
 
 ## [Unreleased]
 
+### Admin → Revenue Calculator (`/admin/revenue-calculator`, admin only)
+- What-if calculator for booth economics: pick one or many vendors (search by code / name / NRS id, current and departed, min sq ft), choose a sales baseline (last month, 3/6/12-month average, trend projection, or manual) plus a growth %, then try rent levels. Each row shows today's rent/commission/store revenue vs the proposal, $/sq ft against the floorplan target, the rent that would hit the target at those sales, and the break-even sales between the two; totals row for the whole selection. Per-vendor overrides for sq ft, sales, rent and commission
+- **Rent ↔ commission sliding scale**: a straight line between two anchors (e.g. $0/sq ft at 40% → $4/sq ft at 10%), editable with sliders and saved as an admin setting (`revenue_calc_scale`, audited). Pure math in `src/lib/revenue-calc/model.ts`
+- **Floorplan booth archive** (`floorplan_booth_history`, migration `0008`): one row per month per booth — space (cell count), rent, commission, occupants — upserted by the floorplan cron, after any occupancy paint, and from a "Capture now" button; months with no rows are backfilled from saved floorplan snapshots. Vendors who leave or resize keep their history for what-ifs
+- `salesByVendorByMonth()` in `revenue-trends.ts` (gross + retained per vendor per month)
+
+### Payroll Timesheet — manager edits with a logged reason
+- `/admin/timesheet` gains edit / add / delete for time entries (manager role). Every write needs a reason and is audited (`time_entry_created|updated|deleted` with before/after, employee, affected date, reason) and stamps `updated_by`; adjusted rows carry a † marker on screen and in print. Validation: no future times, clock-out after clock-in, ≤ 24 h, no overlap, active entries can't be deleted
+- New **Change Log** section on the timesheet lists every manual time-entry and shift adjustment affecting the selected pay period (who, when, before → after, why) — visible to managers, who cannot open `/admin/audit-logs`
+- Schedule `createShift` / `updateShift` now audit (before/after snapshot, employee name, affected date)
+
 ### NRS vendor metadata via API
 - NRS added `metadata/list` and now returns/accepts custom vendor fields on `vendor/get` / `vendor/save`: Booth Rent (`meta13`), Booth Details (`meta72`), Booth Size and Location (`meta73`), Display in Teamtime Floorplan (`meta74`)
 - **Booth rent from TeamTime** — managers can change a vendor's monthly rent on the vendor page; a confirmation popup precedes the save, the value is pushed to NRS first (TT only updates once NRS confirms), and every change is logged with the manager's name in the new `vendor_nrs_metadata_log` table (visible as "Rent & NRS metadata history"). Rent edited in NRS is mirrored into TT on sync and logged as from-NRS

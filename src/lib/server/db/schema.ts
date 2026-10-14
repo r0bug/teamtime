@@ -4079,6 +4079,37 @@ export const floorplanSnapshots = pgTable('floorplan_snapshots', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
+// Monthly booth archive. One row per (month, booth): what space each vendor
+// (or shared pool) occupied, what rent they paid and what commission split
+// they were on. Captured by the floorplan cron, after floorplan saves and on
+// demand, always UPSERTING the current month so the row reflects the state at
+// the last capture in that month; earlier months are frozen. This is what
+// lets the revenue calculator run what-ifs on vendors who have since left or
+// changed size. Square footage is the cell count at capture time.
+export const floorplanBoothHistory = pgTable(
+	'floorplan_booth_history',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		month: text('month').notNull(), // 'YYYY-MM' (Pacific)
+		boothKey: text('booth_key').notNull(), // 'v:<nrsVendorId>' | 'p:<pool name>'
+		label: text('label').notNull(),
+		names: jsonb('names').$type<string[]>().notNull(),
+		vendorIds: jsonb('vendor_ids').$type<number[]>().notNull(),
+		shared: boolean('shared').notNull().default(false),
+		sqft: integer('sqft').notNull(),
+		rentCents: integer('rent_cents').notNull().default(0),
+		// Store's commission on gross sales (0-100), from the vendors' payment %.
+		commissionPercent: decimal('commission_percent', { precision: 5, scale: 2 }),
+		source: text('source').notNull().default('cron'), // 'cron' | 'save' | 'manual' | 'backfill'
+		capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => ({
+		monthBoothUq: unique('floorplan_booth_history_month_booth_uq').on(table.month, table.boothKey),
+		monthIdx: index('floorplan_booth_history_month_idx').on(table.month)
+	})
+);
+export type FloorplanBoothHistory = typeof floorplanBoothHistory.$inferSelect;
+
 export type FloorplanSnapshot = typeof floorplanSnapshots.$inferSelect;
 export type NewFloorplanSnapshot = typeof floorplanSnapshots.$inferInsert;
 export type FloorplanPool = typeof floorplanPools.$inferSelect;

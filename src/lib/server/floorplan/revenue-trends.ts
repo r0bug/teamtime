@@ -196,6 +196,50 @@ export function buildReport(
 }
 
 /** Latest snapshot per day → retained per vendor per YYYY-MM. */
+export interface VendorMonthSales {
+	gross: number;
+	retained: number;
+}
+
+/**
+ * Gross and store-retained sales per NRS vendor per month, from the daily
+ * sales snapshots (latest capture per day wins). Months are 'YYYY-MM'.
+ */
+export async function salesByVendorByMonth(months: string[]): Promise<Map<number, Map<string, VendorMonthSales>>> {
+	const out = new Map<number, Map<string, VendorMonthSales>>();
+	if (months.length === 0) return out;
+	const start = `${months[0]}-01`;
+	const [ey, em] = months[months.length - 1].split('-').map(Number);
+	const end = `${months[months.length - 1]}-${String(new Date(Date.UTC(ey, em, 0)).getUTCDate()).padStart(2, '0')}`;
+
+	const snaps = await db
+		.select({
+			saleDate: sql<string>`TO_CHAR(${salesSnapshots.saleDate}, 'YYYY-MM-DD')`,
+			vendors: salesSnapshots.vendors
+		})
+		.from(salesSnapshots)
+		.where(and(gte(salesSnapshots.saleDate, start), lte(salesSnapshots.saleDate, end)))
+		.orderBy(salesSnapshots.saleDate, salesSnapshots.capturedAt);
+
+	const latestByDay = new Map<string, VendorSalesData[]>();
+	for (const s of snaps) latestByDay.set(s.saleDate, s.vendors as VendorSalesData[]);
+
+	for (const [day, dayVendors] of latestByDay) {
+		const month = day.slice(0, 7);
+		for (const v of dayVendors) {
+			const id = parseInt(v.vendor_id, 10);
+			if (!Number.isFinite(id) || id === 0) continue;
+			const m = out.get(id) ?? new Map<string, VendorMonthSales>();
+			const cur = m.get(month) ?? { gross: 0, retained: 0 };
+			cur.gross += Number(v.total_sales ?? 0);
+			cur.retained += Number(v.retained_amount ?? 0);
+			m.set(month, cur);
+			out.set(id, m);
+		}
+	}
+	return out;
+}
+
 export async function retainedByVendorByMonth(months: string[]): Promise<Map<number, Map<string, number>>> {
 	const out = new Map<number, Map<string, number>>();
 	if (months.length === 0) return out;

@@ -10,6 +10,7 @@ import type { RequestHandler } from './$types';
 import { CRON_SECRET } from '$env/static/private';
 import { createLogger } from '$lib/server/logger';
 import { runFloorplanSync } from '$lib/server/floorplan/sync';
+import { captureBoothHistory } from '$lib/server/floorplan/booth-history';
 
 const log = createLogger('api:floorplan:cron');
 
@@ -50,7 +51,10 @@ export const GET: RequestHandler = async ({ request }) => {
 	}
 	try {
 		const result = await runFloorplanSync();
-		return json({ ok: true, ...result });
+		// Monthly booth archive (space, rent, commission per booth) for the
+		// revenue calculator's history and departed-vendor what-ifs.
+		const history = await captureBoothHistory('cron');
+		return json({ ok: true, ...result, boothHistory: history });
 	} catch (err) {
 		log.error({ err }, 'Floorplan sync failed');
 		return json({ error: 'Floorplan sync failed' }, { status: 500 });
