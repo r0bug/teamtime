@@ -67,6 +67,11 @@
 	let selected: Record<string, boolean> = Object.fromEntries(data.vendors.filter((v) => v.current).map((v) => [v.key, true]));
 	let expanded: Record<string, boolean> = {};
 	let sortBy: 'label' | 'today' | 'proposed' | 'sqft' | 'sales' = 'today';
+	// Column groups (the full table is wider than most screens)
+	let showToday = true;
+	let showProposal = true;
+	let showTargets = true;
+	let showHistoryAll = false;
 
 	$: visible = data.vendors.filter((v) => {
 		if (v.current ? !showCurrent : !showDeparted) return false;
@@ -531,94 +536,91 @@
 				{#if rows.length === 0}
 					<p class="text-center text-gray-500 py-8">Select one or more vendors to run the numbers.</p>
 				{:else}
+					<div class="flex flex-wrap items-center gap-3 text-xs text-gray-600">
+						<span>Show:</span>
+						<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showToday} /> Today</label>
+						<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showProposal} /> Proposal inputs</label>
+						<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showTargets} /> Targets &amp; break-even</label>
+						<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showHistoryAll} on:change={() => { for (const r of rows) expanded[r.v.key] = showHistoryAll; expanded = expanded; }} /> History for all</label>
+					</div>
 					<div class="overflow-x-auto -mx-4 sm:mx-0">
-						<table class="w-full text-sm min-w-[76rem]">
+						<table class="w-full text-sm">
 							<thead class="bg-gray-100 text-gray-600">
 								<tr>
-									<th class="px-2 py-2 text-left">Vendor</th>
-									<th class="px-2 py-2 text-right">Sq ft</th>
+									<th class="px-2 py-2 text-left">Vendor · sq ft</th>
 									<th class="px-2 py-2 text-right">Sales / mo</th>
-									<th class="px-2 py-2 text-right">Today</th>
-									<th class="px-2 py-2 text-right">Today $/sq ft</th>
-									<th class="px-2 py-2 text-right">Proposed rent</th>
-									<th class="px-2 py-2 text-right">Comm %</th>
-									<th class="px-2 py-2 text-right">Store / mo</th>
-									<th class="px-2 py-2 text-right">$ / sq ft</th>
-									<th class="px-2 py-2 text-right">Δ vs today</th>
-									<th class="px-2 py-2 text-right">Sales threshold</th>
-									<th class="px-2 py-2 text-right" title="Costs ÷ booth sq ft on the floor">To break-even {breakEven === null ? '' : `(${formatCurrency(breakEven)}/sq ft)`}</th>
-									<th class="px-2 py-2"></th>
+									{#if showToday}<th class="px-2 py-2 text-right">Today</th>{/if}
+									{#if showProposal}<th class="px-2 py-2 text-right">Proposal</th>{/if}
+									<th class="px-2 py-2 text-right">Result</th>
+									{#if showTargets}<th class="px-2 py-2 text-left">Targets</th>{/if}
+									<th class="px-1 py-2 w-8"></th>
 								</tr>
 							</thead>
 							<tbody>
 								{#each rows as r (r.v.key)}
 									<tr class="border-t border-gray-200 align-top">
 										<td class="px-2 py-2">
-											<div class="font-medium text-gray-900">{r.v.label}</div>
-											<div class="text-xs text-gray-500 truncate max-w-[10rem]">{r.v.names.join(', ')}</div>
-											{#if !r.v.current}<span class="badge-warning">departed</span>{/if}
+											<div class="font-medium text-gray-900">{r.v.label} {#if !r.v.current}<span class="badge-warning ml-1">departed</span>{/if}</div>
+											<div class="text-xs text-gray-500 truncate max-w-[11rem]">{r.v.names.join(', ')}</div>
+											<label class="mt-1 flex items-center gap-1 text-xs text-gray-500">
+												<input type="number" min="0" class="input w-16 py-0.5 text-right text-xs" placeholder={String(r.v.sqft)} bind:value={ov[r.v.key].sqft} on:input={() => (ov = ov)} aria-label="Square feet override" /> sq ft
+											</label>
 										</td>
 										<td class="px-2 py-2 text-right">
-											<input type="number" min="0" class="input w-20 py-0.5 text-right" placeholder={String(r.v.sqft)} bind:value={ov[r.v.key].sqft} on:input={() => (ov = ov)} />
+											<input type="number" min="0" step="50" class="input w-24 py-0.5 text-right" placeholder={r.baseline === null ? 'none' : String(applyGrowth(r.baseline, growthPct))} bind:value={ov[r.v.key].sales} on:input={() => (ov = ov)} aria-label="Monthly sales override" />
+											<div class="text-xs text-gray-500">{r.salesIsManual ? 'manual' : r.baseline === null ? 'no history' : modeLabels[mode].split(' (')[0].toLowerCase()}</div>
 										</td>
-										<td class="px-2 py-2 text-right">
-											<input type="number" min="0" step="50" class="input w-28 py-0.5 text-right" placeholder={r.baseline === null ? 'no history' : String(applyGrowth(r.baseline, growthPct))} bind:value={ov[r.v.key].sales} on:input={() => (ov = ov)} />
-											{#if r.baseline === null && !r.salesIsManual}<div class="text-xs text-amber-600">no sales history</div>{/if}
-										</td>
-										<td class="px-2 py-2 text-right text-gray-600 whitespace-nowrap">
-											<div>{money(r.v.rent)} rent <span class="text-gray-400">({money(r.curRentPerSqft)}/sq ft)</span></div>
-											<div>{pct(r.curComm)}{#if r.curCommDerived}<span class="text-gray-400" title="derived from last month's retained ÷ gross">*</span>{/if} comm = {money(r.cur.commission)}</div>
-											<div class="font-medium text-gray-900">{money(r.cur.storeRevenue)} / mo</div>
-										</td>
-										<td class="px-2 py-2 text-right">
-											<span class="text-lg font-semibold {r.cur.gapToTarget === 0 ? 'text-emerald-600' : 'text-amber-600'}">{money(r.cur.perSqft)}</span>
-											{#if r.cur.gapToTarget && r.cur.gapToTarget > 0}<div class="text-xs text-amber-600">short {money(r.cur.gapToTarget)}</div>{/if}
-										</td>
-										<td class="px-2 py-2 text-right">
-											<input type="number" min="0" step="0.25" class="input w-24 py-0.5 text-right" placeholder={String(applyGlobal ? globalRent : r.curRentPerSqft)} bind:value={ov[r.v.key].rent} on:input={() => (ov = ov)} />
-											<div class="text-xs text-gray-500">= {money(r.out.rent)}</div>
-											{#if r.rentForTarget !== null}
-												<button type="button" class="text-xs text-primary-600 hover:underline" title="Set rent so this booth hits the target at these sales" on:click={() => { ov[r.v.key].rent = String(r.rentForTarget); ov = ov; }}>
-													target needs {formatCurrency(r.rentForTarget)}
-												</button>
-											{/if}
-										</td>
-										<td class="px-2 py-2 text-right">
-											<input type="number" min="0" max="100" step="1" class="input w-20 py-0.5 text-right" placeholder={String(commissionAt(scale, r.rentPerSqft, r.curComm))} bind:value={ov[r.v.key].comm} on:input={() => (ov = ov)} />
-											<div class="text-xs text-gray-500">= {money(r.out.commission)}</div>
-										</td>
-										<td class="px-2 py-2 text-right font-medium text-gray-900">{money(r.out.storeRevenue)}</td>
-										<td class="px-2 py-2 text-right">
-											<span class={r.out.gapToTarget === 0 ? 'text-emerald-600 font-medium' : 'text-amber-600'}>{money(r.out.perSqft)}</span>
-											{#if r.out.gapToTarget && r.out.gapToTarget > 0}<div class="text-xs text-amber-600">short {money(r.out.gapToTarget)}</div>{/if}
-										</td>
-										<td class="px-2 py-2 text-right font-mono {r.delta > 0 ? 'text-emerald-600' : r.delta < 0 ? 'text-red-600' : 'text-gray-500'}">{signed(r.delta)}</td>
+										{#if showToday}
+											<td class="px-2 py-2 text-right text-xs text-gray-600 whitespace-nowrap">
+												<div class="text-base font-semibold {r.cur.gapToTarget === 0 ? 'text-emerald-600' : 'text-amber-600'}">{money(r.cur.perSqft)}<span class="text-xs font-normal text-gray-400">/sq ft</span></div>
+												<div>{money(r.cur.storeRevenue)} / mo</div>
+												<div>{money(r.v.rent)} rent · {pct(r.curComm)}{#if r.curCommDerived}<span class="text-gray-400" title="derived from last month's retained ÷ gross">*</span>{/if}</div>
+											</td>
+										{/if}
+										{#if showProposal}
+											<td class="px-2 py-2 text-right whitespace-nowrap">
+												<label class="flex items-center justify-end gap-1 text-xs text-gray-500">rent $/sq ft
+													<input type="number" min="0" step="0.25" class="input w-20 py-0.5 text-right" placeholder={String(applyGlobal ? globalRent : r.curRentPerSqft)} bind:value={ov[r.v.key].rent} on:input={() => (ov = ov)} aria-label="Rent per sq ft override" />
+												</label>
+												<label class="mt-1 flex items-center justify-end gap-1 text-xs text-gray-500">comm %
+													<input type="number" min="0" max="100" step="1" class="input w-20 py-0.5 text-right" placeholder={String(commissionAt(scale, r.rentPerSqft, r.curComm))} bind:value={ov[r.v.key].comm} on:input={() => (ov = ov)} aria-label="Commission override" />
+												</label>
+												<div class="text-xs text-gray-500 mt-1">= {money(r.out.rent)} + {money(r.out.commission)}</div>
+												{#if r.rentForTarget !== null && r.rentForTarget !== r.rentPerSqft}
+													<button type="button" class="text-xs text-primary-600 hover:underline" title="Set rent so this booth hits the target at these sales" on:click={() => { ov[r.v.key].rent = String(r.rentForTarget); ov = ov; }}>
+														target → {formatCurrency(r.rentForTarget)}/sq ft
+													</button>
+												{/if}
+											</td>
+										{/if}
 										<td class="px-2 py-2 text-right whitespace-nowrap">
-											{#if r.thresholdSales === null}
-												<span class="text-gray-400">—</span>
-											{:else}
-												<div class="font-medium {r.sales >= r.thresholdSales ? 'text-gray-900' : 'text-amber-600'}">{money(r.thresholdSales)}/mo</div>
-												<div class="text-xs text-gray-500">at −{stressPct}%: {r.stressRentIncrease > 0 ? `rent +${formatCurrency(r.stressRentIncrease)}` : 'no increase'}</div>
-											{/if}
+											<div class="text-base font-semibold {r.out.gapToTarget === 0 ? 'text-emerald-600' : 'text-amber-600'}">{money(r.out.perSqft)}<span class="text-xs font-normal text-gray-400">/sq ft</span></div>
+											<div class="font-medium text-gray-900">{money(r.out.storeRevenue)} / mo</div>
+											<div class="text-xs font-mono {r.delta > 0 ? 'text-emerald-600' : r.delta < 0 ? 'text-red-600' : 'text-gray-500'}">{signed(r.delta)} vs today</div>
+											{#if r.out.gapToTarget && r.out.gapToTarget > 0}<div class="text-xs text-amber-600">short {money(r.out.gapToTarget)} of target</div>{/if}
 										</td>
-										<td class="px-2 py-2 text-right whitespace-nowrap">
-											{#if r.beSalesNeeded === null || r.beRentIncrease === null}
-												<span class="text-gray-400">enter costs</span>
-											{:else if r.bePerSqftMet}
-												<span class="text-emerald-600 font-medium">✓ covers costs</span>
-												<div class="text-xs text-gray-500">needs {money(r.beSalesNeeded)} sales</div>
-											{:else}
-												<div class="text-xs text-gray-500">sales to {money(r.beSalesNeeded)}</div>
-												<div class="text-xs text-gray-500">or rent +{money(r.beRentIncrease)}</div>
-											{/if}
-										</td>
-										<td class="px-2 py-2 text-right">
+										{#if showTargets}
+											<td class="px-2 py-2 text-xs text-gray-700 whitespace-nowrap">
+												{#if r.thresholdSales !== null}
+													<div><span class="text-gray-500">threshold</span> <span class="font-medium {r.sales >= r.thresholdSales ? 'text-gray-900' : 'text-amber-600'}">{money(r.thresholdSales)}</span></div>
+													<div><span class="text-gray-500">at −{stressPct}%</span> {r.stressRentIncrease > 0 ? `rent +${formatCurrency(r.stressRentIncrease)}` : 'no increase'}</div>
+												{/if}
+												{#if r.beSalesNeeded === null || r.beRentIncrease === null}
+													<div class="text-gray-400">break-even: enter costs</div>
+												{:else if r.bePerSqftMet}
+													<div class="text-emerald-600">✓ covers costs (needs {money(r.beSalesNeeded)})</div>
+												{:else}
+													<div><span class="text-gray-500">break-even</span> sales {money(r.beSalesNeeded)} or rent +{money(r.beRentIncrease)}</div>
+												{/if}
+											</td>
+										{/if}
+										<td class="px-1 py-2 text-right">
 											<button type="button" class="btn-ghost btn-sm" on:click={() => { expanded[r.v.key] = !expanded[r.v.key]; }} aria-label="Toggle history for {r.v.label}">{expanded[r.v.key] ? '▴' : '▾'}</button>
 										</td>
 									</tr>
 									{#if expanded[r.v.key]}
 										<tr class="bg-gray-50">
-											<td colspan="13" class="px-3 py-2">
+											<td colspan={4 + (showToday ? 1 : 0) + (showProposal ? 1 : 0) + (showTargets ? 1 : 0)} class="px-3 py-2">
 												<div class="text-xs text-gray-600 mb-1">
 													History (oldest → newest). Vendor keeps {money(r.sales - r.out.commission)} of {money(r.sales)} under the proposal.
 													Processing fees on these sales ≈ {money(round2((r.sales * (Number(processingPct) || 0)) / 100))} ({processingPct}%), already in the break-even rate.
@@ -645,19 +647,13 @@
 								{/each}
 							</tbody>
 							<tfoot class="bg-gray-800 text-white">
-								<tr>
-									<td class="px-2 py-2 font-semibold">Totals ({rows.length})</td>
-									<td class="px-2 py-2 text-right">{newTotals.sqft}</td>
+								<tr class="align-top">
+									<td class="px-2 py-2 font-semibold">Totals ({rows.length})<div class="text-xs font-normal text-gray-300">{newTotals.sqft} sq ft</div></td>
 									<td class="px-2 py-2 text-right">{money(newTotals.sales)}</td>
-									<td class="px-2 py-2 text-right">{money(curTotals.storeRevenue)}</td>
-									<td class="px-2 py-2 text-right font-semibold">{money(curTotals.perSqft)}</td>
-									<td class="px-2 py-2 text-right">{money(newTotals.rent)}</td>
-									<td class="px-2 py-2 text-right">{money(newTotals.commission)}</td>
-									<td class="px-2 py-2 text-right font-bold">{money(newTotals.storeRevenue)}</td>
-									<td class="px-2 py-2 text-right">{money(newTotals.perSqft)}</td>
-									<td class="px-2 py-2 text-right font-mono {newTotals.storeRevenue - curTotals.storeRevenue >= 0 ? 'text-emerald-300' : 'text-red-300'}">{signed(round2(newTotals.storeRevenue - curTotals.storeRevenue))}</td>
-									<td class="px-2 py-2 text-right text-xs text-gray-300">at −{stressPct}%: +{money(round2(rows.reduce((a, r) => a + r.stressRentIncrease, 0)))}</td>
-									<td class="px-2 py-2 text-right text-xs text-gray-300">{breakEven === null ? '' : `rent +${formatCurrency(round2(rows.reduce((a, r) => a + (r.beRentIncrease ?? 0), 0)))}`}</td>
+									{#if showToday}<td class="px-2 py-2 text-right"><div class="font-semibold">{money(curTotals.perSqft)}<span class="text-xs font-normal text-gray-300">/sq ft</span></div><div class="text-xs text-gray-300">{money(curTotals.storeRevenue)} / mo</div></td>{/if}
+									{#if showProposal}<td class="px-2 py-2 text-right text-xs text-gray-300">{money(newTotals.rent)} rent<br />{money(newTotals.commission)} comm</td>{/if}
+									<td class="px-2 py-2 text-right"><div class="font-bold">{money(newTotals.perSqft)}<span class="text-xs font-normal text-gray-300">/sq ft</span></div><div class="text-xs text-gray-300">{money(newTotals.storeRevenue)} / mo</div><div class="text-xs font-mono {newTotals.storeRevenue - curTotals.storeRevenue >= 0 ? 'text-emerald-300' : 'text-red-300'}">{signed(round2(newTotals.storeRevenue - curTotals.storeRevenue))}</div></td>
+									{#if showTargets}<td class="px-2 py-2 text-xs text-gray-300">at −{stressPct}%: rent +{money(round2(rows.reduce((a, r) => a + r.stressRentIncrease, 0)))}{#if breakEven !== null}<br />break-even: rent +{money(round2(rows.reduce((a, r) => a + (r.beRentIncrease ?? 0), 0)))}{/if}</td>{/if}
 									<td></td>
 								</tr>
 							</tfoot>
