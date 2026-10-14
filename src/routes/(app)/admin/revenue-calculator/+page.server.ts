@@ -14,6 +14,9 @@ import { laborByMonth } from '$lib/server/services/labor-cost';
 const log = createLogger('admin:revenue-calculator');
 const SCALE_KEY = 'revenue_calc_scale';
 const COSTS_KEY = 'store_monthly_costs';
+// Blended card-processing cost as % of pre-tax sales (Jul–Sep 2026 statements ÷ NRS sales = 1.66%).
+const PROCESSING_KEY = 'payment_processing_pct';
+const DEFAULT_PROCESSING_PCT = 1.66;
 const HISTORY_MONTHS = 12;
 
 export interface CalcVendor {
@@ -57,6 +60,12 @@ async function loadCosts(): Promise<CostLine[]> {
 	}
 }
 
+async function loadProcessingPct(): Promise<number> {
+	const [row] = await db.select().from(appSettings).where(eq(appSettings.key, PROCESSING_KEY)).limit(1);
+	const n = Number(row?.value);
+	return Number.isFinite(n) && n >= 0 && n <= 100 ? n : DEFAULT_PROCESSING_PCT;
+}
+
 async function upsertSetting(key: string, value: string): Promise<void> {
 	const [existing] = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
 	if (existing) await db.update(appSettings).set({ value, updatedAt: new Date() }).where(eq(appSettings.key, key));
@@ -68,9 +77,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	const months = recentMonths(HISTORY_MONTHS);
 	const thisMonth = currentMonth();
-	const [scale, costs, target, live, history, sales, labor] = await Promise.all([
+	const [scale, costs, processingPct, target, live, history, sales, labor] = await Promise.all([
 		loadScale(),
 		loadCosts(),
+		loadProcessingPct(),
 		loadTargetPerSqft(),
 		liveBooths(),
 		loadBoothHistory(),
@@ -132,6 +142,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {
 		scale,
 		costs,
+		processingPct,
 		target,
 		/** Labor $ per month, aligned with `months` (oldest → newest). */
 		labor: months.map((m) => labor.get(m) ?? 0),
@@ -189,16 +200,19 @@ export const actions: Actions = {
 			return fail(400, { error: 'Costs could not be read' });
 		}
 		const costs = normalizeCosts(parsed);
+		const pctRaw = Number(form.get('processingPct'));
+		const processingPct = Number.isFinite(pctRaw) && pctRaw >= 0 && pctRaw <= 100 ? Math.round(pctRaw * 100) / 100 : DEFAULT_PROCESSING_PCT;
 		try {
-			const before = await loadCosts();
+			const before = { costs: await loadCosts(), processingPct: await loadProcessingPct() };
 			await upsertSetting(COSTS_KEY, JSON.stringify(costs));
+			await upsertSetting(PROCESSING_KEY, String(processingPct));
 			await audit({
 				userId: locals.user!.id,
 				action: 'setting_changed',
 				entityType: 'setting',
 				entityId: COSTS_KEY,
-				beforeData: { costs: before },
-				afterData: { costs }
+				beforeData: before,
+				afterData: { costs, processingPct }
 			});
 			return { success: true, message: `Saved ${costs.length} cost line(s)` };
 		} catch (error) {

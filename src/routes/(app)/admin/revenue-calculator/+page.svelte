@@ -41,13 +41,17 @@
 		costs = costs.filter((_, idx) => idx !== i);
 	}
 	// Average monthly labor from the same months as the sales baseline (3 → 2 → 1 complete months with hours).
+	// Card processing as % of pre-tax sales, applied to the store-wide baseline so it scales with the scenario.
+	let processingPct: number = data.processingPct;
+	let includeProcessing = true;
 	let includeLabor = true;
 	let laborMonths: 1 | 3 | 6 | 12 = 3;
 	$: laborKnown = data.labor.map((v, i) => ({ v, m: data.months[i] })).filter((p) => p.v > 0);
 	$: laborWindow = laborKnown.slice(-laborMonths);
 	$: avgLabor = laborWindow.length ? round2(laborWindow.reduce((a, p) => a + p.v, 0) / laborWindow.length) : 0;
 	$: enteredCosts = totalCosts(costs.filter((c) => c.name.trim() && Number.isFinite(Number(c.amount))).map((c) => ({ name: c.name, amount: Number(c.amount) })));
-	$: monthlyCosts = round2(enteredCosts + (includeLabor ? avgLabor : 0));
+	$: processingCost = round2((allCurrentRevenue.sales * (Number(processingPct) || 0)) / 100);
+	$: monthlyCosts = round2(enteredCosts + (includeLabor ? avgLabor : 0) + (includeProcessing ? processingCost : 0));
 	const perSqft = (amount: number) => (floorSqft > 0 ? formatCurrency(amount / floorSqft) : '—');
 	$: floorSqft = data.vendors.filter((v) => v.current).reduce((a, v) => a + v.sqft, 0);
 	$: breakEven = breakEvenPerSqft(monthlyCosts, floorSqft);
@@ -292,6 +296,7 @@
 			</div>
 			<form method="POST" action="?/saveCosts" use:enhance={() => { savingCosts = true; return enhanceWith('Save')(); }}>
 				<input type="hidden" name="costs" value={JSON.stringify(costs)} />
+				<input type="hidden" name="processingPct" value={processingPct} />
 				<button type="submit" class="btn-primary btn-sm" disabled={savingCosts}>Save costs</button>
 			</form>
 		</div>
@@ -328,6 +333,18 @@
 					{:else}
 						<span class="text-xs text-amber-600">no clocked hours with rates in the last {data.months.length} months</span>
 					{/if}
+				</span>
+			</div>
+			<div class="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3">
+				<label class="flex items-center gap-2 text-sm text-gray-800">
+					<input type="checkbox" bind:checked={includeProcessing} />
+					<span>Payment processing</span>
+					<input type="number" min="0" max="100" step="0.01" class="input py-0.5 w-24 text-right" bind:value={processingPct} aria-label="Processing rate" />
+					<span>% of pre-tax sales</span>
+				</label>
+				<span class="text-sm text-gray-700">
+					<span class="font-semibold">{money(processingCost)}</span> / month <span class="text-xs text-gray-500">({perSqft(includeProcessing ? processingCost : 0)}/sq ft)</span>
+					<span class="text-xs text-gray-500">on {money(allCurrentRevenue.sales)} store-wide {modeLabels[mode].split(' (')[0].toLowerCase()} sales · Jul–Sep 2026 statements ÷ sales = 1.66%</span>
 				</span>
 			</div>
 			<div class="mt-2 text-right text-sm text-gray-900">Total monthly costs <span class="font-semibold">{money(monthlyCosts)}</span> = <span class="font-semibold">{perSqft(monthlyCosts)}/sq ft</span> break-even across {floorSqft} booth sq ft</div>
@@ -583,6 +600,7 @@
 											<td colspan="12" class="px-3 py-2">
 												<div class="text-xs text-gray-600 mb-1">
 													History (oldest → newest). Vendor keeps {money(r.sales - r.out.commission)} of {money(r.sales)} under the proposal.
+													Processing fees on these sales ≈ {money(round2((r.sales * (Number(processingPct) || 0)) / 100))} ({processingPct}%), already in the break-even rate.
 													{#if r.breakEven !== null} Break-even vs today: {money(r.breakEven)} in monthly sales.{/if}
 												</div>
 												<div class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs text-gray-800 flex flex-wrap items-start gap-2">
