@@ -11,7 +11,7 @@ import { audit } from '$lib/server/services/audit-service';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('admin:revenue-calculator');
-export const SCALE_KEY = 'revenue_calc_scale';
+const SCALE_KEY = 'revenue_calc_scale';
 const HISTORY_MONTHS = 12;
 
 export interface CalcVendor {
