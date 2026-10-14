@@ -9,6 +9,7 @@ import { liveBooths, loadBoothHistory, boothCommission, captureBoothHistory, cur
 import { normalizeScale, normalizeCosts, type RentScale, type CostLine } from '$lib/revenue-calc/model';
 import { audit } from '$lib/server/services/audit-service';
 import { createLogger } from '$lib/server/logger';
+import { laborByMonth } from '$lib/server/services/labor-cost';
 
 const log = createLogger('admin:revenue-calculator');
 const SCALE_KEY = 'revenue_calc_scale';
@@ -67,13 +68,16 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	const months = recentMonths(HISTORY_MONTHS);
 	const thisMonth = currentMonth();
-	const [scale, costs, target, live, history, sales] = await Promise.all([
+	const [scale, costs, target, live, history, sales, labor] = await Promise.all([
 		loadScale(),
 		loadCosts(),
 		loadTargetPerSqft(),
 		liveBooths(),
 		loadBoothHistory(),
-		salesByVendorByMonth([...months, thisMonth])
+		salesByVendorByMonth([...months, thisMonth]),
+		// Same calculation as the Sales page's "Total Labor": hours × hourly rate
+		// for users flagged includeInLaborCost, per complete calendar month.
+		laborByMonth(months)
 	]);
 
 	const liveByKey = new Map(live.booths.map((b) => [b.key, b]));
@@ -129,6 +133,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		scale,
 		costs,
 		target,
+		/** Labor $ per month, aligned with `months` (oldest → newest). */
+		labor: months.map((m) => labor.get(m) ?? 0),
 		months,
 		thisMonth,
 		vendors: vendorsOut,

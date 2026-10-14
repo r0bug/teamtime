@@ -40,7 +40,15 @@
 	function removeCost(i: number) {
 		costs = costs.filter((_, idx) => idx !== i);
 	}
-	$: monthlyCosts = totalCosts(costs.filter((c) => c.name.trim() && Number.isFinite(Number(c.amount))).map((c) => ({ name: c.name, amount: Number(c.amount) })));
+	// Average monthly labor from the same months as the sales baseline (3 → 2 → 1 complete months with hours).
+	let includeLabor = true;
+	let laborMonths: 1 | 3 | 6 | 12 = 3;
+	$: laborKnown = data.labor.map((v, i) => ({ v, m: data.months[i] })).filter((p) => p.v > 0);
+	$: laborWindow = laborKnown.slice(-laborMonths);
+	$: avgLabor = laborWindow.length ? round2(laborWindow.reduce((a, p) => a + p.v, 0) / laborWindow.length) : 0;
+	$: enteredCosts = totalCosts(costs.filter((c) => c.name.trim() && Number.isFinite(Number(c.amount))).map((c) => ({ name: c.name, amount: Number(c.amount) })));
+	$: monthlyCosts = round2(enteredCosts + (includeLabor ? avgLabor : 0));
+	const perSqft = (amount: number) => (floorSqft > 0 ? formatCurrency(amount / floorSqft) : '—');
 	$: floorSqft = data.vendors.filter((v) => v.current).reduce((a, v) => a + v.sqft, 0);
 	$: breakEven = breakEvenPerSqft(monthlyCosts, floorSqft);
 
@@ -280,7 +288,7 @@
 		<div class="card-header flex flex-wrap items-center justify-between gap-2">
 			<div>
 				<h2 class="text-lg font-semibold text-gray-900">Fixed monthly costs</h2>
-				<p class="text-sm text-gray-500">Utilities, insurance, labor, building rent… Total ÷ booth sq ft = the break-even rate above.</p>
+				<p class="text-sm text-gray-500">Utilities, insurance, building rent… Labor is added automatically from clocked hours. Total ÷ booth sq ft = the break-even rate above.</p>
 			</div>
 			<form method="POST" action="?/saveCosts" use:enhance={() => { savingCosts = true; return enhanceWith('Save')(); }}>
 				<input type="hidden" name="costs" value={JSON.stringify(costs)} />
@@ -293,14 +301,36 @@
 					<div class="flex items-center gap-2">
 						<input class="input flex-1" placeholder="e.g. Utilities" bind:value={c.name} />
 						<input type="number" min="0" step="1" class="input w-32 text-right" bind:value={c.amount} />
+						<span class="w-24 text-right text-xs text-gray-500 whitespace-nowrap" title="This line ÷ booth sq ft on the floor">{perSqft(Number(c.amount) || 0)}/sq ft</span>
 						<button type="button" class="btn-ghost btn-sm" aria-label="Remove cost" on:click={() => removeCost(i)}>✕</button>
 					</div>
 				{/each}
 			</div>
 			<div class="mt-3 flex items-center justify-between">
 				<button type="button" class="btn-secondary btn-sm" on:click={addCost}>+ Add cost</button>
-				<span class="text-sm text-gray-700">Total <span class="font-semibold">{money(monthlyCosts)}</span> / month</span>
+				<span class="text-sm text-gray-700">Entered <span class="font-semibold">{money(enteredCosts)}</span> / month <span class="text-xs text-gray-500">({perSqft(enteredCosts)}/sq ft)</span></span>
 			</div>
+			<div class="mt-4 pt-3 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3">
+				<label class="flex items-center gap-2 text-sm text-gray-800">
+					<input type="checkbox" bind:checked={includeLabor} />
+					<span>Average labor (hours × hourly rate, same as the Sales page)</span>
+					<select class="input py-0.5 w-auto" bind:value={laborMonths}>
+						<option value={3}>3-month avg</option>
+						<option value={1}>last month</option>
+						<option value={6}>6-month avg</option>
+						<option value={12}>12-month avg</option>
+					</select>
+				</label>
+				<span class="text-sm text-gray-700">
+					<span class="font-semibold">{money(avgLabor)}</span> / month <span class="text-xs text-gray-500">({perSqft(includeLabor ? avgLabor : 0)}/sq ft)</span>
+					{#if laborWindow.length}
+						<span class="text-xs text-gray-500">({laborWindow.map((p) => `${monthLabel(p.m)} ${formatCurrency(p.v)}`).join(' · ')})</span>
+					{:else}
+						<span class="text-xs text-amber-600">no clocked hours with rates in the last {data.months.length} months</span>
+					{/if}
+				</span>
+			</div>
+			<div class="mt-2 text-right text-sm text-gray-900">Total monthly costs <span class="font-semibold">{money(monthlyCosts)}</span> = <span class="font-semibold">{perSqft(monthlyCosts)}/sq ft</span> break-even across {floorSqft} booth sq ft</div>
 		</div>
 	</div>
 

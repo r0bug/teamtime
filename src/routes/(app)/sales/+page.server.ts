@@ -1,9 +1,10 @@
 // Sales Dashboard - Server-side data loading
 import type { PageServerLoad } from './$types';
 import { db, salesSnapshots, timeEntries, users } from '$lib/server/db';
-import { desc, gte, lte, and, or, isNull, gt, lt, eq, sql } from 'drizzle-orm';
+import { desc, gte, lte, and, or, eq, sql } from 'drizzle-orm';
 import { createPacificDateTime, getPacificToday } from '$lib/server/utils/timezone';
 import { revenuePerSqftReport } from '$lib/server/floorplan/revenue-trends';
+import { loadLaborEntries, laborForPacificDay } from '$lib/server/services/labor-cost';
 
 const ALLOWED_RANGE_DAYS = [7, 14, 30, 60, 90, 180, 365, 730] as const;
 const DEFAULT_RANGE_DAYS = 30;
@@ -67,49 +68,12 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	}
 
 	// ---- Labor cost per day (30-day window) ----
-	// Pull every time entry overlapping the window, join user for rate + include flag,
-	// then bucket labor by Pacific-day overlap in JS.
+	// Shared with the revenue calculator: hours × hourly rate for users flagged
+	// includeInLaborCost, bucketed by Pacific-day overlap (labor-cost.ts).
 	const windowStart = createPacificDateTime(thirtyDaysAgoStr, 0, 0);
 	const windowEnd = new Date(); // up to "now" — no future labor
-
-	const entryRows = await db
-		.select({
-			clockIn: timeEntries.clockIn,
-			clockOut: timeEntries.clockOut,
-			hourlyRate: users.hourlyRate
-		})
-		.from(timeEntries)
-		.innerJoin(users, eq(timeEntries.userId, users.id))
-		.where(
-			and(
-				lt(timeEntries.clockIn, windowEnd),
-				or(isNull(timeEntries.clockOut), gt(timeEntries.clockOut, windowStart)),
-				eq(users.includeInLaborCost, true)
-			)
-		);
-
-	const nowMs = Date.now();
-	type ParsedEntry = { startMs: number; endMs: number; rate: number };
-	const parsedEntries: ParsedEntry[] = [];
-	for (const e of entryRows) {
-		const rate = e.hourlyRate ? parseFloat(e.hourlyRate) : NaN;
-		if (!Number.isFinite(rate) || rate <= 0) continue;
-		const startMs = e.clockIn.getTime();
-		const endMs = Math.min(e.clockOut ? e.clockOut.getTime() : nowMs, nowMs);
-		if (endMs <= startMs) continue;
-		parsedEntries.push({ startMs, endMs, rate });
-	}
-
-	function laborForDay(dateKey: string): number {
-		const dayStart = createPacificDateTime(dateKey, 0, 0).getTime();
-		const dayEnd = createPacificDateTime(dateKey, 24, 0).getTime();
-		let total = 0;
-		for (const e of parsedEntries) {
-			const overlap = Math.min(e.endMs, dayEnd) - Math.max(e.startMs, dayStart);
-			if (overlap > 0) total += (overlap / 3_600_000) * e.rate;
-		}
-		return total;
-	}
+	const laborEntries = await loadLaborEntries(windowStart, windowEnd);
+	const laborForDay = (dateKey: string) => laborForPacificDay(laborEntries, dateKey);
 
 	// Convert to array sorted by date ascending for charts
 	const salesData = Array.from(dailyData.entries())
