@@ -9,12 +9,17 @@ import {
 	rentPerSqftForTarget,
 	salesForTarget,
 	breakEvenSales,
+	rentIncreaseForTarget,
+	normalizeCosts,
+	totalCosts,
+	breakEvenPerSqft,
 	baselineSales,
 	applyGrowth,
 	totals
 } from '$lib/revenue-calc/model';
 
-const scale = { rentLow: 0, commLow: 40, rentHigh: 4, commHigh: 10 };
+const scale = { mode: 'linear' as const, rentLow: 0, commLow: 40, rentHigh: 4, commHigh: 10, minComm: 0 };
+const step = { mode: 'step' as const, rentLow: 0, commLow: 13, rentHigh: 30, commHigh: 3, minComm: 3 };
 
 describe('scale', () => {
 	it('interpolates commission linearly and clamps outside the anchors', () => {
@@ -29,9 +34,20 @@ describe('scale', () => {
 		expect(rentAt(scale, 40)).toBe(0);
 		expect(rentAt(scale, 10)).toBe(4);
 	});
-	it('normalizes bad input and swaps reversed anchors', () => {
+	it('normalizes bad input, swaps reversed anchors and enforces the floor', () => {
 		expect(normalizeScale(null)).toEqual(DEFAULT_SCALE);
-		expect(normalizeScale({ rentLow: 5, rentHigh: 1, commLow: 'x' as unknown as number })).toMatchObject({ rentLow: 1, rentHigh: 5, commLow: 40 });
+		expect(normalizeScale({ rentLow: 5, rentHigh: 1, commLow: 'x' as unknown as number })).toMatchObject({ rentLow: 1, rentHigh: 5, commLow: 13, mode: 'step' });
+		expect(normalizeScale({ commHigh: 1, minComm: 3 }).commHigh).toBe(3);
+	});
+	it('step mode keeps the vendor rate until the premium threshold, then the floor', () => {
+		expect(commissionAt(step, 0, 13)).toBe(13);
+		expect(commissionAt(step, 12, 25)).toBe(25); // consignor on 75/25 stays there
+		expect(commissionAt(step, 29.99, 13)).toBe(13);
+		expect(commissionAt(step, 400 / 12, 13)).toBe(3); // $400/mo cabinet, 12 sq ft
+		expect(commissionAt(step, 5, null)).toBe(13); // unknown rate → scale default
+		expect(commissionAt(step, 0, 1)).toBe(3); // never below the floor
+		expect(rentAt(step, 3)).toBe(30);
+		expect(rentAt(step, 13)).toBe(0);
 	});
 	it('previews evenly spaced steps', () => {
 		const steps = scaleSteps(scale, 4);
@@ -70,6 +86,18 @@ describe('targets and break-even', () => {
 		expect(salesForTarget(100, 3, 1, 25)).toBe(800);
 		expect(salesForTarget(100, 3, 1, 0)).toBeNull();
 	});
+	it('says how much rent must rise when sales fall short of the target', () => {
+		// 100 sqft, target $3 → $300 needed; rent $1/sqft = $100; 13% of $1,000 = $130 → short $70
+		expect(rentIncreaseForTarget(100, 3, 1, 13, 1000)).toBe(70);
+		expect(rentIncreaseForTarget(100, 3, 1, 13, 5000)).toBe(0);
+	});
+	it('turns fixed costs into a break-even per sq ft', () => {
+		const costs = normalizeCosts([{ name: 'Rent', amount: '5000' }, { name: ' Utilities ', amount: 800.456 }, { name: '', amount: 1 }, { name: 'bad', amount: 'x' }]);
+		expect(costs).toEqual([{ name: 'Rent', amount: 5000 }, { name: 'Utilities', amount: 800.46 }]);
+		expect(totalCosts(costs)).toBe(5800.46);
+		expect(breakEvenPerSqft(5800.46, 3000)).toBe(1.93);
+		expect(breakEvenPerSqft(100, 0)).toBeNull();
+	});
 	it('finds where two options earn the store the same', () => {
 		// 100 sqft: A $2/sqft @ 25% vs B $0 @ 40%: 200 + .25s = .40s → s = 1333.33
 		expect(breakEvenSales(100, { rentPerSqft: 2, commissionPct: 25 }, { rentPerSqft: 0, commissionPct: 40 })).toBe(1333.33);
@@ -81,6 +109,9 @@ describe('baseline', () => {
 	const hist = [100, 200, null, 300, 400, 500];
 	it('picks last / averages over known months', () => {
 		expect(baselineSales(hist, 'last')).toBe(500);
+		expect(baselineSales(hist, 'auto')).toBe(400);
+		expect(baselineSales([null, 100, 300], 'auto')).toBe(200); // 2 months → 2-month avg
+		expect(baselineSales([null, null, 300], 'auto')).toBe(300); // 1 month → that month
 		expect(baselineSales(hist, 'avg3')).toBe(400);
 		expect(baselineSales(hist, 'avg12')).toBe(300);
 	});

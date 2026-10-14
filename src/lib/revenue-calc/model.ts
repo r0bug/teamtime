@@ -9,13 +9,21 @@
 //   per sq ft             = store revenue / sq ft
 
 export interface RentScale {
+	/** 'step': commission stays at the vendor's normal rate (commLow when unknown)
+	 *  until rent reaches rentHigh $/sq ft, then drops to commHigh (the floor).
+	 *  'linear': straight line between the two anchors. */
+	mode: 'step' | 'linear';
 	rentLow: number; // $/sq ft/month
-	commLow: number; // % of gross (0-100)
-	rentHigh: number;
-	commHigh: number;
+	commLow: number; // % of gross (0-100) — the normal rate
+	rentHigh: number; // premium rent threshold $/sq ft/month
+	commHigh: number; // % at/above the threshold
+	/** Never go below this — covers card processing fees. */
+	minComm: number;
 }
 
-export const DEFAULT_SCALE: RentScale = { rentLow: 0, commLow: 40, rentHigh: 4, commHigh: 10 };
+// Normal booth split is 87/13; a vendor paying premium rent (e.g. $400/mo for
+// a 12 sq ft cabinet = $33/sq ft) only owes 3% to cover card fees.
+export const DEFAULT_SCALE: RentScale = { mode: 'step', rentLow: 0, commLow: 13, rentHigh: 30, commHigh: 3, minComm: 3 };
 
 export function normalizeScale(raw: Partial<RentScale> | null | undefined): RentScale {
 	const n = (v: unknown, d: number, lo: number, hi: number) => {
@@ -23,26 +31,43 @@ export function normalizeScale(raw: Partial<RentScale> | null | undefined): Rent
 		return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d;
 	};
 	const s: RentScale = {
+		mode: raw?.mode === 'linear' ? 'linear' : 'step',
 		rentLow: n(raw?.rentLow, DEFAULT_SCALE.rentLow, 0, 1000),
 		commLow: n(raw?.commLow, DEFAULT_SCALE.commLow, 0, 100),
 		rentHigh: n(raw?.rentHigh, DEFAULT_SCALE.rentHigh, 0, 1000),
-		commHigh: n(raw?.commHigh, DEFAULT_SCALE.commHigh, 0, 100)
+		commHigh: n(raw?.commHigh, DEFAULT_SCALE.commHigh, 0, 100),
+		minComm: n(raw?.minComm, DEFAULT_SCALE.minComm, 0, 100)
 	};
 	if (s.rentHigh < s.rentLow) [s.rentLow, s.rentHigh] = [s.rentHigh, s.rentLow];
+	s.commHigh = Math.max(s.commHigh, s.minComm);
+	s.commLow = Math.max(s.commLow, s.minComm);
 	return s;
 }
 
-/** Commission % the scale assigns to a rent level. */
-export function commissionAt(scale: RentScale, rentPerSqft: number): number {
-	const { rentLow, commLow, rentHigh, commHigh } = scale;
-	if (rentHigh === rentLow) return commLow;
-	const t = Math.min(1, Math.max(0, (rentPerSqft - rentLow) / (rentHigh - rentLow)));
-	return round2(commLow + (commHigh - commLow) * t);
+/**
+ * Commission % the scale assigns to a rent level. `normalComm` is the
+ * vendor's own rate today (used below the threshold in step mode); the
+ * scale's commLow stands in when it is unknown.
+ */
+export function commissionAt(scale: RentScale, rentPerSqft: number, normalComm: number | null = null): number {
+	const { rentLow, commLow, rentHigh, commHigh, minComm } = scale;
+	const base = normalComm !== null && Number.isFinite(normalComm) ? normalComm : commLow;
+	let c: number;
+	if (scale.mode === 'step') {
+		c = rentPerSqft >= rentHigh && rentHigh > 0 ? commHigh : base;
+	} else if (rentHigh === rentLow) {
+		c = commLow;
+	} else {
+		const t = Math.min(1, Math.max(0, (rentPerSqft - rentLow) / (rentHigh - rentLow)));
+		c = commLow + (commHigh - commLow) * t;
+	}
+	return round2(Math.max(minComm, c));
 }
 
 /** Rent $/sq ft the scale assigns to a commission % (inverse of commissionAt). */
 export function rentAt(scale: RentScale, commissionPct: number): number {
 	const { rentLow, commLow, rentHigh, commHigh } = scale;
+	if (scale.mode === 'step') return commissionPct <= commHigh ? rentHigh : rentLow;
 	if (commHigh === commLow) return rentLow;
 	const t = Math.min(1, Math.max(0, (commissionPct - commLow) / (commHigh - commLow)));
 	return round2(rentLow + (rentHigh - rentLow) * t);
@@ -57,6 +82,8 @@ export function scaleSteps(scale: RentScale, steps = 8): { rentPerSqft: number; 
 	}
 	return out;
 }
+
+export type BaselineMode = 'auto' | 'last' | 'avg3' | 'avg6' | 'avg12' | 'trend' | 'manual';
 
 export interface BoothTerms {
 	sqft: number;
@@ -102,6 +129,39 @@ export function salesForTarget(sqft: number, targetPerSqft: number, rentPerSqft:
 }
 
 /**
+ * Extra monthly rent needed to keep the booth at the target when sales are
+ * `monthlySales` (0 when sales already carry it). This is the "if sales fall
+ * below X, rent increases by Y" contract number.
+ */
+export function rentIncreaseForTarget(sqft: number, targetPerSqft: number, rentPerSqft: number, commissionPct: number, monthlySales: number): number {
+	if (sqft <= 0) return 0;
+	const storeRevenue = sqft * rentPerSqft + (Math.max(0, monthlySales) * clampPct(commissionPct)) / 100;
+	return round2(Math.max(0, targetPerSqft * sqft - storeRevenue));
+}
+
+export interface CostLine {
+	name: string;
+	amount: number;
+}
+
+export function normalizeCosts(raw: unknown): CostLine[] {
+	if (!Array.isArray(raw)) return [];
+	return raw
+		.map((c) => ({ name: String((c as CostLine)?.name ?? '').trim().slice(0, 80), amount: Number((c as CostLine)?.amount) }))
+		.filter((c) => c.name && Number.isFinite(c.amount) && c.amount >= 0)
+		.map((c) => ({ ...c, amount: round2(c.amount) }));
+}
+
+export function totalCosts(costs: CostLine[]): number {
+	return round2(costs.reduce((a, c) => a + c.amount, 0));
+}
+
+/** $/sq ft the booths must earn for store revenue to cover the monthly costs. */
+export function breakEvenPerSqft(monthlyCosts: number, totalSqft: number): number | null {
+	return totalSqft > 0 ? round2(monthlyCosts / totalSqft) : null;
+}
+
+/**
  * Gross monthly sales at which two rent/commission options earn the store the
  * same amount. Below it the higher-rent option earns more; above it the
  * higher-commission option does. Null when the options don't cross.
@@ -117,8 +177,6 @@ export function breakEvenSales(
 	return sales >= 0 ? round2(sales) : null;
 }
 
-export type BaselineMode = 'last' | 'avg3' | 'avg6' | 'avg12' | 'trend' | 'manual';
-
 /**
  * Baseline monthly sales from a history (oldest first, null = no data that
  * month). 'trend' fits a line through the last 6 known months and projects
@@ -130,6 +188,8 @@ export function baselineSales(history: (number | null)[], mode: BaselineMode): n
 	const lastN = (n: number) => known.slice(-n).map((p) => p.v);
 	const avg = (xs: number[]) => (xs.length ? round2(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
 	switch (mode) {
+		case 'auto': // 3-month average when available, else 2, else the one month there is
+			return avg(lastN(3));
 		case 'last':
 			return round2(known[known.length - 1].v);
 		case 'avg3':

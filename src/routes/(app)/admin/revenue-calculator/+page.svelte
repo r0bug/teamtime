@@ -10,8 +10,13 @@
 		baselineSales,
 		applyGrowth,
 		rentPerSqftForTarget,
+		rentIncreaseForTarget,
+		salesForTarget,
 		breakEvenSales,
 		totals,
+		totalCosts,
+		breakEvenPerSqft,
+		type CostLine,
 		round2,
 		type RentScale,
 		type BaselineMode
@@ -26,13 +31,30 @@
 	let savingScale = false;
 	$: steps = scaleSteps(scale, 8);
 
+	// ── Fixed monthly costs (utilities, insurance, labor…) ─────────────────
+	let costs: CostLine[] = data.costs.map((c) => ({ ...c }));
+	let savingCosts = false;
+	function addCost() {
+		costs = [...costs, { name: '', amount: 0 }];
+	}
+	function removeCost(i: number) {
+		costs = costs.filter((_, idx) => idx !== i);
+	}
+	$: monthlyCosts = totalCosts(costs.filter((c) => c.name.trim() && Number.isFinite(Number(c.amount))).map((c) => ({ name: c.name, amount: Number(c.amount) })));
+	$: floorSqft = data.vendors.filter((v) => v.current).reduce((a, v) => a + v.sqft, 0);
+	$: breakEven = breakEvenPerSqft(monthlyCosts, floorSqft);
+
+	// "If sales fall by X%" stress test for the contract threshold column.
+	let stressPct = 25;
+
 	// ── Selection ──────────────────────────────────────────────────────────
 	let search = '';
 	let showCurrent = true;
 	let showDeparted = true;
 	let minSqft = 0;
-	let selected: Record<string, boolean> = {};
+	let selected: Record<string, boolean> = Object.fromEntries(data.vendors.filter((v) => v.current).map((v) => [v.key, true]));
 	let expanded: Record<string, boolean> = {};
+	let sortBy: 'label' | 'today' | 'proposed' | 'sqft' | 'sales' = 'today';
 
 	$: visible = data.vendors.filter((v) => {
 		if (v.current ? !showCurrent : !showDeparted) return false;
@@ -56,9 +78,10 @@
 	}
 
 	// ── Scenario controls ──────────────────────────────────────────────────
-	let mode: BaselineMode = 'avg3';
+	let mode: BaselineMode = 'auto';
 	let growthPct = 0;
-	let globalRent = 2; // $/sq ft applied to every selected vendor unless overridden
+	let applyGlobal = false; // off: each vendor keeps today's rent unless overridden
+	let globalRent = 2; // $/sq ft applied to every selected vendor when applyGlobal is on
 	type Override = { sqft: string; sales: string; rent: string; comm: string };
 	let ov: Record<string, Override> = {};
 	function overrideFor(key: string): Override {
@@ -93,6 +116,11 @@
 		delta: number;
 		rentForTarget: number | null;
 		breakEven: number | null;
+		/** Sales below which the proposal no longer meets the target. */
+		thresholdSales: number | null;
+		/** Sales after the stress drop, and the rent increase needed then. */
+		stressedSales: number;
+		stressRentIncrease: number;
 	}
 
 	function buildRow(v: Vendor, o: Override | undefined): Row {
@@ -118,9 +146,9 @@
 		}
 		const cur = evaluate({ sqft, rentPerSqft: curRentPerSqft, commissionPct: curComm ?? 0, monthlySales: sales }, data.target);
 
-		const rentPerSqft = num(o?.rent ?? '') ?? globalRent;
+		const rentPerSqft = num(o?.rent ?? '') ?? (applyGlobal ? globalRent : curRentPerSqft);
 		const customComm = num(o?.comm ?? '');
-		const comm = customComm ?? commissionAt(scale, rentPerSqft);
+		const comm = customComm ?? commissionAt(scale, rentPerSqft, curComm);
 		const out = evaluate({ sqft, rentPerSqft, commissionPct: comm, monthlySales: sales }, data.target);
 
 		return {
@@ -139,17 +167,52 @@
 			out,
 			delta: round2(out.storeRevenue - cur.storeRevenue),
 			rentForTarget: rentPerSqftForTarget(sqft, data.target, sales, comm),
-			breakEven: curComm === null ? null : breakEvenSales(sqft, { rentPerSqft, commissionPct: comm }, { rentPerSqft: curRentPerSqft, commissionPct: curComm })
+			breakEven: curComm === null ? null : breakEvenSales(sqft, { rentPerSqft, commissionPct: comm }, { rentPerSqft: curRentPerSqft, commissionPct: curComm }),
+			thresholdSales: salesForTarget(sqft, data.target, rentPerSqft, comm),
+			stressedSales: round2(sales * (1 - stressPct / 100)),
+			stressRentIncrease: rentIncreaseForTarget(sqft, data.target, rentPerSqft, comm, sales * (1 - stressPct / 100))
 		};
 	}
 
-	$: rows = selectedVendors.map((v) => buildRow(v, ov[v.key] ?? overrideFor(v.key))) as Row[];
+	$: rows = sortRows(selectedVendors.map((v) => buildRow(v, ov[v.key] ?? overrideFor(v.key))) as Row[], sortBy);
 	// referenced so Svelte re-runs `rows` when these change
-	$: rows, scale, mode, growthPct, globalRent, ov;
+	$: rows, scale, mode, growthPct, globalRent, applyGlobal, ov, sortBy, stressPct;
+	$: allCurrentRevenue = totals(
+		data.vendors
+			.filter((v) => v.current)
+			.map((v) => {
+				const r = buildRow(v, undefined);
+				return { sqft: r.sqft, monthlySales: r.sales, outcome: r.cur };
+			})
+	);
+	$: allCurrentRevenue, mode, growthPct;
+
+	function contractClause(r: Row): string {
+		const rent = formatCurrency(r.out.rent);
+		const comm = `${round2(r.comm)}%`;
+		if (r.thresholdSales === null) return `Rent ${rent}/month; store commission ${comm} of gross sales.`;
+		const bump = formatCurrency(r.stressRentIncrease);
+		return (
+			`Rent ${rent}/month plus a ${comm} store commission on gross sales. ` +
+			`Monthly sales threshold: ${formatCurrency(r.thresholdSales)}. ` +
+			`If gross sales for a calendar month fall below the threshold, rent for the following month increases by the shortfall × ${comm}` +
+			` (at ${formatCurrency(r.stressedSales)} in sales, +${bump}/month), capped at ${formatCurrency(Math.max(0, data.target * r.sqft - r.out.rent))}.`
+		);
+	}
+	function copyClause(r: Row) {
+		navigator.clipboard?.writeText(contractClause(r)).then(() => notify.success('Clause copied'), () => notify.error('Could not copy'));
+	}
+
+	function sortRows(rs: Row[], by: typeof sortBy): Row[] {
+		const val = (r: Row) =>
+			by === 'today' ? (r.cur.perSqft ?? -1) : by === 'proposed' ? (r.out.perSqft ?? -1) : by === 'sqft' ? r.sqft : by === 'sales' ? r.sales : 0;
+		return [...rs].sort((a, b) => (by === 'label' ? a.v.label.localeCompare(b.v.label) : val(b) - val(a) || a.v.label.localeCompare(b.v.label)));
+	}
 	$: curTotals = totals(rows.map((r) => ({ sqft: r.sqft, monthlySales: r.sales, outcome: r.cur })));
 	$: newTotals = totals(rows.map((r) => ({ sqft: r.sqft, monthlySales: r.sales, outcome: r.out })));
 
 	const modeLabels: Record<BaselineMode, string> = {
+		auto: '3-month avg (2 or 1 if that is all there is)',
 		last: 'Last month',
 		avg3: '3-month avg',
 		avg6: '6-month avg',
@@ -170,6 +233,7 @@
 		return () => {
 			return async ({ result, update }: { result: any; update: () => Promise<void> }) => {
 				savingScale = false;
+				savingCosts = false;
 				if (result.type === 'success') {
 					notify.success(result.data?.message ?? `${label} done`);
 					await invalidateAll();
@@ -202,14 +266,60 @@
 		</p>
 	</div>
 
+	<!-- Store summary -->
+	<div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+		<div class="card"><div class="card-body py-3"><div class="text-xs text-gray-500">Monthly costs</div><div class="text-xl font-semibold text-gray-900">{money(monthlyCosts)}</div></div></div>
+		<div class="card"><div class="card-body py-3"><div class="text-xs text-gray-500">Booth sq ft on the floor</div><div class="text-xl font-semibold text-gray-900">{floorSqft}</div></div></div>
+		<div class="card"><div class="card-body py-3"><div class="text-xs text-gray-500">Break-even $/sq ft</div><div class="text-xl font-semibold {breakEven !== null && breakEven > data.target ? 'text-red-600' : 'text-gray-900'}">{money(breakEven)}</div><div class="text-xs text-gray-400">target {money(data.target)}</div></div></div>
+		<div class="card"><div class="card-body py-3"><div class="text-xs text-gray-500">Store revenue today ({modeLabels[mode].split(' (')[0]})</div><div class="text-xl font-semibold text-gray-900">{money(allCurrentRevenue.storeRevenue)}</div><div class="text-xs text-gray-400">{money(allCurrentRevenue.perSqft)}/sq ft</div></div></div>
+		<div class="card"><div class="card-body py-3"><div class="text-xs text-gray-500">Margin after costs</div><div class="text-xl font-semibold {allCurrentRevenue.storeRevenue - monthlyCosts >= 0 ? 'text-emerald-600' : 'text-red-600'}">{signed(round2(allCurrentRevenue.storeRevenue - monthlyCosts))}</div></div></div>
+	</div>
+
+	<!-- Costs -->
+	<div class="card">
+		<div class="card-header flex flex-wrap items-center justify-between gap-2">
+			<div>
+				<h2 class="text-lg font-semibold text-gray-900">Fixed monthly costs</h2>
+				<p class="text-sm text-gray-500">Utilities, insurance, labor, building rent… Total ÷ booth sq ft = the break-even rate above.</p>
+			</div>
+			<form method="POST" action="?/saveCosts" use:enhance={() => { savingCosts = true; return enhanceWith('Save')(); }}>
+				<input type="hidden" name="costs" value={JSON.stringify(costs)} />
+				<button type="submit" class="btn-primary btn-sm" disabled={savingCosts}>Save costs</button>
+			</form>
+		</div>
+		<div class="card-body">
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+				{#each costs as c, i}
+					<div class="flex items-center gap-2">
+						<input class="input flex-1" placeholder="e.g. Utilities" bind:value={c.name} />
+						<input type="number" min="0" step="1" class="input w-32 text-right" bind:value={c.amount} />
+						<button type="button" class="btn-ghost btn-sm" aria-label="Remove cost" on:click={() => removeCost(i)}>✕</button>
+					</div>
+				{/each}
+			</div>
+			<div class="mt-3 flex items-center justify-between">
+				<button type="button" class="btn-secondary btn-sm" on:click={addCost}>+ Add cost</button>
+				<span class="text-sm text-gray-700">Total <span class="font-semibold">{money(monthlyCosts)}</span> / month</span>
+			</div>
+		</div>
+	</div>
+
 	<!-- Scale -->
 	<div class="card">
 		<div class="card-header flex flex-wrap items-center justify-between gap-2">
 			<div>
 				<h2 class="text-lg font-semibold text-gray-900">Rent ↔ commission scale</h2>
-				<p class="text-sm text-gray-500">Straight line: more rent per sq ft, lower commission on sales.</p>
+				<p class="text-sm text-gray-500">
+					{#if scale.mode === 'step'}
+						Each vendor keeps their normal commission rate. Rent is optional; at or above the premium rent the store only takes the floor rate (card fees).
+					{:else}
+						Straight line between the two anchors: more rent per sq ft, lower commission on sales (never below the floor).
+					{/if}
+				</p>
 			</div>
 			<form method="POST" action="?/saveScale" use:enhance={() => { savingScale = true; return enhanceWith('Save')(); }}>
+				<input type="hidden" name="mode" value={scale.mode} />
+				<input type="hidden" name="minComm" value={scale.minComm} />
 				<input type="hidden" name="rentLow" value={scale.rentLow} />
 				<input type="hidden" name="commLow" value={scale.commLow} />
 				<input type="hidden" name="rentHigh" value={scale.rentHigh} />
@@ -219,44 +329,53 @@
 		</div>
 		<div class="card-body grid grid-cols-1 lg:grid-cols-2 gap-6">
 			<div class="space-y-4">
+				<div class="flex flex-wrap items-center gap-4 text-sm">
+					<label class="flex items-center gap-1"><input type="radio" bind:group={scale.mode} value="step" /> Step (normal rate, then floor above premium rent)</label>
+					<label class="flex items-center gap-1"><input type="radio" bind:group={scale.mode} value="linear" /> Straight line</label>
+				</div>
 				<div class="grid grid-cols-2 gap-4">
 					<div>
-						<label class="label" for="rentLow">Low rent ($/sq ft)</label>
+						<label class="label" for="rentLow">{scale.mode === 'step' ? 'Minimum rent ($/sq ft, 0 = optional)' : 'Low rent ($/sq ft)'}</label>
 						<input id="rentLow" type="number" min="0" step="0.25" class="input" bind:value={scale.rentLow} />
 						<input type="range" min="0" max="10" step="0.25" class="w-full mt-1" bind:value={scale.rentLow} aria-label="Low rent" />
 					</div>
 					<div>
-						<label class="label" for="commLow">…pays commission (%)</label>
+						<label class="label" for="commLow">{scale.mode === 'step' ? 'Normal commission when rate unknown (%)' : '…pays commission (%)'}</label>
 						<input id="commLow" type="number" min="0" max="100" step="1" class="input" bind:value={scale.commLow} />
 						<input type="range" min="0" max="100" step="1" class="w-full mt-1" bind:value={scale.commLow} aria-label="Commission at low rent" />
 					</div>
 					<div>
-						<label class="label" for="rentHigh">High rent ($/sq ft)</label>
+						<label class="label" for="rentHigh">{scale.mode === 'step' ? 'Premium rent threshold ($/sq ft)' : 'High rent ($/sq ft)'}</label>
 						<input id="rentHigh" type="number" min="0" step="0.25" class="input" bind:value={scale.rentHigh} />
-						<input type="range" min="0" max="10" step="0.25" class="w-full mt-1" bind:value={scale.rentHigh} aria-label="High rent" />
+						<input type="range" min="0" max="60" step="0.5" class="w-full mt-1" bind:value={scale.rentHigh} aria-label="High rent" />
 					</div>
 					<div>
-						<label class="label" for="commHigh">…pays commission (%)</label>
+						<label class="label" for="commHigh">{scale.mode === 'step' ? 'Commission at premium rent (%)' : '…pays commission (%)'}</label>
 						<input id="commHigh" type="number" min="0" max="100" step="1" class="input" bind:value={scale.commHigh} />
 						<input type="range" min="0" max="100" step="1" class="w-full mt-1" bind:value={scale.commHigh} aria-label="Commission at high rent" />
 					</div>
+					<div>
+						<label class="label" for="minComm">Floor — card fees (%)</label>
+						<input id="minComm" type="number" min="0" max="100" step="0.5" class="input" bind:value={scale.minComm} />
+					</div>
 				</div>
 				<p class="text-xs text-gray-500">
-					Example: a 100 sq ft booth at {formatCurrency(scale.rentHigh)}/sq ft pays {formatCurrency(scale.rentHigh * 100)} rent and {scale.commHigh}% commission;
-					at {formatCurrency(scale.rentLow)}/sq ft it pays {formatCurrency(scale.rentLow * 100)} and {scale.commLow}%.
+					Example: a 12 sq ft cabinet at {formatCurrency(400)}/mo is {formatCurrency(400 / 12)}/sq ft → {commissionAt(scale, 400 / 12, 13)}% commission
+					(normal rate 13%). Store revenue on {formatCurrency(1000)} of sales: {formatCurrency(evaluate({ sqft: 12, rentPerSqft: 400 / 12, commissionPct: commissionAt(scale, 400 / 12, 13), monthlySales: 1000 }).storeRevenue)}
+					= {formatCurrency(evaluate({ sqft: 12, rentPerSqft: 400 / 12, commissionPct: commissionAt(scale, 400 / 12, 13), monthlySales: 1000 }).perSqft ?? 0)}/sq ft.
 				</p>
 			</div>
 			<div class="overflow-x-auto">
 				<table class="w-full text-sm">
 					<thead class="bg-gray-100 text-gray-600">
-						<tr><th class="px-3 py-1.5 text-left">Rent / sq ft</th><th class="px-3 py-1.5 text-right">Commission</th><th class="px-3 py-1.5 text-right">100 sq ft, $2,000 sales → store</th></tr>
+						<tr><th class="px-3 py-1.5 text-left">Rent / sq ft</th><th class="px-3 py-1.5 text-right">Commission{#if scale.mode === 'step'} (13% vendor){/if}</th><th class="px-3 py-1.5 text-right">100 sq ft, $2,000 sales → store</th></tr>
 					</thead>
 					<tbody>
 						{#each steps as s}
-							{@const o = evaluate({ sqft: 100, rentPerSqft: s.rentPerSqft, commissionPct: s.commissionPct, monthlySales: 2000 })}
+							{@const o = evaluate({ sqft: 100, rentPerSqft: s.rentPerSqft, commissionPct: commissionAt(scale, s.rentPerSqft, 13), monthlySales: 2000 })}
 							<tr class="border-t border-gray-100">
 								<td class="px-3 py-1 font-mono">{formatCurrency(s.rentPerSqft)}</td>
-								<td class="px-3 py-1 text-right font-mono">{s.commissionPct}%</td>
+								<td class="px-3 py-1 text-right font-mono">{commissionAt(scale, s.rentPerSqft, 13)}%</td>
 								<td class="px-3 py-1 text-right font-mono">{formatCurrency(o.storeRevenue)} <span class="text-gray-400">({formatCurrency(o.perSqft ?? 0)}/sq ft)</span></td>
 							</tr>
 						{/each}
@@ -312,10 +431,10 @@
 		<div class="card lg:col-span-2">
 			<div class="card-header">
 				<h2 class="text-lg font-semibold text-gray-900">Scenario</h2>
-				<p class="text-sm text-gray-500">Baseline sales come from the last {data.months.length} complete months of NRS sales. Override any cell per vendor.</p>
+				<p class="text-sm text-gray-500">Revenue per sq ft = (rent + commission × monthly sales) ÷ painted sq ft. Sales come from the last {data.months.length} complete months of NRS sales. Override any cell per vendor.</p>
 			</div>
 			<div class="card-body space-y-4">
-				<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+				<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 					<div>
 						<label class="label" for="mode">Baseline sales</label>
 						<select id="mode" class="input" bind:value={mode}>
@@ -327,11 +446,29 @@
 						<input id="growth" type="range" min="-50" max="100" step="5" class="w-full mt-2" bind:value={growthPct} />
 					</div>
 					<div>
-						<label class="label" for="globalRent">Rent for all selected: {formatCurrency(globalRent)}/sq ft → {commissionAt(scale, globalRent)}%</label>
-						<input id="globalRent" type="range" min={scale.rentLow} max={scale.rentHigh} step="0.25" class="w-full mt-2" bind:value={globalRent} />
+						<label class="label" for="stress">Contract stress test: sales fall {stressPct}%</label>
+						<input id="stress" type="range" min="0" max="75" step="5" class="w-full mt-2" bind:value={stressPct} />
+						<p class="text-xs text-gray-500">Shows the rent increase needed to stay at target if sales drop this much.</p>
+					</div>
+					<div>
+						<label class="label flex items-center gap-2" for="globalRent">
+							<input type="checkbox" bind:checked={applyGlobal} />
+							<span>Set rent for all selected: {formatCurrency(globalRent)}/sq ft{#if applyGlobal} → {commissionAt(scale, globalRent, null)}%{/if}</span>
+						</label>
+						<input id="globalRent" type="range" min="0" max={Math.max(scale.rentHigh, 10)} step="0.25" class="w-full mt-2" bind:value={globalRent} disabled={!applyGlobal} />
+						<p class="text-xs text-gray-500">Off: every vendor keeps today's rent unless you type one in their row.</p>
 					</div>
 				</div>
-				<div class="flex justify-end">
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<label class="text-sm text-gray-600 flex items-center gap-2">Sort by
+						<select class="input py-0.5 w-auto" bind:value={sortBy}>
+							<option value="today">Today $/sq ft</option>
+							<option value="proposed">Proposed $/sq ft</option>
+							<option value="sales">Sales</option>
+							<option value="sqft">Sq ft</option>
+							<option value="label">Vendor</option>
+						</select>
+					</label>
 					<button type="button" class="btn-ghost btn-sm" on:click={resetOverrides}>Clear per-vendor overrides</button>
 				</div>
 
@@ -339,18 +476,20 @@
 					<p class="text-center text-gray-500 py-8">Select one or more vendors to run the numbers.</p>
 				{:else}
 					<div class="overflow-x-auto -mx-4 sm:mx-0">
-						<table class="w-full text-sm min-w-[56rem]">
+						<table class="w-full text-sm min-w-[68rem]">
 							<thead class="bg-gray-100 text-gray-600">
 								<tr>
 									<th class="px-2 py-2 text-left">Vendor</th>
 									<th class="px-2 py-2 text-right">Sq ft</th>
 									<th class="px-2 py-2 text-right">Sales / mo</th>
 									<th class="px-2 py-2 text-right">Today</th>
+									<th class="px-2 py-2 text-right">Today $/sq ft</th>
 									<th class="px-2 py-2 text-right">Proposed rent</th>
 									<th class="px-2 py-2 text-right">Comm %</th>
 									<th class="px-2 py-2 text-right">Store / mo</th>
 									<th class="px-2 py-2 text-right">$ / sq ft</th>
 									<th class="px-2 py-2 text-right">Δ vs today</th>
+									<th class="px-2 py-2 text-right">Sales threshold</th>
 									<th class="px-2 py-2"></th>
 								</tr>
 							</thead>
@@ -370,13 +509,16 @@
 											{#if r.baseline === null && !r.salesIsManual}<div class="text-xs text-amber-600">no sales history</div>{/if}
 										</td>
 										<td class="px-2 py-2 text-right text-gray-600 whitespace-nowrap">
-											<div>{money(r.v.rent)} rent</div>
-											<div>{pct(r.curComm)}{#if r.curCommDerived}<span class="text-gray-400" title="derived from last month's retained ÷ gross">*</span>{/if} comm</div>
-											<div class="font-medium text-gray-900">{money(r.cur.storeRevenue)}</div>
-											<div class="text-xs text-gray-400">{money(r.cur.perSqft)}/sq ft</div>
+											<div>{money(r.v.rent)} rent <span class="text-gray-400">({money(r.curRentPerSqft)}/sq ft)</span></div>
+											<div>{pct(r.curComm)}{#if r.curCommDerived}<span class="text-gray-400" title="derived from last month's retained ÷ gross">*</span>{/if} comm = {money(r.cur.commission)}</div>
+											<div class="font-medium text-gray-900">{money(r.cur.storeRevenue)} / mo</div>
 										</td>
 										<td class="px-2 py-2 text-right">
-											<input type="number" min="0" step="0.25" class="input w-24 py-0.5 text-right" placeholder={String(globalRent)} bind:value={ov[r.v.key].rent} on:input={() => (ov = ov)} />
+											<span class="text-lg font-semibold {r.cur.gapToTarget === 0 ? 'text-emerald-600' : 'text-amber-600'}">{money(r.cur.perSqft)}</span>
+											{#if r.cur.gapToTarget && r.cur.gapToTarget > 0}<div class="text-xs text-amber-600">short {money(r.cur.gapToTarget)}</div>{/if}
+										</td>
+										<td class="px-2 py-2 text-right">
+											<input type="number" min="0" step="0.25" class="input w-24 py-0.5 text-right" placeholder={String(applyGlobal ? globalRent : r.curRentPerSqft)} bind:value={ov[r.v.key].rent} on:input={() => (ov = ov)} />
 											<div class="text-xs text-gray-500">= {money(r.out.rent)}</div>
 											{#if r.rentForTarget !== null}
 												<button type="button" class="text-xs text-primary-600 hover:underline" title="Set rent so this booth hits the target at these sales" on:click={() => { ov[r.v.key].rent = String(r.rentForTarget); ov = ov; }}>
@@ -385,7 +527,7 @@
 											{/if}
 										</td>
 										<td class="px-2 py-2 text-right">
-											<input type="number" min="0" max="100" step="1" class="input w-20 py-0.5 text-right" placeholder={String(commissionAt(scale, r.rentPerSqft))} bind:value={ov[r.v.key].comm} on:input={() => (ov = ov)} />
+											<input type="number" min="0" max="100" step="1" class="input w-20 py-0.5 text-right" placeholder={String(commissionAt(scale, r.rentPerSqft, r.curComm))} bind:value={ov[r.v.key].comm} on:input={() => (ov = ov)} />
 											<div class="text-xs text-gray-500">= {money(r.out.commission)}</div>
 										</td>
 										<td class="px-2 py-2 text-right font-medium text-gray-900">{money(r.out.storeRevenue)}</td>
@@ -394,16 +536,28 @@
 											{#if r.out.gapToTarget && r.out.gapToTarget > 0}<div class="text-xs text-amber-600">short {money(r.out.gapToTarget)}</div>{/if}
 										</td>
 										<td class="px-2 py-2 text-right font-mono {r.delta > 0 ? 'text-emerald-600' : r.delta < 0 ? 'text-red-600' : 'text-gray-500'}">{signed(r.delta)}</td>
+										<td class="px-2 py-2 text-right whitespace-nowrap">
+											{#if r.thresholdSales === null}
+												<span class="text-gray-400">—</span>
+											{:else}
+												<div class="font-medium {r.sales >= r.thresholdSales ? 'text-gray-900' : 'text-amber-600'}">{money(r.thresholdSales)}/mo</div>
+												<div class="text-xs text-gray-500">at −{stressPct}%: {r.stressRentIncrease > 0 ? `rent +${formatCurrency(r.stressRentIncrease)}` : 'no increase'}</div>
+											{/if}
+										</td>
 										<td class="px-2 py-2 text-right">
 											<button type="button" class="btn-ghost btn-sm" on:click={() => { expanded[r.v.key] = !expanded[r.v.key]; }} aria-label="Toggle history for {r.v.label}">{expanded[r.v.key] ? '▴' : '▾'}</button>
 										</td>
 									</tr>
 									{#if expanded[r.v.key]}
 										<tr class="bg-gray-50">
-											<td colspan="10" class="px-3 py-2">
+											<td colspan="12" class="px-3 py-2">
 												<div class="text-xs text-gray-600 mb-1">
 													History (oldest → newest). Vendor keeps {money(r.sales - r.out.commission)} of {money(r.sales)} under the proposal.
 													{#if r.breakEven !== null} Break-even vs today: {money(r.breakEven)} in monthly sales.{/if}
+												</div>
+												<div class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs text-gray-800 flex flex-wrap items-start gap-2">
+													<span class="flex-1 min-w-[16rem]"><span class="font-medium">Contract clause:</span> {contractClause(r)}</span>
+													<button type="button" class="btn-secondary btn-sm" on:click={() => copyClause(r)}>Copy</button>
 												</div>
 												<div class="overflow-x-auto">
 													<table class="text-xs">
@@ -426,12 +580,14 @@
 									<td class="px-2 py-2 font-semibold">Totals ({rows.length})</td>
 									<td class="px-2 py-2 text-right">{newTotals.sqft}</td>
 									<td class="px-2 py-2 text-right">{money(newTotals.sales)}</td>
-									<td class="px-2 py-2 text-right">{money(curTotals.storeRevenue)}<div class="text-xs text-gray-300">{money(curTotals.perSqft)}/sq ft</div></td>
+									<td class="px-2 py-2 text-right">{money(curTotals.storeRevenue)}</td>
+									<td class="px-2 py-2 text-right font-semibold">{money(curTotals.perSqft)}</td>
 									<td class="px-2 py-2 text-right">{money(newTotals.rent)}</td>
 									<td class="px-2 py-2 text-right">{money(newTotals.commission)}</td>
 									<td class="px-2 py-2 text-right font-bold">{money(newTotals.storeRevenue)}</td>
 									<td class="px-2 py-2 text-right">{money(newTotals.perSqft)}</td>
 									<td class="px-2 py-2 text-right font-mono {newTotals.storeRevenue - curTotals.storeRevenue >= 0 ? 'text-emerald-300' : 'text-red-300'}">{signed(round2(newTotals.storeRevenue - curTotals.storeRevenue))}</td>
+									<td class="px-2 py-2 text-right text-xs text-gray-300">at −{stressPct}%: +{money(round2(rows.reduce((a, r) => a + r.stressRentIncrease, 0)))}</td>
 									<td></td>
 								</tr>
 							</tfoot>

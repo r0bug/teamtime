@@ -6,12 +6,13 @@ import { isAdmin } from '$lib/server/auth/roles';
 import { loadTargetPerSqft } from '$lib/server/floorplan/target';
 import { recentMonths, salesByVendorByMonth } from '$lib/server/floorplan/revenue-trends';
 import { liveBooths, loadBoothHistory, boothCommission, captureBoothHistory, currentMonth } from '$lib/server/floorplan/booth-history';
-import { normalizeScale, type RentScale } from '$lib/revenue-calc/model';
+import { normalizeScale, normalizeCosts, type RentScale, type CostLine } from '$lib/revenue-calc/model';
 import { audit } from '$lib/server/services/audit-service';
 import { createLogger } from '$lib/server/logger';
 
 const log = createLogger('admin:revenue-calculator');
 const SCALE_KEY = 'revenue_calc_scale';
+const COSTS_KEY = 'store_monthly_costs';
 const HISTORY_MONTHS = 12;
 
 export interface CalcVendor {
@@ -45,13 +46,30 @@ async function loadScale(): Promise<RentScale> {
 	}
 }
 
+async function loadCosts(): Promise<CostLine[]> {
+	const [row] = await db.select().from(appSettings).where(eq(appSettings.key, COSTS_KEY)).limit(1);
+	if (!row) return [];
+	try {
+		return normalizeCosts(JSON.parse(row.value));
+	} catch {
+		return [];
+	}
+}
+
+async function upsertSetting(key: string, value: string): Promise<void> {
+	const [existing] = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+	if (existing) await db.update(appSettings).set({ value, updatedAt: new Date() }).where(eq(appSettings.key, key));
+	else await db.insert(appSettings).values({ key, value });
+}
+
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!isAdmin(locals.user)) throw redirect(302, '/admin');
 
 	const months = recentMonths(HISTORY_MONTHS);
 	const thisMonth = currentMonth();
-	const [scale, target, live, history, sales] = await Promise.all([
+	const [scale, costs, target, live, history, sales] = await Promise.all([
 		loadScale(),
+		loadCosts(),
 		loadTargetPerSqft(),
 		liveBooths(),
 		loadBoothHistory(),
@@ -109,6 +127,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	return {
 		scale,
+		costs,
 		target,
 		months,
 		thisMonth,
@@ -128,17 +147,17 @@ export const actions: Actions = {
 		if (!isAdmin(locals.user)) return fail(403, { error: 'Not authorized' });
 		const form = await request.formData();
 		const scale = normalizeScale({
+			mode: form.get('mode') === 'linear' ? 'linear' : 'step',
 			rentLow: Number(form.get('rentLow')),
 			commLow: Number(form.get('commLow')),
 			rentHigh: Number(form.get('rentHigh')),
-			commHigh: Number(form.get('commHigh'))
+			commHigh: Number(form.get('commHigh')),
+			minComm: Number(form.get('minComm'))
 		});
 		const value = JSON.stringify(scale);
 		try {
 			const before = await loadScale();
-			const [existing] = await db.select().from(appSettings).where(eq(appSettings.key, SCALE_KEY)).limit(1);
-			if (existing) await db.update(appSettings).set({ value, updatedAt: new Date() }).where(eq(appSettings.key, SCALE_KEY));
-			else await db.insert(appSettings).values({ key: SCALE_KEY, value });
+			await upsertSetting(SCALE_KEY, value);
 			await audit({
 				userId: locals.user!.id,
 				action: 'setting_changed',
@@ -151,6 +170,34 @@ export const actions: Actions = {
 		} catch (error) {
 			log.error({ error }, 'Failed to save rent scale');
 			return fail(500, { error: 'Failed to save rent scale' });
+		}
+	},
+
+	saveCosts: async ({ request, locals }) => {
+		if (!isAdmin(locals.user)) return fail(403, { error: 'Not authorized' });
+		const form = await request.formData();
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(form.get('costs')?.toString() ?? '[]');
+		} catch {
+			return fail(400, { error: 'Costs could not be read' });
+		}
+		const costs = normalizeCosts(parsed);
+		try {
+			const before = await loadCosts();
+			await upsertSetting(COSTS_KEY, JSON.stringify(costs));
+			await audit({
+				userId: locals.user!.id,
+				action: 'setting_changed',
+				entityType: 'setting',
+				entityId: COSTS_KEY,
+				beforeData: { costs: before },
+				afterData: { costs }
+			});
+			return { success: true, message: `Saved ${costs.length} cost line(s)` };
+		} catch (error) {
+			log.error({ error }, 'Failed to save monthly costs');
+			return fail(500, { error: 'Failed to save costs' });
 		}
 	},
 
