@@ -133,6 +133,10 @@
 		/** Sales after the stress drop, and the rent increase needed then. */
 		stressedSales: number;
 		stressRentIncrease: number;
+		/** To reach the break-even $/sq ft (costs ÷ floor sq ft): sales needed at the proposed terms, or rent increase at baseline sales. */
+		beSalesNeeded: number | null;
+		beRentIncrease: number | null;
+		bePerSqftMet: boolean | null;
 	}
 
 	function buildRow(v: Vendor, o: Override | undefined): Row {
@@ -182,13 +186,16 @@
 			breakEven: curComm === null ? null : breakEvenSales(sqft, { rentPerSqft, commissionPct: comm }, { rentPerSqft: curRentPerSqft, commissionPct: curComm }),
 			thresholdSales: salesForTarget(sqft, data.target, rentPerSqft, comm),
 			stressedSales: round2(sales * (1 - stressPct / 100)),
-			stressRentIncrease: rentIncreaseForTarget(sqft, data.target, rentPerSqft, comm, sales * (1 - stressPct / 100))
+			stressRentIncrease: rentIncreaseForTarget(sqft, data.target, rentPerSqft, comm, sales * (1 - stressPct / 100)),
+			beSalesNeeded: breakEven === null ? null : salesForTarget(sqft, breakEven, rentPerSqft, comm),
+			beRentIncrease: breakEven === null ? null : rentIncreaseForTarget(sqft, breakEven, rentPerSqft, comm, sales),
+			bePerSqftMet: breakEven === null || out.perSqft === null ? null : out.perSqft >= breakEven
 		};
 	}
 
 	$: rows = sortRows(selectedVendors.map((v) => buildRow(v, ov[v.key] ?? overrideFor(v.key))) as Row[], sortBy);
 	// referenced so Svelte re-runs `rows` when these change
-	$: rows, scale, mode, growthPct, globalRent, applyGlobal, ov, sortBy, stressPct;
+	$: rows, scale, mode, growthPct, globalRent, applyGlobal, ov, sortBy, stressPct, breakEven;
 	$: allCurrentRevenue = totals(
 		data.vendors
 			.filter((v) => v.current)
@@ -203,12 +210,14 @@
 		const rent = formatCurrency(r.out.rent);
 		const comm = `${round2(r.comm)}%`;
 		if (r.thresholdSales === null) return `Rent ${rent}/month; store commission ${comm} of gross sales.`;
+		const be = r.beSalesNeeded !== null && r.beRentIncrease !== null ? ` Break-even for the store (${formatCurrency(breakEven ?? 0)}/sq ft): ${formatCurrency(r.beSalesNeeded)} in monthly sales, or rent +${formatCurrency(r.beRentIncrease)} at current sales.` : '';
 		const bump = formatCurrency(r.stressRentIncrease);
 		return (
 			`Rent ${rent}/month plus a ${comm} store commission on gross sales. ` +
 			`Monthly sales threshold: ${formatCurrency(r.thresholdSales)}. ` +
 			`If gross sales for a calendar month fall below the threshold, rent for the following month increases by the shortfall × ${comm}` +
-			` (at ${formatCurrency(r.stressedSales)} in sales, +${bump}/month), capped at ${formatCurrency(Math.max(0, data.target * r.sqft - r.out.rent))}.`
+			` (at ${formatCurrency(r.stressedSales)} in sales, +${bump}/month), capped at ${formatCurrency(Math.max(0, data.target * r.sqft - r.out.rent))}.` +
+			be
 		);
 	}
 	function copyClause(r: Row) {
@@ -523,7 +532,7 @@
 					<p class="text-center text-gray-500 py-8">Select one or more vendors to run the numbers.</p>
 				{:else}
 					<div class="overflow-x-auto -mx-4 sm:mx-0">
-						<table class="w-full text-sm min-w-[68rem]">
+						<table class="w-full text-sm min-w-[76rem]">
 							<thead class="bg-gray-100 text-gray-600">
 								<tr>
 									<th class="px-2 py-2 text-left">Vendor</th>
@@ -537,6 +546,7 @@
 									<th class="px-2 py-2 text-right">$ / sq ft</th>
 									<th class="px-2 py-2 text-right">Δ vs today</th>
 									<th class="px-2 py-2 text-right">Sales threshold</th>
+									<th class="px-2 py-2 text-right" title="Costs ÷ booth sq ft on the floor">To break-even {breakEven === null ? '' : `(${formatCurrency(breakEven)}/sq ft)`}</th>
 									<th class="px-2 py-2"></th>
 								</tr>
 							</thead>
@@ -591,13 +601,24 @@
 												<div class="text-xs text-gray-500">at −{stressPct}%: {r.stressRentIncrease > 0 ? `rent +${formatCurrency(r.stressRentIncrease)}` : 'no increase'}</div>
 											{/if}
 										</td>
+										<td class="px-2 py-2 text-right whitespace-nowrap">
+											{#if r.beSalesNeeded === null || r.beRentIncrease === null}
+												<span class="text-gray-400">enter costs</span>
+											{:else if r.bePerSqftMet}
+												<span class="text-emerald-600 font-medium">✓ covers costs</span>
+												<div class="text-xs text-gray-500">needs {money(r.beSalesNeeded)} sales</div>
+											{:else}
+												<div class="text-xs text-gray-500">sales to {money(r.beSalesNeeded)}</div>
+												<div class="text-xs text-gray-500">or rent +{money(r.beRentIncrease)}</div>
+											{/if}
+										</td>
 										<td class="px-2 py-2 text-right">
 											<button type="button" class="btn-ghost btn-sm" on:click={() => { expanded[r.v.key] = !expanded[r.v.key]; }} aria-label="Toggle history for {r.v.label}">{expanded[r.v.key] ? '▴' : '▾'}</button>
 										</td>
 									</tr>
 									{#if expanded[r.v.key]}
 										<tr class="bg-gray-50">
-											<td colspan="12" class="px-3 py-2">
+											<td colspan="13" class="px-3 py-2">
 												<div class="text-xs text-gray-600 mb-1">
 													History (oldest → newest). Vendor keeps {money(r.sales - r.out.commission)} of {money(r.sales)} under the proposal.
 													Processing fees on these sales ≈ {money(round2((r.sales * (Number(processingPct) || 0)) / 100))} ({processingPct}%), already in the break-even rate.
@@ -636,6 +657,7 @@
 									<td class="px-2 py-2 text-right">{money(newTotals.perSqft)}</td>
 									<td class="px-2 py-2 text-right font-mono {newTotals.storeRevenue - curTotals.storeRevenue >= 0 ? 'text-emerald-300' : 'text-red-300'}">{signed(round2(newTotals.storeRevenue - curTotals.storeRevenue))}</td>
 									<td class="px-2 py-2 text-right text-xs text-gray-300">at −{stressPct}%: +{money(round2(rows.reduce((a, r) => a + r.stressRentIncrease, 0)))}</td>
+									<td class="px-2 py-2 text-right text-xs text-gray-300">{breakEven === null ? '' : `rent +${formatCurrency(round2(rows.reduce((a, r) => a + (r.beRentIncrease ?? 0), 0)))}`}</td>
 									<td></td>
 								</tr>
 							</tfoot>
