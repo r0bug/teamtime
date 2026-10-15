@@ -475,12 +475,17 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 		const detail = await getVendorDetail(summary.vendorId);
 		if (!detail) continue; // err 201 — skip
 
-		// Filter: only sync pass-through vendors — i.e. vendors that have
-		// appeared in our sales history (they're consignment vendors whose
-		// items run through the POS). Non-pass-through NRS rows (accounting
-		// adjustments, system entries) are excluded.
+		// Filter: sync vendors that have appeared in our sales history (consignment
+		// vendors whose items run through the POS) PLUS booth vendors NRS already
+		// knows about but who haven't sold yet — booth rent (meta13) set, or the
+		// "Display in Teamtime Floorplan" flag (meta74) on. Without this a newly
+		// signed vendor (e.g. G&G, 2026-10-15) never imports until her first sale.
+		// Non-pass-through NRS rows (accounting adjustments, system entries) stay out.
 		const isPassThrough = passThroughIds.has(detail.vendorId);
-		if (!isPassThrough) {
+		const hasBoothRent = (rentCentsFromMeta(detail) ?? 0) > 0;
+		const displayFlag = String(detail.meta74 ?? '').trim().toLowerCase();
+		const flaggedForFloorplan = ['true', '1', 'yes', 'y', 'on'].includes(displayFlag);
+		if (!isPassThrough && !hasBoothRent && !flaggedForFloorplan) {
 			filteredOut++;
 			continue;
 		}
