@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
 	import { notify } from '$lib/notify';
 	import { formatCurrency } from '$lib/utils';
 	import {
@@ -67,12 +69,41 @@
 	let minSqft = 0;
 	let selected: Record<string, boolean> = Object.fromEntries(data.vendors.filter((v) => v.current).map((v) => [v.key, true]));
 	let expanded: Record<string, boolean> = {};
-	let sortBy: 'label' | 'today' | 'proposed' | 'revenue' | 'proposedRevenue' | 'sqft' | 'sales' = 'revenue';
+	let sortBy: 'label' | 'today' | 'proposed' | 'revenue' | 'proposedRevenue' | 'net' | 'netPerSqft' | 'sqft' | 'sales' = 'revenue';
 	// Column groups (the full table is wider than most screens)
 	let showToday = true;
 	let showProposal = true;
 	let showTargets = true;
 	let showHistoryAll = false;
+	let showProfit = true;
+	let fullWidth = false;
+	// Pop-out: the scenario table alone in a new window, state handed over via localStorage.
+	const POPOUT_KEY = 'revcalc-popout-state';
+	$: popout = $page.url.searchParams.get('popout') === '1';
+	function popOut() {
+		try {
+			localStorage.setItem(POPOUT_KEY, JSON.stringify({ selected, ov, mode, growthPct, applyGlobal, globalRent, stressPct, sortBy, scale, costs, includeLabor, laborMonths, includeProcessing, processingPct, showToday, showProposal, showTargets, showProfit }));
+		} catch {
+			notify.error('Could not hand the scenario to the new window');
+			return;
+		}
+		window.open(`${$page.url.pathname}?popout=1`, '_blank', 'noopener,width=1800,height=1000');
+	}
+	onMount(() => {
+		if (!popout) return;
+		try {
+			const raw = localStorage.getItem(POPOUT_KEY);
+			if (!raw) return;
+			const st = JSON.parse(raw);
+			selected = st.selected ?? selected; ov = st.ov ?? ov; mode = st.mode ?? mode; growthPct = st.growthPct ?? growthPct;
+			applyGlobal = st.applyGlobal ?? applyGlobal; globalRent = st.globalRent ?? globalRent; stressPct = st.stressPct ?? stressPct;
+			sortBy = st.sortBy ?? sortBy; scale = st.scale ?? scale; costs = st.costs ?? costs; includeLabor = st.includeLabor ?? includeLabor;
+			laborMonths = st.laborMonths ?? laborMonths; includeProcessing = st.includeProcessing ?? includeProcessing; processingPct = st.processingPct ?? processingPct;
+			showToday = st.showToday ?? showToday; showProposal = st.showProposal ?? showProposal; showTargets = st.showTargets ?? showTargets; showProfit = st.showProfit ?? showProfit;
+		} catch {
+			/* fall back to defaults */
+		}
+	});
 
 	$: visible = data.vendors.filter((v) => {
 		if (v.current ? !showCurrent : !showDeparted) return false;
@@ -144,6 +175,21 @@
 		beSalesNeeded: number | null;
 		beRentIncrease: number | null;
 		bePerSqftMet: boolean | null;
+		/** Profitability under the proposal: costs allocated by sq ft (fixed + labor) and by own sales (processing). */
+		allocatedCost: number;
+		net: number;
+		netPerSqft: number | null;
+		marginPct: number | null;
+		/** Same under today's terms. */
+		netToday: number;
+		/** KPIs from history */
+		salesPerSqft: number | null;
+		takeRatePct: number | null; // store revenue ÷ sales
+		rentSharePct: number | null; // rent ÷ store revenue
+		trendPct: number | null; // last 3 months vs the 3 before
+		monthsSelling: number;
+		avgSales12: number | null;
+		bestMonth: { month: string; sales: number } | null;
 	}
 
 	function buildRow(v: Vendor, o: Override | undefined): Row {
@@ -196,13 +242,56 @@
 			stressRentIncrease: rentIncreaseForTarget(sqft, data.target, rentPerSqft, comm, sales * (1 - stressPct / 100)),
 			beSalesNeeded: breakEven === null ? null : salesForTarget(sqft, breakEven, rentPerSqft, comm),
 			beRentIncrease: breakEven === null ? null : rentIncreaseForTarget(sqft, breakEven, rentPerSqft, comm, sales),
-			bePerSqftMet: breakEven === null || out.perSqft === null ? null : out.perSqft >= breakEven
+			bePerSqftMet: breakEven === null || out.perSqft === null ? null : out.perSqft >= breakEven,
+			...profit(sqft, sales, out.storeRevenue, cur.storeRevenue, out.rent),
+			...kpis(v, sqft)
 		};
 	}
 
-	$: rows = sortRows(selectedVendors.map((v) => buildRow(v, ov[v.key] ?? overrideFor(v.key))) as Row[], sortBy);
+	// Costs allocated to a booth: fixed + labor by its share of floor sq ft, processing by its own sales.
+	function profit(sqft: number, sales: number, storeRevenue: number, storeRevenueToday: number, rent: number) {
+		const fixed = enteredCosts + (includeLabor ? avgLabor : 0);
+		const bySqft = floorSqft > 0 && sqft > 0 ? (fixed * sqft) / floorSqft : 0;
+		const fees = includeProcessing ? (sales * (Number(processingPct) || 0)) / 100 : 0;
+		const allocatedCost = round2(bySqft + fees);
+		const net = round2(storeRevenue - allocatedCost);
+		return {
+			allocatedCost,
+			net,
+			netPerSqft: sqft > 0 ? round2(net / sqft) : null,
+			marginPct: storeRevenue > 0 ? round2((net / storeRevenue) * 100) : null,
+			netToday: round2(storeRevenueToday - allocatedCost),
+			rentSharePct: storeRevenue > 0 ? round2((rent / storeRevenue) * 100) : null
+		};
+	}
+	function kpis(v: Vendor, sqft: number) {
+		const known = v.sales.filter((x): x is number => x !== null);
+		const last3 = v.sales.slice(-3).filter((x): x is number => x !== null);
+		const prior3 = v.sales.slice(-6, -3).filter((x): x is number => x !== null);
+		const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+		const a = avg(last3), b = avg(prior3);
+		let best: { month: string; sales: number } | null = null;
+		v.sales.forEach((x, i) => { if (x !== null && (best === null || x > best.sales)) best = { month: data.months[i], sales: x }; });
+		const avg12 = avg(known);
+		return {
+			salesPerSqft: sqft > 0 && avg12 !== null ? round2(avg12 / sqft) : null,
+			takeRatePct: null as number | null, // filled after outcome is known (below)
+			trendPct: a !== null && b !== null && b > 0 ? round2(((a - b) / b) * 100) : null,
+			monthsSelling: known.filter((x) => x > 0).length,
+			avgSales12: avg12 === null ? null : round2(avg12),
+			bestMonth: best
+		};
+	}
+	$: rows = sortRows(
+		selectedVendors.map((v) => {
+			const r = buildRow(v, ov[v.key] ?? overrideFor(v.key)) as Row;
+			r.takeRatePct = r.sales > 0 ? round2((r.out.storeRevenue / r.sales) * 100) : null;
+			return r;
+		}),
+		sortBy
+	);
 	// referenced so Svelte re-runs `rows` when these change
-	$: rows, scale, mode, growthPct, globalRent, applyGlobal, ov, sortBy, stressPct, breakEven;
+	$: rows, scale, mode, growthPct, globalRent, applyGlobal, ov, sortBy, stressPct, breakEven, enteredCosts, avgLabor, includeLabor, includeProcessing, processingPct, floorSqft;
 	$: allCurrentRevenue = totals(
 		data.vendors
 			.filter((v) => v.current)
@@ -233,7 +322,9 @@
 
 	function sortRows(rs: Row[], by: typeof sortBy): Row[] {
 		const val = (r: Row) =>
-			by === 'today' ? (r.cur.perSqft ?? -1)
+			by === 'net' ? r.net
+			: by === 'netPerSqft' ? (r.netPerSqft ?? -1e9)
+			: by === 'today' ? (r.cur.perSqft ?? -1)
 			: by === 'proposed' ? (r.out.perSqft ?? -1)
 			: by === 'revenue' ? r.cur.storeRevenue
 			: by === 'proposedRevenue' ? r.out.storeRevenue
@@ -286,8 +377,8 @@
 	<title>Revenue Calculator - TeamTime</title>
 </svelte:head>
 
-<div class="p-4 lg:p-8 max-w-7xl mx-auto space-y-6">
-	<div>
+<div class="p-4 lg:p-8 {fullWidth || popout ? 'max-w-none' : 'max-w-7xl'} mx-auto space-y-6">
+	<div class={popout ? 'hidden' : ''}>
 		<div class="flex items-center gap-2 text-sm text-gray-500 mb-2">
 			<a href="/admin" class="hover:text-primary-600 transition-colors">Admin</a>
 			<span>›</span>
@@ -302,7 +393,7 @@
 	</div>
 
 	<!-- Store summary -->
-	<div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+	<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 {popout ? 'hidden' : ''}">
 		<div class="card"><div class="card-body py-3"><div class="text-xs text-gray-500">Monthly costs</div><div class="text-xl font-semibold text-gray-900">{money(monthlyCosts)}</div></div></div>
 		<div class="card"><div class="card-body py-3"><div class="text-xs text-gray-500">Booth sq ft on the floor</div><div class="text-xl font-semibold text-gray-900">{floorSqft}</div></div></div>
 		<div class="card"><div class="card-body py-3"><div class="text-xs text-gray-500">Break-even $/sq ft</div><div class="text-xl font-semibold {breakEven !== null && breakEven > data.target ? 'text-red-600' : 'text-gray-900'}">{money(breakEven)}</div><div class="text-xs text-gray-400">target {money(data.target)}</div></div></div>
@@ -311,7 +402,7 @@
 	</div>
 
 	<!-- Costs -->
-	<div class="card">
+	<div class="card {popout ? 'hidden' : ''}">
 		<div class="card-header flex flex-wrap items-center justify-between gap-2">
 			<div>
 				<h2 class="text-lg font-semibold text-gray-900">Fixed monthly costs</h2>
@@ -375,7 +466,7 @@
 	</div>
 
 	<!-- Scale -->
-	<div class="card">
+	<div class="card {popout ? 'hidden' : ''}">
 		<div class="card-header flex flex-wrap items-center justify-between gap-2">
 			<div>
 				<h2 class="text-lg font-semibold text-gray-900">Rent ↔ commission scale</h2>
@@ -455,9 +546,9 @@
 		</div>
 	</div>
 
-	<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+	<div class="grid grid-cols-1 {popout ? '' : 'lg:grid-cols-3'} gap-6">
 		<!-- Vendor picker -->
-		<div class="card lg:col-span-1">
+		<div class="card lg:col-span-1 {popout ? 'hidden' : ''}">
 			<div class="card-header">
 				<h2 class="text-lg font-semibold text-gray-900">Vendors</h2>
 				<p class="text-sm text-gray-500">{selectedVendors.length} selected · {data.vendors.filter((v) => v.current && v.onFloor).length} on the floor · {data.vendors.filter((v) => v.current && !v.onFloor).length} selling without a booth · {data.vendors.filter((v) => !v.current).length} departed</p>
@@ -499,11 +590,21 @@
 			</div>
 		</div>
 
-		<!-- Scenario -->
-		<div class="card lg:col-span-2">
-			<div class="card-header">
-				<h2 class="text-lg font-semibold text-gray-900">Scenario</h2>
+		<!-- Scenario (drag the bottom-right corner to widen; it may grow past the page) -->
+		<div class="card {popout ? '' : 'lg:col-span-2'}" style="resize: horizontal; overflow: auto; min-width: 100%;">
+			<div class="card-header flex flex-wrap items-start justify-between gap-2">
+				<div>
+				<h2 class="text-lg font-semibold text-gray-900">Scenario{#if popout} <span class="text-sm font-normal text-gray-500">(popped out — the main window keeps its own copy)</span>{/if}</h2>
 				<p class="text-sm text-gray-500">Revenue per sq ft = (rent + commission × monthly sales) ÷ painted sq ft. Sales come from the last {data.months.length} complete months of NRS sales. Override any cell per vendor.</p>
+				</div>
+				<div class="flex gap-2 text-xs">
+					{#if !popout}
+						<button type="button" class="btn-secondary btn-sm" on:click={() => (fullWidth = !fullWidth)}>{fullWidth ? 'Normal width' : 'Full width'}</button>
+						<button type="button" class="btn-secondary btn-sm" on:click={popOut} title="Open the table alone in a new window">Pop out ↗</button>
+					{:else}
+						<button type="button" class="btn-secondary btn-sm" on:click={() => window.close()}>Close</button>
+					{/if}
+				</div>
 			</div>
 			<div class="card-body space-y-4">
 				<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -536,6 +637,8 @@
 						<select class="input py-0.5 w-auto" bind:value={sortBy}>
 							<option value="revenue">Monthly revenue today (rent + commission)</option>
 							<option value="proposedRevenue">Proposed monthly revenue</option>
+							<option value="net">Net after allocated costs</option>
+							<option value="netPerSqft">Net $/sq ft</option>
 							<option value="today">Today $/sq ft</option>
 							<option value="proposed">Proposed $/sq ft</option>
 							<option value="sales">Sales</option>
@@ -554,6 +657,7 @@
 						<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showToday} /> Today</label>
 						<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showProposal} /> Proposal inputs</label>
 						<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showTargets} /> Targets &amp; break-even</label>
+						<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showProfit} /> Profit</label>
 						<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showHistoryAll} on:change={() => { for (const r of rows) expanded[r.v.key] = showHistoryAll; expanded = expanded; }} /> History for all</label>
 					</div>
 					<div class="overflow-x-auto -mx-4 sm:mx-0">
@@ -565,6 +669,7 @@
 									{#if showToday}<th class="px-2 py-2 text-right">Today</th>{/if}
 									{#if showProposal}<th class="px-2 py-2 text-right">Proposal</th>{/if}
 									<th class="px-2 py-2 text-right">Result</th>
+									{#if showProfit}<th class="px-2 py-2 text-right" title="Store revenue minus costs allocated by sq ft (fixed + labor) and by own sales (processing)">Profit</th>{/if}
 									{#if showTargets}<th class="px-2 py-2 text-left">Targets</th>{/if}
 									<th class="px-1 py-2 w-8"></th>
 								</tr>
@@ -578,6 +683,7 @@
 											<label class="mt-1 flex items-center gap-1 text-xs text-gray-500">
 												<input type="number" min="0" class="input w-16 py-0.5 text-right text-xs" placeholder={String(r.v.sqft)} bind:value={ov[r.v.key].sqft} on:input={() => (ov = ov)} aria-label="Square feet override" /> sq ft
 											</label>
+											{#if r.sqft > 0}<div class="text-xs text-gray-500">{share(r.sqft, newTotals.sqft)} of selection sq ft</div>{/if}
 										</td>
 										<td class="px-2 py-2 text-right">
 											<input type="number" min="0" step="50" class="input w-24 py-0.5 text-right" placeholder={r.baseline === null ? 'none' : String(applyGrowth(r.baseline, growthPct))} bind:value={ov[r.v.key].sales} on:input={() => (ov = ov)} aria-label="Monthly sales override" />
@@ -609,11 +715,18 @@
 										{/if}
 										<td class="px-2 py-2 text-right whitespace-nowrap">
 											<div class="text-base font-semibold text-gray-900">{money(r.out.storeRevenue)}<span class="text-xs font-normal text-gray-400"> / mo</span></div>
-											<div class="text-xs text-gray-500">{share(r.out.storeRevenue, newTotals.storeRevenue)} of selection revenue</div>
+											<div class="text-xs text-gray-500">{share(r.out.storeRevenue, newTotals.storeRevenue)} of selection revenue{#if r.sqft > 0 && newTotals.sqft > 0 && newTotals.storeRevenue > 0}{@const idx = (r.out.storeRevenue / newTotals.storeRevenue) / (r.sqft / newTotals.sqft)} · <span class={idx >= 1 ? 'text-emerald-600' : 'text-amber-600'} title="revenue share ÷ sq ft share">{round2(idx)}× its space</span>{/if}</div>
 											<div class="font-medium {r.out.gapToTarget === 0 ? 'text-emerald-600' : 'text-amber-600'}">{money(r.out.perSqft)}<span class="text-xs font-normal text-gray-400">/sq ft</span></div>
 											<div class="text-xs font-mono {r.delta > 0 ? 'text-emerald-600' : r.delta < 0 ? 'text-red-600' : 'text-gray-500'}">{signed(r.delta)} vs today</div>
 											{#if r.out.gapToTarget && r.out.gapToTarget > 0}<div class="text-xs text-amber-600">short {money(r.out.gapToTarget)} of target</div>{/if}
 										</td>
+										{#if showProfit}
+											<td class="px-2 py-2 text-right whitespace-nowrap">
+												<div class="text-base font-semibold {r.net >= 0 ? 'text-emerald-700' : 'text-red-600'}">{signed(r.net)}<span class="text-xs font-normal text-gray-400"> / mo</span></div>
+												<div class="text-xs text-gray-500">{r.netPerSqft === null ? 'no sq ft' : `${signed(r.netPerSqft)}/sq ft`} · margin {pct(r.marginPct)}</div>
+												<div class="text-xs text-gray-500">costs {money(r.allocatedCost)} · today {signed(r.netToday)}</div>
+											</td>
+										{/if}
 										{#if showTargets}
 											<td class="px-2 py-2 text-xs text-gray-700 whitespace-nowrap">
 												{#if r.thresholdSales !== null}
@@ -637,7 +750,17 @@
 									</tr>
 									{#if expanded[r.v.key]}
 										<tr class="bg-gray-50">
-											<td colspan={4 + (showToday ? 1 : 0) + (showProposal ? 1 : 0) + (showTargets ? 1 : 0)} class="px-3 py-2">
+											<td colspan={4 + (showToday ? 1 : 0) + (showProposal ? 1 : 0) + (showTargets ? 1 : 0) + (showProfit ? 1 : 0)} class="px-3 py-2">
+												<div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-x-4 gap-y-1 text-xs mb-2">
+													<div><span class="text-gray-500">sales / sq ft</span><br /><span class="font-mono">{r.salesPerSqft === null ? '—' : formatCurrency(r.salesPerSqft)}</span></div>
+													<div><span class="text-gray-500">store take rate</span><br /><span class="font-mono">{pct(r.takeRatePct)}</span></div>
+													<div><span class="text-gray-500">rent share of revenue</span><br /><span class="font-mono">{pct(r.rentSharePct)}</span></div>
+													<div><span class="text-gray-500">3-mo trend</span><br /><span class="font-mono {r.trendPct === null ? '' : r.trendPct >= 0 ? 'text-emerald-600' : 'text-red-600'}">{r.trendPct === null ? '—' : `${r.trendPct > 0 ? '+' : ''}${r.trendPct}%`}</span></div>
+													<div><span class="text-gray-500">months selling</span><br /><span class="font-mono">{r.monthsSelling} / {data.months.length}</span></div>
+													<div><span class="text-gray-500">12-mo avg sales</span><br /><span class="font-mono">{money(r.avgSales12)}</span></div>
+													<div><span class="text-gray-500">best month</span><br /><span class="font-mono">{r.bestMonth ? `${monthLabel(r.bestMonth.month)} ${formatCurrency(r.bestMonth.sales)}` : '—'}</span></div>
+													<div><span class="text-gray-500">net today → proposed</span><br /><span class="font-mono">{signed(r.netToday)} → {signed(r.net)}</span></div>
+												</div>
 												<div class="text-xs text-gray-600 mb-1">
 													History (oldest → newest). Vendor keeps {money(r.sales - r.out.commission)} of {money(r.sales)} under the proposal.
 													Processing fees on these sales ≈ {money(round2((r.sales * (Number(processingPct) || 0)) / 100))} ({processingPct}%), already in the break-even rate.
@@ -665,11 +788,12 @@
 							</tbody>
 							<tfoot class="bg-gray-800 text-white">
 								<tr class="align-top">
-									<td class="px-2 py-2 font-semibold">Totals ({rows.length})<div class="text-xs font-normal text-gray-300">{newTotals.sqft} sq ft</div></td>
+									<td class="px-2 py-2 font-semibold">Totals ({rows.length})<div class="text-xs font-normal text-gray-300">{newTotals.sqft} sq ft{#if floorSqft > 0} · {share(newTotals.sqft, floorSqft)} of floor{/if}</div></td>
 									<td class="px-2 py-2 text-right">{money(newTotals.sales)}</td>
 									{#if showToday}<td class="px-2 py-2 text-right"><div class="font-semibold">{money(curTotals.storeRevenue)}<span class="text-xs font-normal text-gray-300"> / mo</span></div><div class="text-xs text-gray-300">{money(curTotals.rent)} rent + {money(curTotals.commission)} comm</div><div class="text-xs text-gray-300">{money(curTotals.perSqft)}/sq ft</div></td>{/if}
 									{#if showProposal}<td class="px-2 py-2 text-right text-xs text-gray-300">{money(newTotals.rent)} rent<br />{money(newTotals.commission)} comm</td>{/if}
 									<td class="px-2 py-2 text-right"><div class="font-bold">{money(newTotals.storeRevenue)}<span class="text-xs font-normal text-gray-300"> / mo</span></div><div class="text-xs text-gray-300">{money(newTotals.perSqft)}/sq ft</div><div class="text-xs font-mono {newTotals.storeRevenue - curTotals.storeRevenue >= 0 ? 'text-emerald-300' : 'text-red-300'}">{signed(round2(newTotals.storeRevenue - curTotals.storeRevenue))}</div></td>
+									{#if showProfit}<td class="px-2 py-2 text-right"><div class="font-semibold {rows.reduce((a, r) => a + r.net, 0) >= 0 ? 'text-emerald-300' : 'text-red-300'}">{signed(round2(rows.reduce((a, r) => a + r.net, 0)))}<span class="text-xs font-normal text-gray-300"> / mo</span></div><div class="text-xs text-gray-300">costs {money(round2(rows.reduce((a, r) => a + r.allocatedCost, 0)))} · today {signed(round2(rows.reduce((a, r) => a + r.netToday, 0)))}</div></td>{/if}
 									{#if showTargets}<td class="px-2 py-2 text-xs text-gray-300">at −{stressPct}%: rent +{money(round2(rows.reduce((a, r) => a + r.stressRentIncrease, 0)))}{#if breakEven !== null}<br />break-even: rent +{money(round2(rows.reduce((a, r) => a + (r.beRentIncrease ?? 0), 0)))}{/if}</td>{/if}
 									<td></td>
 								</tr>
