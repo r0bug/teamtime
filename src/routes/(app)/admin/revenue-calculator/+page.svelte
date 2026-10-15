@@ -63,6 +63,7 @@
 	let search = '';
 	let showCurrent = true;
 	let showDeparted = true;
+	let showOffFloor = true;
 	let minSqft = 0;
 	let selected: Record<string, boolean> = Object.fromEntries(data.vendors.filter((v) => v.current).map((v) => [v.key, true]));
 	let expanded: Record<string, boolean> = {};
@@ -75,6 +76,7 @@
 
 	$: visible = data.vendors.filter((v) => {
 		if (v.current ? !showCurrent : !showDeparted) return false;
+		if (!v.onFloor && !showOffFloor) return false;
 		if (v.sqft < minSqft) return false;
 		if (!search.trim()) return true;
 		const q = search.trim().toLowerCase();
@@ -458,13 +460,14 @@
 		<div class="card lg:col-span-1">
 			<div class="card-header">
 				<h2 class="text-lg font-semibold text-gray-900">Vendors</h2>
-				<p class="text-sm text-gray-500">{selectedVendors.length} selected · {data.vendors.filter((v) => v.current).length} on the floor, {data.vendors.filter((v) => !v.current).length} departed</p>
+				<p class="text-sm text-gray-500">{selectedVendors.length} selected · {data.vendors.filter((v) => v.current && v.onFloor).length} on the floor · {data.vendors.filter((v) => v.current && !v.onFloor).length} selling without a booth · {data.vendors.filter((v) => !v.current).length} departed</p>
 			</div>
 			<div class="card-body space-y-3">
 				<input type="search" class="input" placeholder="Search code, name or NRS id…" bind:value={search} />
 				<div class="flex flex-wrap items-center gap-3 text-sm">
 					<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showCurrent} /> Current</label>
 					<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showDeparted} /> Departed</label>
+					<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showOffFloor} /> No booth</label>
 					<label class="flex items-center gap-1">Min sq ft <input type="number" min="0" class="input w-20 py-0.5" bind:value={minSqft} /></label>
 				</div>
 				<div class="flex gap-2">
@@ -481,10 +484,11 @@
 									<span class="flex items-center gap-2">
 										<span class="font-medium text-gray-900 truncate">{v.label}</span>
 										{#if v.shared}<span class="badge-gray">shared</span>{/if}
-										{#if !v.current}<span class="badge-warning">left{v.lastSeenMonth ? ` ${monthLabel(v.lastSeenMonth)}` : ''}</span>{/if}
+										{#if !v.onFloor}<span class="badge-primary">no booth</span>{/if}
+										{#if !v.current}<span class="badge-warning">{v.onFloor ? 'left' : 'inactive'}{v.lastSeenMonth ? ` ${monthLabel(v.lastSeenMonth)}` : ''}</span>{/if}
 									</span>
 									<span class="block text-xs text-gray-500 truncate">{v.names.join(', ')}</span>
-									<span class="block text-xs text-gray-500">{v.sqft} sq ft · rent {money(v.rent)} · comm {pct(v.commissionPct)}</span>
+									<span class="block text-xs text-gray-500">{v.onFloor ? `${v.sqft} sq ft · ` : ''}rent {money(v.rent)} · comm {pct(v.commissionPct)}</span>
 								</span>
 							</label>
 						</li>
@@ -569,7 +573,7 @@
 								{#each rows as r (r.v.key)}
 									<tr class="border-t border-gray-200 align-top">
 										<td class="px-2 py-2">
-											<div class="font-medium text-gray-900">{r.v.label} {#if !r.v.current}<span class="badge-warning ml-1">departed</span>{/if}</div>
+											<div class="font-medium text-gray-900">{r.v.label} {#if !r.v.onFloor}<span class="badge-primary ml-1">no booth</span>{/if}{#if !r.v.current}<span class="badge-warning ml-1">{r.v.onFloor ? 'departed' : 'inactive'}</span>{/if}</div>
 											<div class="text-xs text-gray-500 truncate max-w-[11rem]">{r.v.names.join(', ')}</div>
 											<label class="mt-1 flex items-center gap-1 text-xs text-gray-500">
 												<input type="number" min="0" class="input w-16 py-0.5 text-right text-xs" placeholder={String(r.v.sqft)} bind:value={ov[r.v.key].sqft} on:input={() => (ov = ov)} aria-label="Square feet override" /> sq ft
@@ -616,7 +620,9 @@
 													<div><span class="text-gray-500">threshold</span> <span class="font-medium {r.sales >= r.thresholdSales ? 'text-gray-900' : 'text-amber-600'}">{money(r.thresholdSales)}</span></div>
 													<div><span class="text-gray-500">at −{stressPct}%</span> {r.stressRentIncrease > 0 ? `rent +${formatCurrency(r.stressRentIncrease)}` : 'no increase'}</div>
 												{/if}
-												{#if r.beSalesNeeded === null || r.beRentIncrease === null}
+												{#if r.sqft <= 0}
+													<div class="text-gray-400">no booth — commission only</div>
+												{:else if r.beSalesNeeded === null || r.beRentIncrease === null}
 													<div class="text-gray-400">break-even: enter costs</div>
 												{:else if r.bePerSqftMet}
 													<div class="text-emerald-600">✓ covers costs (needs {money(r.beSalesNeeded)})</div>

@@ -1,7 +1,8 @@
 import type { PageServerLoad, Actions } from './$types';
 import { redirect, fail } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
-import { db, appSettings } from '$lib/server/db';
+import { db, appSettings, vendors } from '$lib/server/db';
+import { sql } from 'drizzle-orm';
 import { isAdmin } from '$lib/server/auth/roles';
 import { loadTargetPerSqft } from '$lib/server/floorplan/target';
 import { recentMonths, salesByVendorByMonth } from '$lib/server/floorplan/revenue-trends';
@@ -25,8 +26,10 @@ export interface CalcVendor {
 	names: string[];
 	vendorIds: number[];
 	shared: boolean;
-	/** On the floorplan today? */
+	/** Still active (on the floorplan today, or an off-floor vendor still selling)? */
 	current: boolean;
+	/** Has painted booth space now or in the archive. Off-floor vendors (consignors etc.) sell without one. */
+	onFloor: boolean;
 	/** Latest month with an archive row (null when never archived). */
 	lastSeenMonth: string | null;
 	sqft: number;
@@ -124,6 +127,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			vendorIds,
 			shared: booth?.shared ?? latest?.shared ?? false,
 			current: !!booth,
+			onFloor: true,
 			lastSeenMonth: latest?.month ?? null,
 			sqft: booth?.sqft ?? latest?.sqft ?? 0,
 			rent: booth?.rent ?? (latest ? latest.rentCents / 100 : 0),
@@ -134,7 +138,54 @@ export const load: PageServerLoad = async ({ locals }) => {
 			rentHistory: months.map((m) => histByMonth.get(m)?.rent ?? null)
 		});
 	}
-	vendorsOut.sort((a, b) => Number(b.current) - Number(a.current) || a.label.localeCompare(b.label));
+	// Vendors who sell but have no booth (consignors on a split, cabinet-less
+	// vendors…): their commission is store revenue too. Anyone with sales in the
+	// window who isn't an occupant of any booth, current or archived.
+	const boothVendorIds = new Set(vendorsOut.flatMap((v) => v.vendorIds));
+	const vendorRows = await db
+		.select({
+			nrsVendorId: vendors.nrsVendorId,
+			displayName: vendors.displayName,
+			code: vendors.inventoryCodePrefix,
+			monthlyRentCents: vendors.monthlyRentCents,
+			vendorPaymentPercent: vendors.vendorPaymentPercent,
+			nrsInactive: vendors.nrsInactive,
+			status: vendors.status
+		})
+		.from(vendors)
+		.where(sql`${vendors.nrsVendorId} IS NOT NULL`);
+	const recent = new Set([...months.slice(-3), thisMonth]);
+	for (const v of vendorRows) {
+		const id = v.nrsVendorId!;
+		if (boothVendorIds.has(id)) continue;
+		const byMonth = sales.get(id);
+		if (!byMonth || byMonth.size === 0) continue;
+		const pick = (m: string, f: 'gross' | 'retained') => {
+			const x = byMonth.get(m);
+			return x ? Math.round(x[f] * 100) / 100 : null;
+		};
+		const sellingRecently = [...byMonth.keys()].some((m) => recent.has(m) && (byMonth.get(m)?.gross ?? 0) > 0);
+		const pct = v.vendorPaymentPercent === null ? null : Number(v.vendorPaymentPercent);
+		vendorsOut.push({
+			key: `n:${id}`,
+			label: v.code ?? v.displayName,
+			names: [v.displayName],
+			vendorIds: [id],
+			shared: false,
+			current: sellingRecently && !v.nrsInactive && v.status !== 'terminated',
+			onFloor: false,
+			lastSeenMonth: [...byMonth.keys()].sort().at(-1) ?? null,
+			sqft: 0,
+			rent: (v.monthlyRentCents ?? 0) / 100,
+			commissionPct: pct === null || !Number.isFinite(pct) ? null : Math.round((100 - pct) * 100) / 100,
+			sales: months.map((m) => pick(m, 'gross')),
+			retained: months.map((m) => pick(m, 'retained')),
+			sqftHistory: months.map(() => null),
+			rentHistory: months.map(() => null)
+		});
+	}
+
+	vendorsOut.sort((a, b) => Number(b.current) - Number(a.current) || Number(b.onFloor) - Number(a.onFloor) || a.label.localeCompare(b.label));
 
 	// Month-to-date sales for the current month (shown as context, not in the baseline window).
 	const archivedMonths = [...new Set([...history.values()].flatMap((h) => h.months.map((m) => m.month)))].sort();
