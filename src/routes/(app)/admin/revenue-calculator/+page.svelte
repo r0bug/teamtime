@@ -66,7 +66,7 @@
 	let minSqft = 0;
 	let selected: Record<string, boolean> = Object.fromEntries(data.vendors.filter((v) => v.current).map((v) => [v.key, true]));
 	let expanded: Record<string, boolean> = {};
-	let sortBy: 'label' | 'today' | 'proposed' | 'sqft' | 'sales' = 'today';
+	let sortBy: 'label' | 'today' | 'proposed' | 'revenue' | 'proposedRevenue' | 'sqft' | 'sales' = 'revenue';
 	// Column groups (the full table is wider than most screens)
 	let showToday = true;
 	let showProposal = true;
@@ -231,10 +231,17 @@
 
 	function sortRows(rs: Row[], by: typeof sortBy): Row[] {
 		const val = (r: Row) =>
-			by === 'today' ? (r.cur.perSqft ?? -1) : by === 'proposed' ? (r.out.perSqft ?? -1) : by === 'sqft' ? r.sqft : by === 'sales' ? r.sales : 0;
+			by === 'today' ? (r.cur.perSqft ?? -1)
+			: by === 'proposed' ? (r.out.perSqft ?? -1)
+			: by === 'revenue' ? r.cur.storeRevenue
+			: by === 'proposedRevenue' ? r.out.storeRevenue
+			: by === 'sqft' ? r.sqft
+			: by === 'sales' ? r.sales
+			: 0;
 		return [...rs].sort((a, b) => (by === 'label' ? a.v.label.localeCompare(b.v.label) : val(b) - val(a) || a.v.label.localeCompare(b.v.label)));
 	}
 	$: curTotals = totals(rows.map((r) => ({ sqft: r.sqft, monthlySales: r.sales, outcome: r.cur })));
+	const share = (amount: number, total: number) => (total > 0 ? `${round2((amount / total) * 100)}%` : '—');
 	$: newTotals = totals(rows.map((r) => ({ sqft: r.sqft, monthlySales: r.sales, outcome: r.out })));
 
 	const modeLabels: Record<BaselineMode, string> = {
@@ -523,6 +530,8 @@
 				<div class="flex flex-wrap items-center justify-between gap-2">
 					<label class="text-sm text-gray-600 flex items-center gap-2">Sort by
 						<select class="input py-0.5 w-auto" bind:value={sortBy}>
+							<option value="revenue">Monthly revenue today (rent + commission)</option>
+							<option value="proposedRevenue">Proposed monthly revenue</option>
 							<option value="today">Today $/sq ft</option>
 							<option value="proposed">Proposed $/sq ft</option>
 							<option value="sales">Sales</option>
@@ -572,9 +581,10 @@
 										</td>
 										{#if showToday}
 											<td class="px-2 py-2 text-right text-xs text-gray-600 whitespace-nowrap">
-												<div class="text-base font-semibold {r.cur.gapToTarget === 0 ? 'text-emerald-600' : 'text-amber-600'}">{money(r.cur.perSqft)}<span class="text-xs font-normal text-gray-400">/sq ft</span></div>
-												<div>{money(r.cur.storeRevenue)} / mo</div>
-												<div>{money(r.v.rent)} rent · {pct(r.curComm)}{#if r.curCommDerived}<span class="text-gray-400" title="derived from last month's retained ÷ gross">*</span>{/if}</div>
+												<div class="text-base font-semibold text-gray-900">{money(r.cur.storeRevenue)}<span class="text-xs font-normal text-gray-400"> / mo</span></div>
+												<div class="text-gray-500">{share(r.cur.storeRevenue, curTotals.storeRevenue)} of selection revenue</div>
+												<div class="font-medium {r.cur.gapToTarget === 0 ? 'text-emerald-600' : 'text-amber-600'}">{money(r.cur.perSqft)}<span class="text-xs font-normal text-gray-400">/sq ft</span></div>
+												<div>{money(r.cur.rent)} rent + {money(r.cur.commission)} comm ({pct(r.curComm)}{#if r.curCommDerived}<span class="text-gray-400" title="derived from last month's retained ÷ gross">*</span>{/if})</div>
 											</td>
 										{/if}
 										{#if showProposal}
@@ -594,8 +604,9 @@
 											</td>
 										{/if}
 										<td class="px-2 py-2 text-right whitespace-nowrap">
-											<div class="text-base font-semibold {r.out.gapToTarget === 0 ? 'text-emerald-600' : 'text-amber-600'}">{money(r.out.perSqft)}<span class="text-xs font-normal text-gray-400">/sq ft</span></div>
-											<div class="font-medium text-gray-900">{money(r.out.storeRevenue)} / mo</div>
+											<div class="text-base font-semibold text-gray-900">{money(r.out.storeRevenue)}<span class="text-xs font-normal text-gray-400"> / mo</span></div>
+											<div class="text-xs text-gray-500">{share(r.out.storeRevenue, newTotals.storeRevenue)} of selection revenue</div>
+											<div class="font-medium {r.out.gapToTarget === 0 ? 'text-emerald-600' : 'text-amber-600'}">{money(r.out.perSqft)}<span class="text-xs font-normal text-gray-400">/sq ft</span></div>
 											<div class="text-xs font-mono {r.delta > 0 ? 'text-emerald-600' : r.delta < 0 ? 'text-red-600' : 'text-gray-500'}">{signed(r.delta)} vs today</div>
 											{#if r.out.gapToTarget && r.out.gapToTarget > 0}<div class="text-xs text-amber-600">short {money(r.out.gapToTarget)} of target</div>{/if}
 										</td>
@@ -650,9 +661,9 @@
 								<tr class="align-top">
 									<td class="px-2 py-2 font-semibold">Totals ({rows.length})<div class="text-xs font-normal text-gray-300">{newTotals.sqft} sq ft</div></td>
 									<td class="px-2 py-2 text-right">{money(newTotals.sales)}</td>
-									{#if showToday}<td class="px-2 py-2 text-right"><div class="font-semibold">{money(curTotals.perSqft)}<span class="text-xs font-normal text-gray-300">/sq ft</span></div><div class="text-xs text-gray-300">{money(curTotals.storeRevenue)} / mo</div></td>{/if}
+									{#if showToday}<td class="px-2 py-2 text-right"><div class="font-semibold">{money(curTotals.storeRevenue)}<span class="text-xs font-normal text-gray-300"> / mo</span></div><div class="text-xs text-gray-300">{money(curTotals.rent)} rent + {money(curTotals.commission)} comm</div><div class="text-xs text-gray-300">{money(curTotals.perSqft)}/sq ft</div></td>{/if}
 									{#if showProposal}<td class="px-2 py-2 text-right text-xs text-gray-300">{money(newTotals.rent)} rent<br />{money(newTotals.commission)} comm</td>{/if}
-									<td class="px-2 py-2 text-right"><div class="font-bold">{money(newTotals.perSqft)}<span class="text-xs font-normal text-gray-300">/sq ft</span></div><div class="text-xs text-gray-300">{money(newTotals.storeRevenue)} / mo</div><div class="text-xs font-mono {newTotals.storeRevenue - curTotals.storeRevenue >= 0 ? 'text-emerald-300' : 'text-red-300'}">{signed(round2(newTotals.storeRevenue - curTotals.storeRevenue))}</div></td>
+									<td class="px-2 py-2 text-right"><div class="font-bold">{money(newTotals.storeRevenue)}<span class="text-xs font-normal text-gray-300"> / mo</span></div><div class="text-xs text-gray-300">{money(newTotals.perSqft)}/sq ft</div><div class="text-xs font-mono {newTotals.storeRevenue - curTotals.storeRevenue >= 0 ? 'text-emerald-300' : 'text-red-300'}">{signed(round2(newTotals.storeRevenue - curTotals.storeRevenue))}</div></td>
 									{#if showTargets}<td class="px-2 py-2 text-xs text-gray-300">at −{stressPct}%: rent +{money(round2(rows.reduce((a, r) => a + r.stressRentIncrease, 0)))}{#if breakEven !== null}<br />break-even: rent +{money(round2(rows.reduce((a, r) => a + (r.beRentIncrease ?? 0), 0)))}{/if}</td>{/if}
 									<td></td>
 								</tr>
