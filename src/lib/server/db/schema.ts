@@ -3316,7 +3316,7 @@ export const vendors = pgTable('vendors', {
 	notes: text('notes'),
 
 	// Onboarding & portal (Stage 2a)
-	// Per-vendor SKU prefix in NRS (2-8 chars [A-Z0-9]). All this vendor's
+	// Per-vendor SKU prefix in NRS (2-8 chars [A-Z0-9&]). All this vendor's
 	// item codes start with this prefix (e.g. 'SR' → 'SR00212').
 	inventoryCodePrefix: text('inventory_code_prefix').unique(),
 	portalEnabled: boolean('portal_enabled').notNull().default(false),

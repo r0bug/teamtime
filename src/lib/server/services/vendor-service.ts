@@ -273,7 +273,7 @@ const NRS_AUTHORITATIVE_KEYS = [
 // metadata field meta13 (see vendor-nrs-metadata-service). Special-cased
 // inline in nrsDetailToPatch / syncFromNrs.)
 
-const PREFIX_RE_INNER = /^[A-Z0-9]{2,8}$/;
+const PREFIX_RE_INNER = /^[A-Z0-9&]{2,8}$/; // NRS vendor codes may carry '&' (e.g. G&G); ZPL/Code 128 handle it
 
 /**
  * Best-effort parse of the NRS `notes` field for booth rent + commission %.
@@ -757,7 +757,7 @@ export async function removeUnusedVendorStubs(): Promise<{ removed: number; kept
 
 // ── Onboarding (Stage 2a) ────────────────────────────────────────────────────
 
-const PREFIX_RE = /^[A-Z0-9]{2,8}$/;
+const PREFIX_RE = /^[A-Z0-9&]{2,8}$/;
 
 export class VendorServiceError extends Error {}
 
