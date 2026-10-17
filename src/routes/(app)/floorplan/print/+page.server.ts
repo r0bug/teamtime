@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { error, redirect } from '@sveltejs/kit';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { db, vendors, floorplanPools } from '$lib/server/db';
 import { listPlans, getAttrDefs, queryCells } from '$lib/server/floorplan/core';
 import { canView, viewerRank, visibleDefs, filterAttrsByRank, defsByKey } from '$lib/server/floorplan/permissions';
@@ -29,6 +29,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			pools: [] as { name: string; color: string }[],
 			vendorsById: {} as Record<string, { code: string | null; name: string }>,
 			zones: [] as string[],
+			vendorCodes: {} as Record<string, { nrsVendorId: number; name: string }>,
+			canEdit: false,
 			printedBy: ''
 		};
 	}
@@ -59,6 +61,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	for (const v of vendorRows) vendorsById[String(v.nrsVendorId)] = { code: v.code, name: v.displayName };
 
 	const poolRows = await db.select({ name: floorplanPools.name, color: floorplanPools.color }).from(floorplanPools).where(eq(floorplanPools.planId, plan.id));
+	// Every placeable vendor code → NRS id, for the "changes by text" box
+	// (parents only: pass-through children are painted as their parent).
+	const codeRows = await db
+		.select({ code: vendors.inventoryCodePrefix, nrsVendorId: vendors.nrsVendorId, name: vendors.displayName })
+		.from(vendors)
+		.where(and(ne(vendors.status, 'terminated'), eq(vendors.nrsInactive, false), sql`${vendors.nrsVendorId} IS NOT NULL`, isNull(vendors.parentNrsVendorId)));
+	const vendorCodes: Record<string, { nrsVendorId: number; name: string }> = {};
+	for (const r of codeRows) if (r.code) vendorCodes[r.code.toUpperCase()] = { nrsVendorId: r.nrsVendorId!, name: r.name };
 	const zones = [...new Set(cells.map((c) => c.attrs.zone).filter((z): z is string => !!z))].sort();
 
 	return {
@@ -69,6 +79,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		pools: poolRows,
 		vendorsById,
 		zones,
+		vendorCodes,
+		canEdit: true,
 		printedBy: locals.user.name ?? ''
 	};
 };

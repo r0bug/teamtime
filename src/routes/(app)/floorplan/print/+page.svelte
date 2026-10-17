@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
+	import { notify } from '$lib/notify';
 	import { autoColor } from '$lib/floorplan/colors';
 	import type { PageData } from './$types';
 
@@ -23,7 +24,7 @@
 
 	const PAPER: Record<Paper, [number, number]> = { letter: [8.5, 11], legal: [8.5, 14], tabloid: [11, 17] };
 	const MARGIN_IN = 0.4;
-	const HEADER_IN = 0.55; // title line + legend
+	const HEADER_IN = 1.25; // title line + legend + how-to box
 	const NOTES_IN = 1.1; // blank lines at the bottom of each sheet
 
 	// ── Data ───────────────────────────────────────────────────────────────
@@ -168,6 +169,98 @@
 		if (!showNotes) p.set('notes', '0');
 		goto(`/floorplan/print?${p.toString()}`, { keepFocus: true, noScroll: true });
 	}
+	// ── Zoom: pick a section on the overview map, print it larger ──────────
+	$: painted = (() => {
+		if (data.cells.length === 0) return { minX: 0, minY: 0, maxX: 10, maxY: 10 };
+		let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+		for (const c of data.cells) { minX = Math.min(minX, c.x); minY = Math.min(minY, c.y); maxX = Math.max(maxX, c.x); maxY = Math.max(maxY, c.y); }
+		return { minX: Math.max(0, minX - 2), minY: Math.max(0, minY - 2), maxX: maxX + 2, maxY: maxY + 2 };
+	})();
+	let drag: { x0: number; y0: number; x1: number; y1: number } | null = null;
+	let miniEl: SVGSVGElement;
+	function miniCell(ev: PointerEvent): { x: number; y: number } {
+		const r = miniEl.getBoundingClientRect();
+		const w = painted.maxX - painted.minX + 1, h = painted.maxY - painted.minY + 1;
+		const x = Math.floor(((ev.clientX - r.left) / r.width) * w) + painted.minX;
+		const y = Math.floor(((ev.clientY - r.top) / r.height) * h) + painted.minY;
+		return { x: Math.max(painted.minX, Math.min(painted.maxX, x)), y: Math.max(painted.minY, Math.min(painted.maxY, y)) };
+	}
+	function miniDown(ev: PointerEvent) { const c = miniCell(ev); drag = { x0: c.x, y0: c.y, x1: c.x, y1: c.y }; (ev.target as Element).setPointerCapture?.(ev.pointerId); }
+	function miniMove(ev: PointerEvent) { if (!drag) return; const c = miniCell(ev); drag = { ...drag, x1: c.x, y1: c.y }; }
+	function miniUp() {
+		if (!drag) return;
+		const x1 = Math.min(drag.x0, drag.x1), x2 = Math.max(drag.x0, drag.x1), y1 = Math.min(drag.y0, drag.y1), y2 = Math.max(drag.y0, drag.y1);
+		if (x2 - x1 >= 1 || y2 - y1 >= 1) { rangeText = `${x1},${y1}-${x2},${y2}`; zone = ''; fit = false; }
+		drag = null;
+	}
+	function clearSection() { rangeText = ''; zone = ''; fit = true; }
+	function zoomBy(step: number) { cellsPerInch = Math.max(1, Math.min(12, cellsPerInch - step)); fit = false; }
+	$: cellInches = cellIn;
+	$: dragRect = drag ? { x: Math.min(drag.x0, drag.x1), y: Math.min(drag.y0, drag.y1), w: Math.abs(drag.x1 - drag.x0) + 1, h: Math.abs(drag.y1 - drag.y0) + 1 } : null;
+
+	// ── Changes by text: "x1,y1-x2,y2 CODE" lines → cell ops ──────────────
+	// Grammar (one change per line, # comments allowed):
+	//   78,20-87,28 GSE          paint the vendor with code GSE on that rectangle
+	//   78,20 GSE                a single cell
+	//   78,20-87,28 pool G&G     paint a shared-space pool
+	//   78,20-87,28 clear        remove vendor/pool from those cells
+	// Vendor/pool paint only lands on sellable cells (like the editor).
+	let changesText = '';
+	let applying = false;
+	type ParsedLine = { line: number; text: string; error?: string; ops: { x: number; y: number; key: string; value: string | null }[]; skipped: number; summary: string };
+	function parseChanges(text: string): ParsedLine[] {
+		const out: ParsedLine[] = [];
+		const codes = data.vendorCodes as Record<string, { nrsVendorId: number; name: string }>;
+		text.split('\n').forEach((raw, i) => {
+			const t = raw.replace(/#.*$/, '').trim();
+			if (!t) return;
+			const m = t.match(/^(\d+)\s*,\s*(\d+)(?:\s*-\s*(\d+)\s*,\s*(\d+))?\s+(.+)$/);
+			if (!m) { out.push({ line: i + 1, text: raw, error: 'Expected "x,y CODE" or "x1,y1-x2,y2 CODE"', ops: [], skipped: 0, summary: '' }); return; }
+			const x1 = Number(m[1]), y1 = Number(m[2]), x2 = m[3] !== undefined ? Number(m[3]) : x1, y2 = m[4] !== undefined ? Number(m[4]) : y1;
+			const what = m[5].trim();
+			const minX = Math.min(x1, x2), maxX = Math.max(x1, x2), minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+			if (!data.plan || maxX >= data.plan.gridW || maxY >= data.plan.gridH) { out.push({ line: i + 1, text: raw, error: `Outside the plan (max ${(data.plan?.gridW ?? 1) - 1},${(data.plan?.gridH ?? 1) - 1})`, ops: [], skipped: 0, summary: '' }); return; }
+			let key: string, value: string | null, label: string;
+			const poolM = what.match(/^pool\s+(.+)$/i);
+			if (/^(clear|none|empty|remove)$/i.test(what)) { key = 'vendor_id'; value = null; label = 'clear'; }
+			else if (poolM) { key = 'pool'; value = poolM[1].trim(); label = `pool ${value}`; }
+			else {
+				const v = codes[what.toUpperCase()];
+				if (!v) { out.push({ line: i + 1, text: raw, error: `Unknown vendor code "${what}"`, ops: [], skipped: 0, summary: '' }); return; }
+				key = 'vendor_id'; value = String(v.nrsVendorId); label = `${what.toUpperCase()} (${v.name})`;
+			}
+			const ops: ParsedLine['ops'] = [];
+			let skipped = 0;
+			for (let y = minY; y <= maxY; y++)
+				for (let x = minX; x <= maxX; x++) {
+					const c = cellMap.get(`${x},${y}`);
+					if (value === null) { if (c?.attrs.vendor_id) ops.push({ x, y, key: 'vendor_id', value: null }); if (c?.attrs.pool) ops.push({ x, y, key: 'pool', value: null }); continue; }
+					if (c?.attrs.kind !== 'sellable') { skipped++; continue; }
+					ops.push({ x, y, key, value });
+				}
+			out.push({ line: i + 1, text: raw, ops, skipped, summary: `${minX},${minY}-${maxX},${maxY} → ${label}: ${ops.length} cell${ops.length === 1 ? '' : 's'}${skipped ? `, ${skipped} not sellable (skipped)` : ''}` });
+		});
+		return out;
+	}
+	$: parsed = parseChanges(changesText);
+	$: allOps = parsed.flatMap((l) => l.ops);
+	$: parseErrors = parsed.filter((l) => l.error);
+	async function applyChanges() {
+		if (!data.plan || allOps.length === 0 || parseErrors.length) return;
+		applying = true;
+		try {
+			const r = await fetch(`/api/floorplan/${data.plan.id}/cells`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops: allOps }) });
+			if (!r.ok) { const msg = await r.text().catch(() => r.statusText); throw new Error(msg.slice(0, 300)); }
+			notify.success(`Applied ${allOps.length} cell change${allOps.length === 1 ? '' : 's'} to the floorplan`);
+			changesText = '';
+			await invalidateAll();
+		} catch (err) {
+			notify.error(`Could not apply changes: ${err instanceof Error ? err.message : String(err)}`);
+		} finally {
+			applying = false;
+		}
+	}
+
 	const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', year: 'numeric', month: 'short', day: 'numeric' });
 	const PX = 96; // CSS px per inch
 
@@ -222,6 +315,50 @@
 			</div>
 		</div></div>
 		<p class="text-xs text-gray-500 mt-2">Section {section.minX},{section.minY} – {section.maxX},{section.maxY} ({secW} × {secH} cells, 1 cell = 1 ft). Use your browser's print dialog for the color printer; background graphics must be on.</p>
+
+		<!-- Zoom: drag a box on the overview to pick a section; it prints tiled at the chosen scale -->
+		<div class="card mt-4"><div class="card-body grid grid-cols-1 lg:grid-cols-3 gap-4">
+			<div class="lg:col-span-2">
+				<div class="flex flex-wrap items-center justify-between gap-2 mb-2 text-sm">
+					<span class="font-medium text-gray-900">Zoom into a section — drag a box on the map</span>
+					<span class="flex items-center gap-2">
+						<button type="button" class="btn-secondary btn-sm" on:click={() => zoomBy(-1)} title="Smaller cells (more per inch)">−</button>
+						<span class="font-mono text-xs">{cellsPerInch} cells / inch · 1 cell = {(cellInches).toFixed(2)} in</span>
+						<button type="button" class="btn-secondary btn-sm" on:click={() => zoomBy(1)} title="Bigger cells (fewer per inch)">+</button>
+						<button type="button" class="btn-ghost btn-sm" on:click={clearSection}>Whole plan</button>
+					</span>
+				</div>
+				<svg
+					bind:this={miniEl}
+					class="w-full border border-gray-300 rounded bg-white touch-none cursor-crosshair"
+					viewBox="{painted.minX} {painted.minY} {painted.maxX - painted.minX + 1} {painted.maxY - painted.minY + 1}"
+					on:pointerdown={miniDown} on:pointermove={miniMove} on:pointerup={miniUp} on:pointercancel={() => (drag = null)}
+					role="img" aria-label="Floorplan overview; drag to select a section to print"
+				>
+					{#each data.cells as c (c.x + ',' + c.y)}
+						<rect x={c.x} y={c.y} width="1" height="1" fill={c.attrs.kind === 'structure' ? '#4b5563' : c.attrs.vendor_id ? lighten(autoColor(c.attrs.vendor_id)) : c.attrs.pool ? lighten(poolColor.get(c.attrs.pool) ?? autoColor(c.attrs.pool)) : c.attrs.kind === 'boh' ? '#e5e7eb' : '#f8fafc'} />
+					{/each}
+					<path d={Array.from({ length: Math.floor((painted.maxX - painted.minX) / 10) + 2 }, (_, k) => { const x = Math.ceil(painted.minX / 10) * 10 + k * 10; return x <= painted.maxX ? `M${x},${painted.minY}V${painted.maxY + 1}` : ''; }).join('') + Array.from({ length: Math.floor((painted.maxY - painted.minY) / 10) + 2 }, (_, k) => { const y = Math.ceil(painted.minY / 10) * 10 + k * 10; return y <= painted.maxY ? `M${painted.minX},${y}H${painted.maxX + 1}` : ''; }).join('')} stroke="#9ca3af" stroke-width="0.15" fill="none" />
+					<rect x={section.minX} y={section.minY} width={secW} height={secH} fill="rgba(37,99,235,0.12)" stroke="#2563eb" stroke-width="0.4" />
+					{#if dragRect}<rect x={dragRect.x} y={dragRect.y} width={dragRect.w} height={dragRect.h} fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="0.4" stroke-dasharray="1 0.6" />{/if}
+				</svg>
+				<p class="text-xs text-gray-500 mt-1">Blue box = what prints. Drag a new box to zoom; use − / + to change the printed scale. {sheets.length} sheet{sheets.length === 1 ? '' : 's'} at this zoom.</p>
+			</div>
+			<div>
+				<div class="font-medium text-gray-900 text-sm mb-1">Enter changes by text</div>
+				<p class="text-xs text-gray-500 mb-2">Type what staff wrote on the worksheet, one change per line, then Apply. Vendor paint lands on sellable cells only, like the editor.</p>
+				<textarea class="input font-mono text-xs h-40" placeholder={'78,20-87,28 GSE\n60,31 BMC\n40,50-45,55 pool G&G\n70,12-72,14 clear'} bind:value={changesText}></textarea>
+				<ul class="mt-2 text-xs space-y-0.5 max-h-32 overflow-y-auto">
+					{#each parsed as l (l.line)}
+						<li class={l.error ? 'text-red-600' : 'text-gray-700'}>line {l.line}: {l.error ?? l.summary}</li>
+					{/each}
+				</ul>
+				<div class="mt-2 flex items-center justify-between gap-2">
+					<span class="text-xs text-gray-500">{allOps.length} cell op{allOps.length === 1 ? '' : 's'}{parseErrors.length ? ` · fix ${parseErrors.length} line${parseErrors.length === 1 ? '' : 's'} first` : ''}</span>
+					<button type="button" class="btn-primary btn-sm" disabled={applying || allOps.length === 0 || parseErrors.length > 0 || !data.canEdit} on:click={applyChanges}>{applying ? 'Applying…' : 'Apply to floorplan'}</button>
+				</div>
+			</div>
+		</div></div>
 	{/if}
 </div>
 
@@ -239,6 +376,15 @@
 				{#if legend().length}
 					<div class="legend">{#each legend() as l}<span><i style="background:{l.color}"></i>{l.text}</span>{/each}</div>
 				{/if}
+			</div>
+			<div class="howto">
+				<strong>Recording a change:</strong> cells are <b>x,y</b> — x counts across from the left edge (numbers along the top), y counts down from the top (numbers along the left); 1 cell = 1 ft; a rectangle is <b>x1,y1-x2,y2</b> (corner to corner, inclusive).
+				Write one change per line, then type it into TeamTime → Floorplan → Worksheet → "Enter changes by text":
+				<span class="ex">78,20-87,28 GSE</span> vendor GSE takes that rectangle ·
+				<span class="ex">60,31 BMC</span> one cell ·
+				<span class="ex">40,50-45,55 pool G&amp;G</span> shared space ·
+				<span class="ex">70,12-72,14 clear</span> empty those cells.
+				Only sellable (white/colored) cells take a vendor; walls and back-of-house are skipped.
 			</div>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
@@ -295,6 +441,8 @@
 	.legend { display: flex; flex-wrap: wrap; gap: 0.08in 0.18in; font-size: 8pt; margin-top: 0.04in; }
 	.legend span { display: inline-flex; align-items: center; gap: 0.05in; }
 	.legend i { display: inline-block; width: 0.14in; height: 0.1in; border: 1px solid #555; }
+	.howto { font-size: 7.5pt; line-height: 1.3; color: #222; border: 1px solid #999; border-radius: 3px; padding: 0.06in 0.1in; margin-bottom: 0.08in; background: #fafafa; }
+	.howto .ex { font-family: ui-monospace, Menlo, Consolas, monospace; background: #eee; padding: 0 0.04in; border-radius: 2px; white-space: nowrap; }
 	.notes { margin-top: 0.15in; font-size: 9pt; }
 	.notes .lines { height: 0.8in; background: repeating-linear-gradient(to bottom, transparent 0, transparent 0.24in, #999 0.24in, #999 0.25in); margin-top: 0.08in; }
 	@media print {
