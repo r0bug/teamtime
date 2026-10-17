@@ -5,7 +5,8 @@ import { db, vendors as vendorsTable } from '$lib/server/db';
 import { isManager } from '$lib/server/auth/roles';
 import {
 	listVendors,
-	syncFromNrs,
+	startNrsSyncInBackground,
+	getNrsSyncStatus,
 	removeUnusedVendorStubs
 } from '$lib/server/services/vendor-service';
 import { runFloorplanSync } from '$lib/server/floorplan/sync';
@@ -42,6 +43,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		.where(eq(vendorsTable.nrsInactive, true));
 
 	return {
+		syncStatus: await getNrsSyncStatus(),
 		vendors: vendorsWithChildren,
 		filters: { status, search, includeNrsInactive },
 		nrsInactiveCount,
@@ -55,15 +57,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 export const actions: Actions = {
 	syncNrs: async ({ locals }) => {
 		if (!locals.user) return fail(403, { error: 'Not authorized' });
-		try {
-			const result = await syncFromNrs();
+		// The sync takes minutes (past nginx's 60 s proxy timeout), so it runs in
+		// the background; the page polls /api/admin/vendors/sync-status.
+		const started = startNrsSyncInBackground(locals.user.name ?? locals.user.email ?? null);
+		if (started) {
 			// Refresh floorplan delta flags whenever the vendor mirror refreshes.
-			// Fire-and-forget: floorplan issues must never break vendor sync.
 			runFloorplanSync().catch(() => {});
-			return { syncResult: result };
-		} catch (err) {
-			return fail(500, { error: err instanceof Error ? err.message : 'NRS sync failed' });
 		}
+		return { syncStarted: started };
 	},
 
 	removeStubs: async ({ locals }) => {

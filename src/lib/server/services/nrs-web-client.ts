@@ -100,17 +100,17 @@ const UA = 'TeamTime-NRSSync/1.0';
 
 /** Authenticated GET returning the page body, with one re-login retry on a
  *  logged-out heuristic (`mustContain` absent from the response). */
-async function authedGet(path: string, mustContain?: string): Promise<string> {
+async function authedGet(path: string, mustContain?: string, timeoutMs = 30000): Promise<string> {
 	let cookie = await getCookie();
 	const url = `${BASE_URL}/${path.replace(/^\//, '')}`;
 	let html = await (
-		await fetch(url, { headers: { Cookie: cookie, 'User-Agent': UA }, signal: AbortSignal.timeout(30000) })
+		await fetch(url, { headers: { Cookie: cookie, 'User-Agent': UA }, signal: AbortSignal.timeout(timeoutMs) })
 	).text();
 	if (mustContain && !html.includes(mustContain)) {
 		sessionCookie = null;
 		cookie = await getCookie();
 		html = await (
-			await fetch(url, { headers: { Cookie: cookie, 'User-Agent': UA }, signal: AbortSignal.timeout(30000) })
+			await fetch(url, { headers: { Cookie: cookie, 'User-Agent': UA }, signal: AbortSignal.timeout(timeoutMs) })
 		).text();
 	}
 	return html;
@@ -534,7 +534,8 @@ export interface NrsChildVendor {
  * the page did not render (login failure etc.), [] when the section is empty.
  */
 export async function getVendorChildren(vendorId: number): Promise<NrsChildVendor[] | null> {
-	const html = await authedGet(`/ap/apVendorManagement?vendorView=${vendorId}`, 'View Vendor');
+	// View pages can run past 1.5 MB (they embed invoice history) — allow 60s.
+	const html = await authedGet(`/ap/apVendorManagement?vendorView=${vendorId}`, 'View Vendor', 60000);
 	if (!html.includes('View Vendor')) return null;
 	const section = html.match(/<div id="ApChildVendors">([\s\S]*?)<\/div>/i);
 	if (!section) return null;
@@ -602,10 +603,12 @@ export async function setVendorWebFlags(
  */
 export async function getVendorWebFlagsBatch(
 	vendorIds: number[],
-	concurrency = 6
+	concurrency = 6,
+	onProgress?: (done: number, total: number) => void
 ): Promise<Map<number, VendorWebFlags>> {
 	const out = new Map<number, VendorWebFlags>();
 	let i = 0;
+	let done = 0;
 
 	async function worker() {
 		while (i < vendorIds.length) {
@@ -613,6 +616,7 @@ export async function getVendorWebFlagsBatch(
 			const id = vendorIds[myI];
 			const flags = await getVendorWebFlags(id);
 			if (flags !== null) out.set(id, flags);
+			onProgress?.(++done, vendorIds.length);
 		}
 	}
 

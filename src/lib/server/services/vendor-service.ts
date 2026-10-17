@@ -10,6 +10,7 @@ import { and, asc, desc, eq, inArray, ne, sql, isNull } from 'drizzle-orm';
 import { randomUUID, randomBytes } from 'crypto';
 import { db } from '$lib/server/db';
 import {
+	appSettings,
 	vendors,
 	vendorAgreements,
 	agreementTemplates,
@@ -406,7 +407,7 @@ export interface SyncFromNrsResult {
 	boothPushFailed: number;
 	/** Booth pushes skipped because NRS vendor writes are switched off. */
 	boothPushDisabled: number;
-	/** parent_nrs_vendor_id values changed this sync (NRS "Associated Pass-Through Vendors"). */
+	/** Always 0: the pass-through scan runs in the background after the sync (see applyNrsChildrenFromWeb). */
 	passThroughLinks: number;
 }
 
@@ -423,6 +424,85 @@ async function getPassThroughVendorIds(): Promise<Set<number>> {
 	return new Set(rows.map((r) => r.vendorId));
 }
 
+
+// ── NRS sync progress ───────────────────────────────────────────────────────
+// The sync takes 1–3 minutes (NRS API + a web-form scrape per vendor), well past
+// nginx's 60 s proxy timeout, so the admin page starts it in the background and
+// polls this status. In-memory: one app process; the last result is also kept
+// in app_settings so the page can show it after a restart.
+
+export interface NrsSyncStatus {
+	running: boolean;
+	startedAt: string | null;
+	finishedAt: string | null;
+	/** Human phase, e.g. "Reconciling vendors" */
+	phase: string;
+	/** Progress within the phase, when countable. */
+	done: number;
+	total: number;
+	/** Most recent detail line, e.g. the vendor being processed. */
+	detail: string | null;
+	result: SyncFromNrsResult | null;
+	error: string | null;
+	startedBy: string | null;
+}
+
+const NRS_SYNC_LAST_KEY = 'nrs_sync_last';
+let syncStatus: NrsSyncStatus = {
+	running: false, startedAt: null, finishedAt: null, phase: 'idle', done: 0, total: 0, detail: null, result: null, error: null, startedBy: null
+};
+let syncStatusLoaded = false;
+
+function setPhase(phase: string, total = 0, detail: string | null = null) {
+	syncStatus = { ...syncStatus, phase, done: 0, total, detail };
+}
+function tick(done: number, detail: string | null = null) {
+	syncStatus = { ...syncStatus, done, detail: detail ?? syncStatus.detail };
+}
+
+export async function getNrsSyncStatus(): Promise<NrsSyncStatus> {
+	if (!syncStatusLoaded && !syncStatus.running && !syncStatus.result) {
+		syncStatusLoaded = true;
+		try {
+			const [row] = await db.select().from(appSettings).where(eq(appSettings.key, NRS_SYNC_LAST_KEY)).limit(1);
+			if (row) {
+				const last = JSON.parse(row.value) as Partial<NrsSyncStatus>;
+				syncStatus = { ...syncStatus, ...last, running: false, phase: last.error ? 'failed' : 'done' };
+			}
+		} catch {
+			/* no stored result */
+		}
+	}
+	return syncStatus;
+}
+
+/**
+ * Start a full NRS sync in the background. Returns false when one is already
+ * running. Progress is read with getNrsSyncStatus().
+ */
+export function startNrsSyncInBackground(startedBy: string | null = null): boolean {
+	if (syncStatus.running) return false;
+	syncStatus = { running: true, startedAt: new Date().toISOString(), finishedAt: null, phase: 'Starting', done: 0, total: 0, detail: null, result: null, error: null, startedBy };
+	void (async () => {
+		try {
+			const result = await syncFromNrs();
+			syncStatus = { ...syncStatus, running: false, finishedAt: new Date().toISOString(), phase: 'done', result, error: null, detail: null };
+		} catch (err) {
+			syncStatus = { ...syncStatus, running: false, finishedAt: new Date().toISOString(), phase: 'failed', error: err instanceof Error ? err.message : String(err) };
+			log.error({ err }, 'Background NRS sync failed');
+		}
+		try {
+			const value = JSON.stringify({ startedAt: syncStatus.startedAt, finishedAt: syncStatus.finishedAt, result: syncStatus.result, error: syncStatus.error, startedBy });
+			const [existing] = await db.select({ id: appSettings.id }).from(appSettings).where(eq(appSettings.key, NRS_SYNC_LAST_KEY)).limit(1);
+			if (existing) await db.update(appSettings).set({ value, updatedAt: new Date() }).where(eq(appSettings.key, NRS_SYNC_LAST_KEY));
+			else await db.insert(appSettings).values({ key: NRS_SYNC_LAST_KEY, value });
+		} catch (err) {
+			log.warn({ err }, 'Could not persist NRS sync result');
+		}
+	})();
+	return true;
+}
+
 /**
  * Pull the NRS vendor list and reconcile with TT.
  *
@@ -437,6 +517,7 @@ async function getPassThroughVendorIds(): Promise<Set<number>> {
  * are logged and skipped — admin can resolve manually.
  */
 export async function syncFromNrs(): Promise<SyncFromNrsResult> {
+	setPhase('Fetching NRS vendor list');
 	const [nrsVendors, passThroughIds, boothSummaries] = await Promise.all([
 		fetchNrsVendors(),
 		getPassThroughVendorIds(),
@@ -473,7 +554,10 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 		else if (outcome === 'disabled') boothPushDisabled++;
 	};
 
+	setPhase('Reconciling vendors with NRS', nrsVendors.length);
+	let seen = 0;
 	for (const summary of nrsVendors) {
+		tick(++seen, summary.name ?? null);
 		// Skip system rows like "*** Not-on-File Vendor ***"
 		if (summary.name?.startsWith('***')) continue;
 
@@ -578,7 +662,13 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 	//   2) Delete newly-inactive vendors that have no TT-side data attached
 	//      (mirrors the safety rules in `importVendorsFromCsv`).
 	const { inactiveFlagged, inactiveDeleted, inactiveKept } = await applyNrsInactivityFromWeb();
-	const children = await applyNrsChildrenFromWeb();
+	// The pass-through (parent/child) scan reads every vendor's NRS view page
+	// (~2 min, pages up to 1.6 MB) — far past nginx's 60 s proxy timeout, so it
+	// must not hold the sync request. It runs in the background here and daily
+	// via /api/vendors/pass-through/cron; results land in the log.
+	setPhase('Finishing');
+	void applyNrsChildrenFromWeb().catch((err) => log.error({ err }, 'Background NRS children scan failed'));
+	const children = { changed: 0 };
 
 	const skipped = nrsVendors.length - created - enriched - filteredOut;
 	log.info(
@@ -596,7 +686,7 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
  * never to the parent itself (NRS renders a same-named child with the
  * parent's code, e.g. LCA → "LCA - David George" for YFLC).
  */
-export async function applyNrsChildrenFromWeb(concurrency = 4): Promise<{ parentsScanned: number; linksFound: number; changed: number; unresolved: string[] }> {
+export async function applyNrsChildrenFromWeb(concurrency = 3): Promise<{ parentsScanned: number; linksFound: number; changed: number; unresolved: string[] }> {
 	const tracked = await db
 		.select({ id: vendors.id, nrsVendorId: vendors.nrsVendorId, displayName: vendors.displayName, code: vendors.inventoryCodePrefix, parentNrsVendorId: vendors.parentNrsVendorId })
 		.from(vendors)
@@ -609,9 +699,12 @@ export async function applyNrsChildrenFromWeb(concurrency = 4): Promise<{ parent
 
 	const ids = tracked.map((v) => v.nrsVendorId!);
 	let i = 0;
+	let scanned = 0;
 	async function worker() {
 		while (i < ids.length) {
 			const parentId = ids[i++];
+			if (syncStatus.running) tick(scanned, `pass-through scan ${scanned} of ${ids.length}`);
+			scanned++;
 			let children;
 			try {
 				children = await getVendorChildren(parentId);
@@ -694,7 +787,8 @@ async function applyNrsInactivityFromWeb(): Promise<{
 
 	let flagMap: Awaited<ReturnType<typeof getVendorWebFlagsBatch>>;
 	try {
-		flagMap = await getVendorWebFlagsBatch(ids);
+		setPhase('Reading NRS web flags (inactive, pass-through %, AR customer)', ids.length);
+		flagMap = await getVendorWebFlagsBatch(ids, 6, (done, total) => tick(done, `${done} of ${total} vendors`));
 	} catch (err) {
 		log.warn({ err: err instanceof Error ? err.message : String(err) }, 'NRS web flag scrape failed; skipping inactive update');
 		return { inactiveFlagged: 0, inactiveDeleted: 0, inactiveKept: 0 };

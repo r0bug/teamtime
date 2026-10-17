@@ -1,10 +1,45 @@
 <script lang="ts">
 	import type { PageData, ActionData } from './$types';
 	import { enhance } from '$app/forms';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { onDestroy } from 'svelte';
+	import { notify } from '$lib/notify';
 
 	export let data: PageData;
 	export let form: ActionData;
+
+	// NRS sync runs in the background (it takes minutes); poll its progress.
+	type SyncStatus = PageData['syncStatus'];
+	let sync: SyncStatus = data.syncStatus;
+	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	async function pollSync() {
+		try {
+			const r = await fetch('/api/admin/vendors/sync-status');
+			if (!r.ok) return;
+			const next = (await r.json()) as SyncStatus;
+			const wasRunning = sync.running;
+			sync = next;
+			if (wasRunning && !next.running) {
+				stopPolling();
+				if (next.error) notify.error(`NRS sync failed: ${next.error}`);
+				else notify.success('NRS sync finished');
+				await invalidateAll();
+			}
+		} catch {
+			/* transient — try again next tick */
+		}
+	}
+	function startPolling() {
+		if (pollTimer) return;
+		pollTimer = setInterval(pollSync, 2000);
+	}
+	function stopPolling() {
+		if (pollTimer) clearInterval(pollTimer);
+		pollTimer = null;
+	}
+	$: if (sync.running && !pollTimer) startPolling();
+	onDestroy(stopPolling);
+	const fmtTime = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }) : '');
 
 	let status = data.filters.status;
 	let search = data.filters.search;
@@ -48,17 +83,39 @@
 			<form method="POST" action="?/removeStubs" use:enhance>
 				<button type="submit" class="btn btn-secondary" title="Delete inactive vendor rows that have no sales, no agreements, and no portal access">Remove unused stubs</button>
 			</form>
-			<form method="POST" action="?/syncNrs" use:enhance>
-				<button type="submit" class="btn btn-primary">Sync from NRS</button>
+			<form method="POST" action="?/syncNrs" use:enhance={() => async ({ result, update }) => {
+				if (result.type === 'success') {
+					if (result.data?.syncStarted) { sync = { ...sync, running: true, phase: 'Starting', done: 0, total: 0, detail: null, error: null }; startPolling(); notify.success('NRS sync started'); }
+					else notify.error('An NRS sync is already running');
+				} else await update();
+			}}>
+				<button type="submit" class="btn btn-primary" disabled={sync.running}>{sync.running ? 'Syncing…' : 'Sync from NRS'}</button>
 			</form>
 		</div>
 	</div>
 
-	{#if form && 'syncResult' in form && form.syncResult}
-		<div class="mb-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">
-			NRS sync: created {form.syncResult.created}, enriched {form.syncResult.enriched ?? 0}, filtered out {form.syncResult.filteredOut ?? 0}, skipped {form.syncResult.skipped}{form.syncResult.prefixCollisions ? `, ${form.syncResult.prefixCollisions} prefix collision${form.syncResult.prefixCollisions === 1 ? '' : 's'}` : ''}.
-			Rent mirrored from NRS: {form.syncResult.rentMirrored ?? 0}. Booth info pushed to NRS: {form.syncResult.boothPushed ?? 0}{form.syncResult.boothPushFailed ? ` (${form.syncResult.boothPushFailed} failed — see vendor history)` : ''}{form.syncResult.boothPushDisabled ? ` (${form.syncResult.boothPushDisabled} skipped — NRS writes are switched off)` : ''}.
+	{#if sync.running}
+		<div class="mb-4 p-3 bg-primary-50 border border-primary-200 text-primary-900 rounded text-sm" role="status" aria-live="polite">
+			<div class="flex items-center justify-between gap-3">
+				<span class="font-medium">NRS sync running — {sync.phase}{sync.total ? ` (${sync.done} of ${sync.total})` : ''}</span>
+				<span class="text-xs text-primary-700">started {fmtTime(sync.startedAt)}{sync.startedBy ? ` by ${sync.startedBy}` : ''}</span>
+			</div>
+			{#if sync.total}
+				<div class="mt-2 h-2 w-full bg-primary-100 rounded overflow-hidden"><div class="h-2 bg-primary-600 transition-all" style="width: {Math.min(100, Math.round((sync.done / sync.total) * 100))}%"></div></div>
+			{/if}
+			{#if sync.detail}<div class="mt-1 text-xs text-primary-700 truncate">{sync.detail}</div>{/if}
+			<div class="mt-1 text-xs text-primary-700">Usually 1–3 minutes. You can leave this page; the result is kept.</div>
 		</div>
+	{:else if sync.result}
+		{@const r = sync.result}
+		<div class="mb-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">
+			<span class="font-medium">Last NRS sync {fmtTime(sync.finishedAt)}{sync.startedBy ? ` by ${sync.startedBy}` : ''}:</span>
+			created {r.created}, enriched {r.enriched ?? 0}, filtered out {r.filteredOut ?? 0}, skipped {r.skipped}{r.prefixCollisions ? `, ${r.prefixCollisions} prefix collision${r.prefixCollisions === 1 ? '' : 's'}` : ''}.
+			Rent mirrored from NRS: {r.rentMirrored ?? 0}. Booth info pushed to NRS: {r.boothPushed ?? 0}{r.boothPushFailed ? ` (${r.boothPushFailed} failed — see vendor history)` : ''}{r.boothPushDisabled ? ` (${r.boothPushDisabled} skipped — NRS writes are switched off)` : ''}.
+			NRS-inactive flagged: {r.inactiveFlagged ?? 0}. Pass-through groups are re-scanned in the background and daily.
+		</div>
+	{:else if sync.error}
+		<div class="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">Last NRS sync {fmtTime(sync.finishedAt)} failed: {sync.error}</div>
 	{/if}
 	{#if form && 'stubsResult' in form && form.stubsResult}
 		<div class="mb-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">

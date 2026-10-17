@@ -4,6 +4,10 @@ All notable changes to the TeamTime project will be documented in this file.
 
 ## [Unreleased]
 
+### NRS sync runs in the background with progress
+- "Sync from NRS" on Admin → Vendors no longer blocks the request (the sync takes 1–3 minutes, past nginx's 60 s proxy timeout — the old symptom was a "500 Unexpected token '<'" when the HTML timeout page came back instead of JSON). The button starts the sync in the background; the page polls `/api/admin/vendors/sync-status` and shows the phase (vendor list → reconciling n of N → web flags n of N), a progress bar, who started it, and the last result (also kept in `app_settings.nrs_sync_last`)
+- The pass-through (parent/child) scan — a view-page read per vendor, the slowest part — now runs after the sync in the background and daily from `/api/vendors/pass-through/cron`; view pages get a 60 s timeout
+
 ### NRS pass-through payout groups
 - NRS "Associated Pass-Through Vendors" (vendor view page → that vendor's sales go on the parent's check) is read on every NRS sync and mirrored into `vendors.parent_nrs_vendor_id` (migration `0009`). NRS is the source of truth; TeamTime never writes it. Children resolve by vendor code, then by name, never to the parent itself. New `services/payout-group-service.ts` is the one place that knows the groups
 - **TeamTime shows the payout unit, today.** A child vendor never appears on its own: hidden from the vendor directory, onboarding, the floorplan vendor picker, the Sales page vendor totals, the vendor leaderboard and stats (daily winners, hot booth, streaks, best items), the Revenue / sq ft tab, the booth archive and the revenue calculator. Its sales roll into the parent **at the child's own rate** (LCA 13% + YFLC 25% both land on LCA). Child-painted floorplan cells and pool slots count as the parent's booth, including the booth text pushed to NRS
