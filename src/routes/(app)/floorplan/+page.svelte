@@ -513,6 +513,7 @@
 
 				<label class="flex items-center gap-1.5 text-sm text-gray-600">
 					overlay
+					<a href="/floorplan/print{data.plan ? `?plan=${data.plan.id}` : ''}" class="btn-secondary btn-sm" title="Printable grid with booth outlines and shading — a worksheet for walking the floor">🖨 Worksheet</a>
 					<select class="input !w-auto !py-1.5" bind:value={overlayKey}>
 						{#each data.attrDefs as def}
 							<option value={def.key}>{def.key}</option>

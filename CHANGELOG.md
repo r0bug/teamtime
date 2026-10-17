@@ -4,6 +4,9 @@ All notable changes to the TeamTime project will be documented in this file.
 
 ## [Unreleased]
 
+### Floorplan print worksheet
+- `/floorplan/print` (staff): a printable worksheet of the floorplan — 1 ft grid with coordinates every 5 cells and heavy lines every 10, booth outlines with vendor codes (and sq ft + name on larger booths), dashed zone boundaries, doors, and shading by vendor / zone / structure (lightened for a color printer) with a legend. Print the whole plan fitted to one sheet, or a zone / coordinate range tiled across sheets at a chosen cells-per-inch; Letter, Legal or Tabloid, portrait or landscape; notes lines on every sheet. Linked from the floorplan toolbar ("Worksheet"). NRS pass-through children print as their parent
+
 ### NRS sync runs in the background with progress
 - "Sync from NRS" on Admin → Vendors no longer blocks the request (the sync takes 1–3 minutes, past nginx's 60 s proxy timeout — the old symptom was a "500 Unexpected token '<'" when the HTML timeout page came back instead of JSON). The button starts the sync in the background; the page polls `/api/admin/vendors/sync-status` and shows the phase (vendor list → reconciling n of N → web flags n of N), a progress bar, who started it, and the last result (also kept in `app_settings.nrs_sync_last`)
 - The pass-through (parent/child) scan — a view-page read per vendor, the slowest part — now runs after the sync in the background and daily from `/api/vendors/pass-through/cron`; view pages get a 60 s timeout
