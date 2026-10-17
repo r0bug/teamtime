@@ -67,3 +67,19 @@ describe('buildReport', () => {
 		expect(r.storeSeries[0].perSqft).toBeNull();
 	});
 });
+
+describe('buildBooths with NRS pass-through parents', () => {
+	it('child cells count as the parent booth and the child gets no booth of its own', () => {
+		const vendorRows = [
+			{ nrsVendorId: 17012, displayName: 'David George', code: 'LCA', monthlyRentCents: 50000 },
+			{ nrsVendorId: 17038, displayName: 'David George', code: 'YFLC', monthlyRentCents: 0 }
+		];
+		const cells = [cell(0, 0, 'vendor_id', '17012'), cell(1, 0, 'vendor_id', '17012'), cell(5, 5, 'vendor_id', '17038')];
+		const maps = { parentOf: new Map([[17038, 17012]]) };
+		const booths = buildBooths(vendorRows, cells, [], maps);
+		expect(booths).toHaveLength(1);
+		expect(booths[0]).toMatchObject({ key: 'v:17012', label: 'LCA', sqft: 3, rent: 500 });
+		// without the maps the child is its own booth
+		expect(buildBooths(vendorRows, cells, [])).toHaveLength(2);
+	});
+});

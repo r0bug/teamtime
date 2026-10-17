@@ -61,6 +61,9 @@
 				{#if data.vendor.inventoryCodePrefix}
 					<span class="text-xs px-2 py-0.5 rounded font-mono bg-amber-100 text-amber-800">{data.vendor.inventoryCodePrefix}</span>
 				{/if}
+				{#each data.members.filter((m) => !m.isPrimary) as m (m.id)}
+					<span class="text-xs px-2 py-0.5 rounded font-mono bg-gray-100 text-gray-700" title="{m.displayName} — paid through {data.vendor.displayName} (NRS Associated Pass-Through Vendor)">+ {m.inventoryCodePrefix ?? m.displayName}</span>
+				{/each}
 			</div>
 			<form method="POST" action="/logout" use:enhance>
 				<button type="submit" class="text-sm text-gray-600 hover:text-gray-900">Sign out</button>

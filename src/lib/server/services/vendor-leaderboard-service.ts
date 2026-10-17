@@ -15,6 +15,7 @@
 import { and, gte, inArray, lte, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { salesSnapshots, vendors } from '$lib/server/db/schema';
+import { loadPayoutGroups, rollupSnapshotVendors } from '$lib/server/services/payout-group-service';
 
 export type LeaderboardMetric = 'gross' | 'vendorPortion' | 'retained';
 export type LeaderboardPeriod = '7d' | '30d' | 'mtd' | 'ytd' | 'custom';
@@ -162,8 +163,10 @@ async function aggregate(startDate: string, endDate: string): Promise<Map<number
 	// If multiple snapshots exist for the same date, prefer the latest one.
 	// salesSnapshots can be re-imported; we want the freshest aggregate per day.
 	const latestByDate = new Map<string, SnapshotVendor[]>();
+	const payoutMaps = await loadPayoutGroups();
 	for (const s of snapshots) {
-		latestByDate.set(s.saleDate, s.vendors as SnapshotVendor[]);
+		// NRS pass-through children roll into their parent (the payout unit).
+		latestByDate.set(s.saleDate, rollupSnapshotVendors(s.vendors as SnapshotVendor[], payoutMaps));
 	}
 
 	const agg = new Map<number, AggRow>();

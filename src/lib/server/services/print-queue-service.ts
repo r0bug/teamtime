@@ -121,10 +121,16 @@ export async function recordStaffPrintedJob(input: {
 }
 
 export async function listQueuedForVendor(vendorId: string) {
+	return listQueuedForVendors([vendorId]);
+}
+
+/** Queued jobs across several vendors — a parent's queue includes its NRS pass-through children. */
+export async function listQueuedForVendors(vendorIds: string[]) {
+	if (vendorIds.length === 0) return [];
 	return db
 		.select()
 		.from(vendorPrintJobs)
-		.where(and(eq(vendorPrintJobs.vendorId, vendorId), eq(vendorPrintJobs.status, 'queued')))
+		.where(and(inArray(vendorPrintJobs.vendorId, vendorIds), eq(vendorPrintJobs.status, 'queued')))
 		.orderBy(desc(vendorPrintJobs.createdAt));
 }
 
@@ -154,7 +160,8 @@ export async function listQueuedAcrossVendors() {
 
 export async function ackPrintJob(
 	jobId: string,
-	vendorId: string,
+	/** One vendor id, or every vendor id the caller may act for (payout group). */
+	vendorId: string | string[],
 	outcome: { status: 'printed' | 'failed'; failureReason?: string | null }
 ) {
 	if (outcome.status !== 'printed' && outcome.status !== 'failed') {
@@ -168,7 +175,7 @@ export async function ackPrintJob(
 			printedAt: outcome.status === 'printed' ? new Date() : null,
 			failureReason: outcome.status === 'failed' ? (outcome.failureReason ?? null) : null
 		})
-		.where(and(eq(vendorPrintJobs.id, jobId), eq(vendorPrintJobs.vendorId, vendorId)))
+		.where(and(eq(vendorPrintJobs.id, jobId), Array.isArray(vendorId) ? inArray(vendorPrintJobs.vendorId, vendorId) : eq(vendorPrintJobs.vendorId, vendorId)))
 		.returning();
 
 	// Null means no row matched the (id, vendorId) pair — either it doesn't
@@ -185,7 +192,7 @@ export async function ackPrintJob(
  */
 export async function batchAckPrintJobs(
 	jobIds: string[],
-	vendorId: string,
+	vendorId: string | string[],
 	outcome: { status: 'printed' | 'failed'; failureReason?: string | null }
 ) {
 	if (outcome.status !== 'printed' && outcome.status !== 'failed') {
@@ -200,7 +207,7 @@ export async function batchAckPrintJobs(
 			printedAt: outcome.status === 'printed' ? new Date() : null,
 			failureReason: outcome.status === 'failed' ? (outcome.failureReason ?? null) : null
 		})
-		.where(and(inArray(vendorPrintJobs.id, jobIds), eq(vendorPrintJobs.vendorId, vendorId)))
+		.where(and(inArray(vendorPrintJobs.id, jobIds), Array.isArray(vendorId) ? inArray(vendorPrintJobs.vendorId, vendorId) : eq(vendorPrintJobs.vendorId, vendorId)))
 		.returning();
 }
 

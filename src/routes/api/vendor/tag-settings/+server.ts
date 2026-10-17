@@ -2,7 +2,7 @@ import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { db, vendorTagSettings, tagFontScaleEnum } from '$lib/server/db';
-import { getVendorForUser } from '$lib/server/services/vendor-service';
+import { resolvePortalVendor } from '$lib/server/services/payout-group-service';
 
 const BARCODE_SYMBOLOGIES = ['code_128', 'datamatrix'] as const;
 
@@ -28,11 +28,12 @@ function defaultsFor(vendorId: string) {
  * GET /api/vendor/tag-settings — the calling vendor's tag template settings,
  * or schema defaults when none have been saved yet.
  */
-export const GET: RequestHandler = async ({ locals }) => {
+export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
 
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) throw error(403, 'Vendor portal access not enabled');
+	const portal = await resolvePortalVendor(locals.user.id, url.searchParams.get('vendorId'));
+	if (!portal) throw error(403, 'Vendor portal access not enabled');
+	const vendor = portal.selected;
 
 	const [row] = await db
 		.select()
@@ -47,11 +48,12 @@ export const GET: RequestHandler = async ({ locals }) => {
  * PUT /api/vendor/tag-settings — upsert a partial of the tag settings. Unknown
  * keys are ignored; known keys are type-validated. Returns the updated row.
  */
-export const PUT: RequestHandler = async ({ locals, request }) => {
+export const PUT: RequestHandler = async ({ locals, request, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
 
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) throw error(403, 'Vendor portal access not enabled');
+	const portal = await resolvePortalVendor(locals.user.id, url.searchParams.get('vendorId'));
+	if (!portal) throw error(403, 'Vendor portal access not enabled');
+	const vendor = portal.selected;
 
 	let body: Record<string, unknown> = {};
 	try {

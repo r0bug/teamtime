@@ -766,6 +766,19 @@
 													Processing fees on these sales ≈ {money(round2((r.sales * (Number(processingPct) || 0)) / 100))} ({processingPct}%), already in the break-even rate.
 													{#if r.breakEven !== null} Break-even vs today: {money(r.breakEven)} in monthly sales.{/if}
 												</div>
+												{#if r.v.members}
+													<div class="mb-2 text-xs">
+														<div class="text-gray-600 mb-1">Paid as one check (NRS Associated Pass-Through Vendors). Each member's sales at its own rate:</div>
+														<table class="text-xs">
+															<thead><tr class="text-gray-500"><th class="pr-3 text-left">Member</th><th class="pr-3 text-right">store %</th>{#each data.months as m}<th class="px-2 text-right">{monthLabel(m)}</th>{/each}</tr></thead>
+															<tbody>
+																{#each r.v.members as mem (mem.nrsVendorId)}
+																	<tr><td class="pr-3"><span class="font-mono">{mem.label}</span> <span class="text-gray-500">{mem.name}</span></td><td class="pr-3 text-right font-mono">{pct(mem.commissionPct)}</td>{#each mem.sales as s}<td class="px-2 text-right font-mono">{s === null ? '—' : formatCurrency(s)}</td>{/each}</tr>
+																{/each}
+															</tbody>
+														</table>
+													</div>
+												{/if}
 												<div class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs text-gray-800 flex flex-wrap items-start gap-2">
 													<span class="flex-1 min-w-[16rem]"><span class="font-medium">Contract clause:</span> {contractClause(r)}</span>
 													<button type="button" class="btn-secondary btn-sm" on:click={() => copyClause(r)}>Copy</button>

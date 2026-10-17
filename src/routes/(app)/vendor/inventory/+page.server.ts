@@ -16,8 +16,9 @@ import {
 	patchSnapshotItem,
 	queueVendorSnapshotRefresh
 } from '$lib/server/services/vendor-inventory-snapshot-service';
-import { getVendorForUser, generatePartNumber, VendorServiceError } from '$lib/server/services/vendor-service';
+import { generatePartNumber, VendorServiceError } from '$lib/server/services/vendor-service';
 import { enqueuePrintJob } from '$lib/server/services/print-queue-service';
+import { resolvePortalVendor } from '$lib/server/services/payout-group-service';
 
 // Storlie's/house vendor (17009) has the ENTIRE store catalog attached as
 // pass-through — see nrs-invstock-behavior memory. Never let bulk actions or a
@@ -26,8 +27,11 @@ const HOUSE_NRS_VENDOR_ID = 17009;
 // Cap the rendered live list; Phase 2 (DB mirror) makes this server-paginated.
 const MAX_LIVE_ITEMS = 600;
 
-export const load: PageServerLoad = async ({ parent }) => {
-	const { vendor } = await parent();
+export const load: PageServerLoad = async ({ parent, url, locals }) => {
+	const { vendor: primaryVendor } = await parent();
+	// Parent logins switch between their own account and NRS pass-through children via ?v=<vendor id>.
+	const requested = url.searchParams.get('v');
+	const vendor = (requested && locals.user && (await resolvePortalVendor(locals.user.id, requested))?.selected) || primaryVendor;
 
 	// Sales context (last sold / units sold / last price) keyed by partNumber.
 	const salesByPart = new Map<
@@ -134,10 +138,11 @@ function parseInt10(raw: unknown): number | undefined {
 	return n;
 }
 
-async function requireVendor(userId: string) {
-	const vendor = await getVendorForUser(userId);
-	if (!vendor) throw new InventoryChangeError('Vendor portal access not enabled');
-	return vendor;
+async function requireVendor(userId: string, form?: FormData) {
+	// Forms carry the member (parent or NRS pass-through child) they act on.
+	const portal = await resolvePortalVendor(userId, form?.get('vendorId')?.toString());
+	if (!portal) throw new InventoryChangeError('Vendor portal access not enabled');
+	return portal.selected;
 }
 
 // Enqueue a reprint at the new price; non-fatal (item already correct in NRS).
@@ -175,7 +180,7 @@ export const actions: Actions = {
 		if (priceCents === undefined) return fail(400, { error: 'Price is required' });
 
 		let vendor;
-		try { vendor = await requireVendor(locals.user.id); }
+		try { vendor = await requireVendor(locals.user.id, form); }
 		catch (err) { return fail(403, { error: (err as Error).message }); }
 
 		let partNumber: string;
@@ -243,7 +248,7 @@ export const actions: Actions = {
 		if (Object.keys(payload).length === 0) return fail(400, { error: 'No changes to save' });
 
 		let vendor;
-		try { vendor = await requireVendor(locals.user.id); }
+		try { vendor = await requireVendor(locals.user.id, form); }
 		catch (err) { return fail(403, { error: (err as Error).message }); }
 
 		let changeId: string;
@@ -301,7 +306,7 @@ export const actions: Actions = {
 		if (addQty > 500) return fail(400, { error: 'Add at most 500 at a time' });
 
 		let vendor;
-		try { vendor = await requireVendor(locals.user.id); }
+		try { vendor = await requireVendor(locals.user.id, form); }
 		catch (err) { return fail(403, { error: (err as Error).message }); }
 
 		let changeId: string;
@@ -351,7 +356,7 @@ export const actions: Actions = {
 		if (!reason) return fail(400, { error: 'Please give a reason' });
 
 		let vendor;
-		try { vendor = await requireVendor(locals.user.id); }
+		try { vendor = await requireVendor(locals.user.id, form); }
 		catch (err) { return fail(403, { error: (err as Error).message }); }
 
 		let changeId: string;
@@ -394,7 +399,7 @@ export const actions: Actions = {
 		if (mode === 'set' && amount < 0) return fail(400, { error: 'Price cannot be negative' });
 
 		let vendor;
-		try { vendor = await requireVendor(locals.user.id); }
+		try { vendor = await requireVendor(locals.user.id, form); }
 		catch (err) { return fail(403, { error: (err as Error).message }); }
 		if (vendor.nrsVendorId === HOUSE_NRS_VENDOR_ID) {
 			return fail(400, { error: 'Bulk pricing is disabled for the house account.' });
@@ -443,7 +448,7 @@ export const actions: Actions = {
 		if (!changeId) return fail(400, { error: 'id required' });
 
 		let vendor;
-		try { vendor = await requireVendor(locals.user.id); }
+		try { vendor = await requireVendor(locals.user.id, form); }
 		catch (err) { return fail(403, { error: (err as Error).message }); }
 
 		try {

@@ -2,7 +2,7 @@ import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { and, eq, gt, desc } from 'drizzle-orm';
 import { db, pendingInventoryChanges } from '$lib/server/db';
-import { getVendorForUser } from '$lib/server/services/vendor-service';
+import { resolvePortalVendor } from '$lib/server/services/payout-group-service';
 
 /**
  * GET /api/vendor/items?modified_since=<iso8601>&limit=<n>
@@ -10,8 +10,9 @@ import { getVendorForUser } from '$lib/server/services/vendor-service';
  */
 export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!locals.user) return json({ error: 'Not signed in' }, { status: 401 });
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) return json({ error: 'Vendor portal access not enabled' }, { status: 403 });
+	const portal = await resolvePortalVendor(locals.user.id, url.searchParams.get('vendorId'));
+	if (!portal) return json({ error: 'Vendor portal access not enabled' }, { status: 403 });
+	const vendor = portal.selected;
 
 	const sinceRaw = url.searchParams.get('modified_since');
 	let since: Date | null = null;
@@ -57,10 +58,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
  *   { description: string, priceDollars: number, quantity?: int, sendToPrinter?: bool }
  * Returns { partNumber, applied, applyError, queuedForPrint, queueError }.
  */
-export const POST: RequestHandler = async ({ locals, request }) => {
+export const POST: RequestHandler = async ({ locals, request, url }) => {
 	if (!locals.user) return json({ error: 'Not signed in' }, { status: 401 });
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) return json({ error: 'Vendor portal access not enabled' }, { status: 403 });
+	const portal = await resolvePortalVendor(locals.user.id, url.searchParams.get('vendorId'));
+	if (!portal) return json({ error: 'Vendor portal access not enabled' }, { status: 403 });
+	const vendor = portal.selected;
 
 	let body: {
 		description?: string;

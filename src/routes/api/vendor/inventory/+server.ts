@@ -2,8 +2,8 @@ import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
 import { and, eq, desc, max as sqlMax, sql } from 'drizzle-orm';
 import { db, pendingInventoryChanges, salesTransactions } from '$lib/server/db';
-import { getVendorForUser } from '$lib/server/services/vendor-service';
 import { getInvStockForVendorCached } from '$lib/server/services/nrs-api-client';
+import { resolvePortalVendor } from '$lib/server/services/payout-group-service';
 
 /**
  * The payload jsonb is stored DOUBLE-ENCODED — a JSON string of a JSON string.
@@ -44,8 +44,9 @@ interface InvItem {
 export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
 
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) throw error(403, 'Vendor portal access not enabled');
+	const portal = await resolvePortalVendor(locals.user.id, url.searchParams.get('vendorId'));
+	if (!portal) throw error(403, 'Vendor portal access not enabled');
+	const vendor = portal.selected;
 
 	const q = url.searchParams.get('q')?.trim().toLowerCase() || '';
 

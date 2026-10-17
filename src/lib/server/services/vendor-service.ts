@@ -6,7 +6,7 @@
  * signed agreements, notes) keyed off `nrsVendorId`.
  */
 
-import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, sql, isNull } from 'drizzle-orm';
 import { randomUUID, randomBytes } from 'crypto';
 import { db } from '$lib/server/db';
 import {
@@ -50,9 +50,12 @@ export async function listVendors(filters?: {
 	status?: 'active' | 'inactive' | 'terminated';
 	search?: string;
 	includeNrsInactive?: boolean;
+	/** Include NRS pass-through children (paid through a parent). Hidden by default. */
+	includePassThroughChildren?: boolean;
 }): Promise<VendorListItem[]> {
 	const conditions = [];
 	if (filters?.status) conditions.push(eq(vendors.status, filters.status));
+	if (!filters?.includePassThroughChildren) conditions.push(isNull(vendors.parentNrsVendorId));
 	// Hide NRS-inactive vendors by default. Caller can opt in with includeNrsInactive=true.
 	if (!filters?.includeNrsInactive) conditions.push(eq(vendors.nrsInactive, false));
 
@@ -644,6 +647,16 @@ export async function applyNrsChildrenFromWeb(concurrency = 4): Promise<{ parent
 		await db.update(vendors).set({ parentNrsVendorId: want, updatedAt: new Date() }).where(eq(vendors.id, v.id));
 		log.info({ vendor: v.displayName, nrsVendorId: v.nrsVendorId, from: v.parentNrsVendorId, to: want, parent: want ? byNrs.get(want)?.displayName : null }, 'NRS pass-through parent mirrored');
 		changed++;
+		// A child's portal dies: the parent's portal acts for it. Stays off if the
+		// link is later removed — a manager re-enables deliberately.
+		if (want !== null) {
+			const [full] = await db.select({ userId: vendors.userId, portalEnabled: vendors.portalEnabled }).from(vendors).where(eq(vendors.id, v.id)).limit(1);
+			if (full?.portalEnabled) {
+				await db.update(vendors).set({ portalEnabled: false }).where(eq(vendors.id, v.id));
+				if (full.userId) await syncVendorExtraRole(db, full.userId);
+				log.info({ vendor: v.displayName }, 'Child vendor portal disabled (paid through parent)');
+			}
+		}
 	}
 	if (unresolved.length) log.warn({ unresolved }, 'NRS children not matched to TeamTime vendors');
 	return { parentsScanned, linksFound, changed, unresolved };
@@ -1482,7 +1495,9 @@ export async function getVendorForUser(userId: string): Promise<Vendor | null> {
 	const [row] = await db
 		.select()
 		.from(vendors)
-		.where(and(eq(vendors.userId, userId), eq(vendors.portalEnabled, true)))
+		// NRS pass-through children have no portal of their own (their parent's
+		// portal acts for them) — never resolve a login to a child account.
+		.where(and(eq(vendors.userId, userId), eq(vendors.portalEnabled, true), isNull(vendors.parentNrsVendorId)))
 		.orderBy(desc(vendors.vendorPaymentPercent), asc(vendors.displayName), asc(vendors.id))
 		.limit(1);
 	return row ?? null;

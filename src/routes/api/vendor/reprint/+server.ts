@@ -2,8 +2,8 @@ import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
 import { and, eq, desc } from 'drizzle-orm';
 import { db, pendingInventoryChanges } from '$lib/server/db';
-import { getVendorForUser } from '$lib/server/services/vendor-service';
 import { enqueuePrintJob } from '$lib/server/services/print-queue-service';
+import { resolvePortalVendor } from '$lib/server/services/payout-group-service';
 
 /**
  * The payload jsonb is stored DOUBLE-ENCODED — a JSON string of a JSON string.
@@ -28,11 +28,12 @@ function parsePayload(raw: unknown): { description?: string; partName?: string; 
  * Looks up the vendor's most-recent create for that part to recover the
  * description/price, then enqueues a print job (source 'web_portal').
  */
-export const POST: RequestHandler = async ({ locals, request }) => {
+export const POST: RequestHandler = async ({ locals, request, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
 
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) throw error(403, 'Vendor portal access not enabled');
+	const portal = await resolvePortalVendor(locals.user.id, url.searchParams.get('vendorId'));
+	if (!portal) throw error(403, 'Vendor portal access not enabled');
+	const vendor = portal.selected;
 
 	let body: { partNumber?: unknown; copies?: unknown } = {};
 	try {

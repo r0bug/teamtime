@@ -1,4 +1,5 @@
 <script lang="ts">
+	import VendorTabs from '$lib/components/vendor/VendorTabs.svelte';
 	import type { PageData } from './$types';
 	import SalesOverTimeChart from '$lib/components/SalesOverTimeChart.svelte';
 	import TopItemsBarChart from '$lib/components/TopItemsBarChart.svelte';
@@ -29,6 +30,8 @@
 		return Array.from(map.entries()).map(([label, value]) => ({ label, value }));
 	})();
 </script>
+
+<VendorTabs members={data.members} selectedId={data.vendor.id} />
 
 <svelte:head><title>Sales — Vendor Portal</title></svelte:head>
 

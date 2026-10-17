@@ -18,6 +18,7 @@
 import { and, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import { db, vendors, salesTransactions, floorplanPools, floorplanCellAttrs, type FloorplanPool } from '$lib/server/db';
 import { getPacificDateParts } from '$lib/server/utils/timezone';
+import { loadPayoutGroups, rollupNrsId, groupMemberIds } from '$lib/server/services/payout-group-service';
 
 /** First/last day (YYYY-MM-DD) of the previous Pacific calendar month. */
 export function previousMonthRange(now: Date = new Date()): { start: string; end: string; label: string } {
@@ -42,6 +43,8 @@ export interface BoothOccupant {
 	rent: number;
 	/** NRS "Vendor Payment %" (vendor's share of gross), when known. */
 	vendorPaymentPercent?: number | null;
+	/** NRS pass-through members (parent first) when this occupant is a payout group: each at its own rate. */
+	members?: { nrsVendorId: number; code: string | null; name: string; grossSales: number; storeShare: number; vendorPaymentPercent: number | null }[];
 }
 
 export interface BoothEconomics {
@@ -105,7 +108,16 @@ export async function boothOccupantsForCell(
 			}
 		}
 	}
-	return { vendorIds: [...vendorIds].filter((v) => /^\d+$/.test(v)), poolNames: [...poolNames] };
+	// NRS pass-through: a child painted anywhere resolves to its parent, and a
+	// parent's booth always includes its children's sales.
+	const maps = await loadPayoutGroups();
+	const resolved = new Set<string>();
+	for (const v of vendorIds) {
+		if (!/^\d+$/.test(v)) continue;
+		const parent = rollupNrsId(maps, Number(v));
+		for (const id of groupMemberIds(maps, parent)) resolved.add(String(id));
+	}
+	return { vendorIds: [...resolved], poolNames: [...poolNames] };
 }
 
 /** Pure: fold per-occupant figures + cell count into the booth totals. */
@@ -192,17 +204,41 @@ export async function boothEconomicsLastMonth(
 	]);
 
 	const salesById = new Map(salesRows.map((r) => [r.vendorId, r]));
-	const occupants: BoothOccupant[] = ids.map((id) => {
-		const v = vendorRows.find((r) => r.nrsVendorId === id);
-		const sale = salesById.get(id);
+	// One occupant per PAYOUT group: NRS pass-through children fold into their
+	// parent (sales summed, each member keeping its own split), listed as members.
+	const maps = await loadPayoutGroups();
+	const byParent = new Map<number, number[]>();
+	for (const id of ids) {
+		const parent = rollupNrsId(maps, id);
+		const list = byParent.get(parent) ?? [];
+		if (!list.includes(id)) list.push(id);
+		byParent.set(parent, list);
+	}
+	const occupants: BoothOccupant[] = [...byParent.entries()].map(([parentId, memberIds]) => {
+		const ordered = [parentId, ...memberIds.filter((m) => m !== parentId)];
+		const members = ordered.map((id) => {
+			const v = vendorRows.find((r) => r.nrsVendorId === id);
+			const sale = salesById.get(id);
+			return {
+				nrsVendorId: id,
+				code: v?.code ?? null,
+				name: v?.displayName ?? `NRS vendor ${id}`,
+				grossSales: Number(sale?.gross ?? 0),
+				storeShare: Number(sale?.retained ?? 0),
+				rent: (v?.monthlyRentCents ?? 0) / 100,
+				vendorPaymentPercent: v?.vendorPaymentPercent != null ? Number(v.vendorPaymentPercent) : null
+			};
+		});
+		const head = members[0];
 		return {
-			nrsVendorId: id,
-			code: v?.code ?? null,
-			name: v?.displayName ?? `NRS vendor ${id}`,
-			grossSales: Number(sale?.gross ?? 0),
-			storeShare: Number(sale?.retained ?? 0),
-			rent: (v?.monthlyRentCents ?? 0) / 100,
-			vendorPaymentPercent: v?.vendorPaymentPercent != null ? Number(v.vendorPaymentPercent) : null
+			nrsVendorId: parentId,
+			code: head.code,
+			name: head.name,
+			grossSales: members.reduce((a, m) => a + m.grossSales, 0),
+			storeShare: members.reduce((a, m) => a + m.storeShare, 0),
+			rent: members.reduce((a, m) => a + m.rent, 0),
+			vendorPaymentPercent: head.vendorPaymentPercent,
+			members: members.length > 1 ? members.map(({ rent: _r, ...m }) => m) : undefined
 		};
 	});
 	// Rent payers first, then by sales — the person on the lease leads the list.

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import VendorTabs from '$lib/components/vendor/VendorTabs.svelte';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
@@ -46,7 +47,7 @@
 				partNumber: it.partNumber,
 				copies: copiesByPart[it.partNumber] ?? copiesEach
 			}));
-			const r = await fetch('/api/vendor/tag-sheet', {
+			const r = await fetch(`/api/vendor/tag-sheet?vendorId=${encodeURIComponent(data.vendor.id)}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -80,6 +81,8 @@
 			: '—';
 	}
 </script>
+
+<VendorTabs members={data.members} selectedId={data.vendor.id} />
 
 <svelte:head><title>Print Tags — Vendor Portal</title></svelte:head>
 

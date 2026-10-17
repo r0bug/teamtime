@@ -1,4 +1,5 @@
 <script lang="ts">
+	import VendorTabs from '$lib/components/vendor/VendorTabs.svelte';
 	import type { PageData, ActionData } from './$types';
 	import { enhance } from '$app/forms';
 	import { DESKTOP_LABEL_APP_DOWNLOADS } from '$lib/utils/desktop-label-app';
@@ -70,6 +71,8 @@
 	const money = (cents: number | null | undefined) => `$${((cents ?? 0) / 100).toFixed(2)}`;
 </script>
 
+<VendorTabs members={data.members} selectedId={data.vendor.id} />
+
 <svelte:head><title>Inventory — Vendor Portal</title></svelte:head>
 
 <div class="p-4 lg:p-8 max-w-6xl mx-auto">
@@ -131,6 +134,7 @@
 				</div>
 				<div class="card-body">
 					<form method="POST" action="?/quickTag" use:enhance class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+<input type="hidden" name="vendorId" value={data.vendor.id} />
 						<div class="md:col-span-6">
 							<label class="label" for="qt-description">Description</label>
 							<input id="qt-description" name="description" type="text" class="input" required placeholder="Vintage Pyrex bowl, mid-century" />
@@ -283,6 +287,7 @@
 									<td class="px-4 py-2 text-right whitespace-nowrap">
 										{#if p.status === 'pending'}
 											<form method="POST" action="?/cancel" use:enhance class="inline">
+<input type="hidden" name="vendorId" value={data.vendor.id} />
 												<input type="hidden" name="id" value={p.id} />
 												<button type="submit" class="text-red-600 hover:underline text-sm">Cancel</button>
 											</form>
@@ -307,6 +312,7 @@
 				<button class="text-gray-400 hover:text-gray-600 text-2xl leading-none" on:click={closeAll}>×</button>
 			</div>
 			<form method="POST" action="?/editItem" use:enhance={() => async ({ update }) => { await update(); closeAll(); }} class="p-4 space-y-3">
+<input type="hidden" name="vendorId" value={data.vendor.id} />
 				<input type="hidden" name="partNumber" value={editItem.partNumber} />
 				<input type="hidden" name="nrsPartId" value={editItem.invStockId} />
 				<input type="hidden" name="prevPriceDollars" value={editItem.retailPrice.toFixed(2)} />
@@ -338,6 +344,7 @@
 				<button class="text-gray-400 hover:text-gray-600 text-2xl leading-none" on:click={closeAll}>×</button>
 			</div>
 			<form method="POST" action="?/addStock" use:enhance={() => async ({ update }) => { await update(); closeAll(); }} class="p-4 space-y-3">
+<input type="hidden" name="vendorId" value={data.vendor.id} />
 				<input type="hidden" name="partNumber" value={stockItem.partNumber} />
 				<input type="hidden" name="nrsPartId" value={stockItem.invStockId} />
 				<input type="hidden" name="description" value={stockItem.description ?? stockItem.name ?? ''} />
@@ -366,6 +373,7 @@
 				<button class="text-gray-400 hover:text-gray-600 text-2xl leading-none" on:click={closeAll}>×</button>
 			</div>
 			<form method="POST" action="?/deactivate" use:enhance={() => async ({ update }) => { await update(); closeAll(); }} class="p-4 space-y-3">
+<input type="hidden" name="vendorId" value={data.vendor.id} />
 				<input type="hidden" name="partNumber" value={deactItem.partNumber} />
 				<input type="hidden" name="nrsPartId" value={deactItem.invStockId} />
 				<p class="text-sm text-gray-700">Marks the item inactive in NRS. It's kept in records (never deleted) and drops off the active catalog. Use this when it's no longer for sale.</p>
@@ -391,6 +399,7 @@
 				<button class="text-gray-400 hover:text-gray-600 text-2xl leading-none" on:click={closeAll}>×</button>
 			</div>
 			<form method="POST" action="?/bulkPrice" use:enhance={() => async ({ update }) => { await update(); clearSelection(); closeAll(); }} class="p-4 space-y-3">
+<input type="hidden" name="vendorId" value={data.vendor.id} />
 				{#each selectedItems as i}
 					<input type="hidden" name="selected" value={`${i.invStockId}|${i.partNumber}|${Math.round(i.retailPrice * 100)}|${(i.description ?? i.name ?? '').replace(/\|/g, ' ')}`} />
 				{/each}

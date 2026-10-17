@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
-import { getVendorForUser } from '$lib/server/services/vendor-service';
 import { listHistoryForVendor } from '$lib/server/services/print-queue-service';
+import { resolvePortalVendor } from '$lib/server/services/payout-group-service';
 
 /**
  * GET /api/vendor/print-history?q=<text>&limit=<n>
@@ -12,8 +12,9 @@ import { listHistoryForVendor } from '$lib/server/services/print-queue-service';
 export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
 
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) throw error(403, 'Vendor portal access not enabled');
+	const portal = await resolvePortalVendor(locals.user.id, url.searchParams.get('vendorId'));
+	if (!portal) throw error(403, 'Vendor portal access not enabled');
+	const vendor = portal.selected;
 
 	const q = url.searchParams.get('q')?.trim() || undefined;
 

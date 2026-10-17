@@ -1,11 +1,15 @@
 import type { PageServerLoad } from './$types';
 import { getVendorSales } from '$lib/server/services/nrs-api-client';
+import { resolvePortalVendor } from '$lib/server/services/payout-group-service';
 
-export const load: PageServerLoad = async ({ parent }) => {
-	const { vendor } = await parent();
+export const load: PageServerLoad = async ({ parent, url, locals }) => {
+	const { vendor: primaryVendor } = await parent();
+	// Parent logins switch between their own account and NRS pass-through children via ?v=<vendor id>.
+	const requested = url.searchParams.get('v');
+	const vendor = (requested && locals.user && (await resolvePortalVendor(locals.user.id, requested))?.selected) || primaryVendor;
 
 	if (!vendor.nrsVendorId) {
-		return { records: [], summary: emptySummary(), notLinked: true };
+		return { vendor, records: [], summary: emptySummary(), notLinked: true };
 	}
 
 	const today = new Date();
@@ -20,7 +24,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 		endDate: end
 	});
 
-	return { records, summary: summarize(records), notLinked: false, range: { start: startStr, end } };
+	return { vendor, records, summary: summarize(records), notLinked: false, range: { start: startStr, end } };
 };
 
 function emptySummary() {

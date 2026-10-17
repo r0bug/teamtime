@@ -8,6 +8,7 @@ import { loadTargetPerSqft } from '$lib/server/floorplan/target';
 import { recentMonths, salesByVendorByMonth } from '$lib/server/floorplan/revenue-trends';
 import { liveBooths, loadBoothHistory, boothCommission, captureBoothHistory, currentMonth } from '$lib/server/floorplan/booth-history';
 import { normalizeScale, normalizeCosts, type RentScale, type CostLine } from '$lib/revenue-calc/model';
+import { loadPayoutGroups, groupMemberIds } from '$lib/server/services/payout-group-service';
 import { audit } from '$lib/server/services/audit-service';
 import { createLogger } from '$lib/server/logger';
 import { laborByMonth } from '$lib/server/services/labor-cost';
@@ -41,6 +42,8 @@ export interface CalcVendor {
 	retained: (number | null)[];
 	sqftHistory: (number | null)[];
 	rentHistory: (number | null)[];
+	/** NRS pass-through members (parent first) when this row is a payout group: each at its own rate. */
+	members?: { nrsVendorId: number; label: string; name: string; commissionPct: number | null; sales: (number | null)[]; retained: (number | null)[] }[];
 }
 
 async function loadScale(): Promise<RentScale> {
@@ -87,11 +90,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 		loadTargetPerSqft(),
 		liveBooths(),
 		loadBoothHistory(),
+		// Rolled up to payout parents (children fold into their parent).
 		salesByVendorByMonth([...months, thisMonth]),
 		// Same calculation as the Sales page's "Total Labor": hours × hourly rate
 		// for users flagged includeInLaborCost, per complete calendar month.
 		laborByMonth(months)
 	]);
+	// Per-member (un-rolled) sales for the "includes" detail of payout groups.
+	const [rawSales, payout] = await Promise.all([salesByVendorByMonth(months, { rollup: false }), loadPayoutGroups()]);
 
 	const liveByKey = new Map(live.booths.map((b) => [b.key, b]));
 	const keys = new Set<string>([...liveByKey.keys(), ...history.keys()]);
@@ -186,30 +192,31 @@ export const load: PageServerLoad = async ({ locals }) => {
 		});
 	}
 
-	// NRS pass-through parents: a child's sales ride on the parent's check, so
-	// fold the child's row into the parent's (sales, names, ids). Children that
-	// already share the parent's booth/pool are covered by the booth itself.
-	const parentOf = new Map<number, number>();
-	for (const v of vendorRows) if (v.parentNrsVendorId && v.nrsVendorId) parentOf.set(v.nrsVendorId, v.parentNrsVendorId);
-	if (parentOf.size > 0) {
-		const rowByVendor = new Map<number, CalcVendor>();
-		for (const row of vendorsOut) for (const id of row.vendorIds) rowByVendor.set(id, row);
-		const absorbed = new Set<string>();
-		for (const [childId, parentId] of parentOf) {
-			const childRow = rowByVendor.get(childId);
-			const parentRow = rowByVendor.get(parentId);
-			if (!childRow || !parentRow || childRow === parentRow) continue;
-			if (childRow.vendorIds.length > 1) continue; // shared booth of its own — leave it
-			const add = (a: (number | null)[], b: (number | null)[]) => a.map((x, i) => (x === null && b[i] === null ? null : Math.round(((x ?? 0) + (b[i] ?? 0)) * 100) / 100));
-			parentRow.sales = add(parentRow.sales, childRow.sales);
-			parentRow.retained = add(parentRow.retained, childRow.retained);
-			parentRow.vendorIds = [...parentRow.vendorIds, ...childRow.vendorIds];
-			parentRow.names = [...parentRow.names, ...childRow.names.map((n) => `${n} (pays via ${parentRow.label})`)];
-			parentRow.label = `${parentRow.label} + ${childRow.label}`;
-			parentRow.rent += childRow.rent;
-			absorbed.add(childRow.key);
-		}
-		for (let i = vendorsOut.length - 1; i >= 0; i--) if (absorbed.has(vendorsOut[i].key)) vendorsOut.splice(i, 1);
+	// NRS pass-through payout groups: children never appear as rows (sales are
+	// already rolled into the parent, child cells count as the parent's). The
+	// parent row carries each member's own sales and rate for the detail panel.
+	for (const row of vendorsOut) {
+		const parents = row.vendorIds.filter((id) => (payout.childrenOf.get(id)?.length ?? 0) > 0);
+		if (parents.length === 0) continue;
+		const memberIds = [...new Set(parents.flatMap((pid) => groupMemberIds(payout, pid)))];
+		row.members = memberIds.map((id) => {
+			const v = vendorRows.find((x) => x.nrsVendorId === id);
+			const pct = v?.vendorPaymentPercent === null || v?.vendorPaymentPercent === undefined ? null : Number(v.vendorPaymentPercent);
+			const pick = (m: string, f: 'gross' | 'retained') => {
+				const x = rawSales.get(id)?.get(m);
+				return x ? Math.round(x[f] * 100) / 100 : null;
+			};
+			return {
+				nrsVendorId: id,
+				label: v?.code ?? payout.names.get(id)?.code ?? String(id),
+				name: v?.displayName ?? payout.names.get(id)?.displayName ?? `NRS ${id}`,
+				commissionPct: pct === null || !Number.isFinite(pct) ? null : Math.round((100 - pct) * 100) / 100,
+				sales: months.map((m) => pick(m, 'gross')),
+				retained: months.map((m) => pick(m, 'retained'))
+			};
+		});
+		const childCodes = row.members.filter((m) => !parents.includes(m.nrsVendorId)).map((m) => m.label);
+		if (childCodes.length && !row.label.includes(' + ')) row.label = `${row.label} + ${childCodes.join(' + ')}`;
 	}
 
 	vendorsOut.sort((a, b) => Number(b.current) - Number(a.current) || Number(b.onFloor) - Number(a.onFloor) || a.label.localeCompare(b.label));

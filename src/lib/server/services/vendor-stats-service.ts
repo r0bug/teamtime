@@ -17,6 +17,7 @@
 import { and, gte, inArray, lte, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { salesSnapshots, salesTransactions, vendors } from '$lib/server/db/schema';
+import { loadPayoutGroups, rollupNrsId, rollupSnapshotVendors } from '$lib/server/services/payout-group-service';
 
 interface SnapshotVendor {
 	vendor_id: string;
@@ -147,9 +148,11 @@ async function loadSnapshotsByDate(start: string, end: string): Promise<Map<stri
 		.where(and(gte(salesSnapshots.saleDate, start), lte(salesSnapshots.saleDate, end)));
 
 	const byDate = new Map<string, SnapshotVendor[]>();
+	const maps = await loadPayoutGroups();
 	for (const r of rows) {
 		// Last write wins — re-imports overwrite earlier captures of the same day.
-		byDate.set(r.saleDate, r.vendors as SnapshotVendor[]);
+		// NRS pass-through children roll into their parent (the payout unit).
+		byDate.set(r.saleDate, rollupSnapshotVendors(r.vendors as SnapshotVendor[], maps));
 	}
 	return byDate;
 }
@@ -252,6 +255,8 @@ export async function getBestSellingItems(opts: {
 		.orderBy(sql`SUM(${salesTransactions.quantity}) DESC NULLS LAST`)
 		.limit(limit);
 
+	const maps = await loadPayoutGroups();
+	for (const r of rows) if (r.vendorId) r.vendorId = rollupNrsId(maps, r.vendorId);
 	const ttIds = Array.from(new Set(rows.map((r) => r.vendorId).filter((v): v is number => v !== null && v > 0)));
 	const tt = await resolveTtVendors(ttIds);
 
@@ -312,7 +317,7 @@ export async function getMostItemsInOneDay(opts: {
 		.limit(1);
 
 	if (rows.length === 0) return null;
-	const top = rows[0];
+	const top = { ...rows[0], vendorId: rollupNrsId(await loadPayoutGroups(), rows[0].vendorId) };
 	const tt = await resolveTtVendors([top.vendorId]);
 
 	let displayName = tt.get(top.vendorId)?.displayName ?? null;
@@ -361,11 +366,13 @@ export async function getLongestStreak(opts: {
 		));
 
 	// Group dates by vendor.
+	const maps = await loadPayoutGroups();
 	const byVendor = new Map<number, string[]>();
 	for (const p of pairs) {
-		const arr = byVendor.get(p.vendorId) ?? [];
-		arr.push(p.invoiceDate);
-		byVendor.set(p.vendorId, arr);
+		const id = rollupNrsId(maps, p.vendorId);
+		const arr = byVendor.get(id) ?? [];
+		if (!arr.includes(p.invoiceDate)) arr.push(p.invoiceDate);
+		byVendor.set(id, arr);
 	}
 
 	const results: StreakRow[] = [];
@@ -502,15 +509,17 @@ export async function getVendorPersonalStats(nrsVendorId: number): Promise<Vendo
 	const myDays = new Map<string, { gross: number; vendorPortion: number }>();
 	// also keep per-day MTD-period totals so we can rank within MTD
 	const allByDay = new Map<string, SnapshotVendor[]>();
+	const maps = await loadPayoutGroups();
 	for (const r of snapshotRows) {
-		// last write wins
-		allByDay.set(r.saleDate, r.vendors as SnapshotVendor[]);
+		// last write wins; NRS pass-through children roll into their parent
+		allByDay.set(r.saleDate, rollupSnapshotVendors(r.vendors as SnapshotVendor[], maps));
 	}
+	const me = rollupNrsId(maps, nrsVendorId);
 
 	for (const [date, dayVendors] of allByDay.entries()) {
 		for (const v of dayVendors) {
 			const id = parseInt(v.vendor_id, 10);
-			if (id !== nrsVendorId) continue;
+			if (id !== me) continue;
 			myDays.set(date, {
 				gross: v.total_sales ?? 0,
 				vendorPortion: v.vendor_amount ?? 0

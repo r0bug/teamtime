@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { and, eq, desc } from 'drizzle-orm';
+import { resolvePortalVendor } from '$lib/server/services/payout-group-service';
 import {
 	db,
 	vendorTagSettings,
@@ -7,8 +8,11 @@ import {
 	labelFormats
 } from '$lib/server/db';
 
-export const load: PageServerLoad = async ({ parent }) => {
-	const { vendor } = await parent();
+export const load: PageServerLoad = async ({ parent, url, locals }) => {
+	const { vendor: primaryVendor } = await parent();
+	// Parent logins switch between their own account and NRS pass-through children via ?v=<vendor id>.
+	const requested = url.searchParams.get('v');
+	const vendor = (requested && locals.user && (await resolvePortalVendor(locals.user.id, requested))?.selected) || primaryVendor;
 
 	const [settings] = await db
 		.select()
@@ -50,6 +54,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 	});
 
 	return {
+		vendor,
 		settings: settings ?? null,
 		sheetFormats,
 		items,

@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
-import { getVendorForUser } from '$lib/server/services/vendor-service';
 import { batchAckPrintJobs } from '$lib/server/services/print-queue-service';
+import { resolvePortalVendor } from '$lib/server/services/payout-group-service';
 
 /**
  * POST /api/vendor/print-queue/ack — batch-ack many of the vendor's jobs.
@@ -10,11 +10,12 @@ import { batchAckPrintJobs } from '$lib/server/services/print-queue-service';
  * Defaults to status "printed". Scoped to the authenticated vendor — ids that
  * belong to another vendor are silently ignored (not counted in `updated`).
  */
-export const POST: RequestHandler = async ({ locals, request }) => {
+export const POST: RequestHandler = async ({ locals, request, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
 
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) throw error(403, 'Vendor portal access not enabled');
+	const portal = await resolvePortalVendor(locals.user.id, url.searchParams.get('vendorId'));
+	if (!portal) throw error(403, 'Vendor portal access not enabled');
+	const vendor = portal.selected;
 
 	let body: { ids?: unknown; status?: string; failureReason?: string } = {};
 	try {
@@ -33,7 +34,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		return json({ error: 'status must be "printed" or "failed"' }, { status: 400 });
 	}
 
-	const rows = await batchAckPrintJobs(ids as string[], vendor.id, {
+	const rows = await batchAckPrintJobs(ids as string[], portal.members.map((m) => m.id), {
 		status,
 		failureReason: body.failureReason ?? null
 	});

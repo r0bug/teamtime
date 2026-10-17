@@ -123,6 +123,9 @@
 								{#if v.contactName}
 									<div class="text-xs text-gray-500">{v.contactName}</div>
 								{/if}
+								{#if v.passThroughChildren?.length}
+									<div class="text-xs text-amber-700" title="NRS Associated Pass-Through Vendors — their sales are paid on this vendor's check">+ {v.passThroughChildren.join(', ')}</div>
+								{/if}
 							</td>
 							<td class="px-4 py-2 font-mono">{v.inventoryCodePrefix ?? '—'}</td>
 							<td class="px-4 py-2">{formatRent(v.monthlyRentCents)}</td>

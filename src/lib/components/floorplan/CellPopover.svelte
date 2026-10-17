@@ -6,7 +6,9 @@
 	import { formatCurrency } from '$lib/utils';
 	import { sqftTarget } from '$lib/floorplan/sqft-target';
 
-	interface BoothOccupant { nrsVendorId: number; code: string | null; name: string; grossSales: number; storeShare: number; rent: number }
+	interface BoothOccupant { nrsVendorId: number; code: string | null; name: string; grossSales: number; storeShare: number; rent: number
+		members?: { nrsVendorId: number; code: string | null; name: string; grossSales: number; storeShare: number; vendorPaymentPercent: number | null }[];
+	}
 	interface Booth {
 		monthLabel: string; shared: boolean; poolNames: string[]; sqft: number; occupants: BoothOccupant[];
 		grossSales: number; storeShare: number; rent: number; storeRevenue: number; perSqft: number | null;
@@ -112,6 +114,17 @@
 								<td class="text-right">{formatCurrency(o.storeShare)}</td>
 								<td class="text-right">{o.rent > 0 ? formatCurrency(o.rent) : '—'}</td>
 							</tr>
+							{#if o.members}
+								<!-- NRS pass-through members: paid on this vendor's check, each at its own rate -->
+								{#each o.members as m (m.nrsVendorId)}
+									<tr class="text-gray-400">
+										<td class="pl-3 pr-2 font-sans truncate max-w-[9rem]" title={m.name}>↳ <span class="font-mono">{m.code ?? m.nrsVendorId}</span> {m.vendorPaymentPercent !== null ? `${Math.round(100 - m.vendorPaymentPercent)}%` : ''}</td>
+										<td class="text-right">{formatCurrency(m.grossSales)}</td>
+										<td class="text-right">{formatCurrency(m.storeShare)}</td>
+										<td></td>
+									</tr>
+								{/each}
+							{/if}
 						{/each}
 						{#if booth.occupants.length > 1}
 							<tr class="border-t border-gray-700 text-gray-200">

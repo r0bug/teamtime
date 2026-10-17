@@ -34,6 +34,17 @@ vi.mock('$lib/server/db', () => {
 });
 
 vi.mock('$lib/server/services/vendor-service', () => ({ getVendorForUser: vi.fn() }));
+// The endpoint resolves the vendor through the payout-group service (parent + NRS
+// pass-through children); route it to the same mock so the tests keep one knob.
+vi.mock('$lib/server/services/payout-group-service', async () => {
+	const vs = await import('$lib/server/services/vendor-service');
+	return {
+		resolvePortalVendor: vi.fn(async (userId: string) => {
+			const v = await (vs.getVendorForUser as any)(userId);
+			return v ? { vendor: v, selected: v, members: [v] } : null;
+		})
+	};
+});
 vi.mock('$lib/server/services/tag-render-service', () => ({ renderZpl: vi.fn() }));
 
 import { GET } from '../../../src/routes/api/vendor/tag-zpl/+server';

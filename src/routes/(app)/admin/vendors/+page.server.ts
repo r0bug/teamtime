@@ -22,6 +22,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	if (search) filters.search = search;
 
 	const vendors = await listVendors(filters);
+	// NRS pass-through children (hidden rows) shown as a chip on their parent.
+	const childRows = await db
+		.select({ parent: vendorsTable.parentNrsVendorId, code: vendorsTable.inventoryCodePrefix, name: vendorsTable.displayName })
+		.from(vendorsTable)
+		.where(sql`${vendorsTable.parentNrsVendorId} IS NOT NULL`);
+	const childrenByParent = new Map<number, string[]>();
+	for (const c of childRows) if (c.parent) childrenByParent.set(c.parent, [...(childrenByParent.get(c.parent) ?? []), c.code ?? c.name]);
+	const vendorsWithChildren = vendors.map((v) => ({ ...v, passThroughChildren: v.nrsVendorId ? childrenByParent.get(v.nrsVendorId) ?? [] : [] }));
 
 	const [{ count: needsOnboardingCount }] = await db
 		.select({ count: sql<number>`count(*)::int` })
@@ -34,7 +42,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		.where(eq(vendorsTable.nrsInactive, true));
 
 	return {
-		vendors,
+		vendors: vendorsWithChildren,
 		filters: { status, search, includeNrsInactive },
 		nrsInactiveCount,
 		needsOnboardingCount,

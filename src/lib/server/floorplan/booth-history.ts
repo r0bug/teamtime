@@ -25,6 +25,7 @@ import {
 import { getPacificDateParts } from '$lib/server/utils/timezone';
 import { buildBooths, type BoothDef } from './revenue-trends';
 import { createLogger } from '$lib/server/logger';
+import { loadPayoutGroups } from '$lib/server/services/payout-group-service';
 
 const log = createLogger('floorplan:booth-history');
 
@@ -129,7 +130,7 @@ export async function liveBooths(): Promise<{ booths: BoothDef[]; byId: Map<numb
 			.where(and(inArray(floorplanCellAttrs.planId, planIds), inArray(floorplanCellAttrs.key, ['vendor_id', 'pool']))),
 		db.select({ name: floorplanPools.name, vendorIds: floorplanPools.vendorIds }).from(floorplanPools)
 	]);
-	return { booths: buildBooths(vendorRows, cellRows, pools), byId };
+	return { booths: buildBooths(vendorRows, cellRows, pools, await loadPayoutGroups()), byId };
 }
 
 /**
@@ -164,10 +165,11 @@ export async function backfillFromSnapshots(): Promise<{ months: string[] }> {
 	const vendorRows = await loadVendorRows();
 	const byId = new Map(vendorRows.map((v) => [v.nrsVendorId, v]));
 	const pools = await db.select({ name: floorplanPools.name, vendorIds: floorplanPools.vendorIds }).from(floorplanPools);
+	const maps = await loadPayoutGroups();
 	const months: string[] = [];
 	for (const [month, snap] of byMonth) {
 		const cells = (Array.isArray(snap.cells) ? snap.cells : []).filter((c) => c.key === 'vendor_id' || c.key === 'pool');
-		const booths = buildBooths(vendorRows, cells, pools);
+		const booths = buildBooths(vendorRows, cells, pools, maps);
 		await upsertMonth(month, booths, byId, 'backfill');
 		months.push(month);
 	}

@@ -8,8 +8,8 @@ import {
 	pendingInventoryChanges,
 	salesTransactions
 } from '$lib/server/db';
-import { getVendorForUser } from '$lib/server/services/vendor-service';
 import { renderAverySheetHtml, type AverySheetItem } from '$lib/server/services/tag-render-service';
+import { resolvePortalVendor } from '$lib/server/services/payout-group-service';
 
 interface RequestBody {
 	formatCode?: string;
@@ -26,10 +26,11 @@ interface RequestBody {
  * (preferred) with fallback to sales history. Vendors can only print their own
  * part numbers — the prefix check enforces this.
  */
-export const POST: RequestHandler = async ({ locals, request }) => {
+export const POST: RequestHandler = async ({ locals, request, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) throw error(403, 'Vendor portal access not enabled');
+	const portal = await resolvePortalVendor(locals.user.id, url.searchParams.get('vendorId'));
+	if (!portal) throw error(403, 'Vendor portal access not enabled');
+	const vendor = portal.selected;
 
 	const body = (await request.json()) as RequestBody;
 	const requested = (body.items ?? []).filter((i) => i?.partNumber);

@@ -17,6 +17,7 @@
 import { and, gte, lte, sql } from 'drizzle-orm';
 import { db, vendors, salesSnapshots, floorplanPlans, floorplanCellAttrs, floorplanPools, type VendorSalesData } from '$lib/server/db';
 import { getPacificDateParts } from '$lib/server/utils/timezone';
+import { loadPayoutGroups, rollupNrsId, type PayoutGroupMaps } from '$lib/server/services/payout-group-service';
 
 export interface BoothDef {
 	/** 'v:17009' or 'p:<pool name>' */
@@ -97,9 +98,16 @@ function parseIds(raw: unknown): string[] {
 export function buildBooths(
 	vendorRows: { nrsVendorId: number; displayName: string; code: string | null; monthlyRentCents: number | null }[],
 	cellRows: { x: number; y: number; key: string; value: string }[],
-	pools: { name: string; vendorIds: unknown }[]
+	pools: { name: string; vendorIds: unknown }[],
+	/** NRS pass-through parents: cells/pool slots painted with a child count as the parent's. */
+	maps?: Pick<PayoutGroupMaps, 'parentOf'>
 ): BoothDef[] {
 	const byId = new Map(vendorRows.map((v) => [v.nrsVendorId, v]));
+	if (maps && maps.parentOf.size > 0) {
+		const up = (v: string) => (/^\d+$/.test(v) ? String(rollupNrsId(maps, Number(v))) : v);
+		cellRows = cellRows.map((r) => (r.key === 'vendor_id' ? { ...r, value: up(r.value) } : r));
+		pools = pools.map((p) => ({ ...p, vendorIds: [...new Set(parseIds(p.vendorIds).map(up))] }));
+	}
 	const vendorCells = new Map<string, Set<string>>();
 	const poolCells = new Map<string, Set<string>>();
 	for (const r of cellRows) {
@@ -205,9 +213,13 @@ export interface VendorMonthSales {
  * Gross and store-retained sales per NRS vendor per month, from the daily
  * sales snapshots (latest capture per day wins). Months are 'YYYY-MM'.
  */
-export async function salesByVendorByMonth(months: string[]): Promise<Map<number, Map<string, VendorMonthSales>>> {
+export async function salesByVendorByMonth(
+	months: string[],
+	opts: { /** roll NRS pass-through children into their parent (default true) */ rollup?: boolean } = {}
+): Promise<Map<number, Map<string, VendorMonthSales>>> {
 	const out = new Map<number, Map<string, VendorMonthSales>>();
 	if (months.length === 0) return out;
+	const maps = opts.rollup === false ? null : await loadPayoutGroups();
 	const start = `${months[0]}-01`;
 	const [ey, em] = months[months.length - 1].split('-').map(Number);
 	const end = `${months[months.length - 1]}-${String(new Date(Date.UTC(ey, em, 0)).getUTCDate()).padStart(2, '0')}`;
@@ -227,8 +239,9 @@ export async function salesByVendorByMonth(months: string[]): Promise<Map<number
 	for (const [day, dayVendors] of latestByDay) {
 		const month = day.slice(0, 7);
 		for (const v of dayVendors) {
-			const id = parseInt(v.vendor_id, 10);
-			if (!Number.isFinite(id) || id === 0) continue;
+			const raw = parseInt(v.vendor_id, 10);
+			if (!Number.isFinite(raw) || raw === 0) continue;
+			const id = maps ? rollupNrsId(maps, raw) : raw;
 			const m = out.get(id) ?? new Map<string, VendorMonthSales>();
 			const cur = m.get(month) ?? { gross: 0, retained: 0 };
 			cur.gross += Number(v.total_sales ?? 0);
@@ -243,6 +256,7 @@ export async function salesByVendorByMonth(months: string[]): Promise<Map<number
 export async function retainedByVendorByMonth(months: string[]): Promise<Map<number, Map<string, number>>> {
 	const out = new Map<number, Map<string, number>>();
 	if (months.length === 0) return out;
+	const maps = await loadPayoutGroups();
 	const start = `${months[0]}-01`;
 	const [ey, em] = months[months.length - 1].split('-').map(Number);
 	const end = `${months[months.length - 1]}-${String(new Date(Date.UTC(ey, em, 0)).getUTCDate()).padStart(2, '0')}`;
@@ -263,8 +277,9 @@ export async function retainedByVendorByMonth(months: string[]): Promise<Map<num
 	for (const [day, dayVendors] of latestByDay) {
 		const month = day.slice(0, 7);
 		for (const v of dayVendors) {
-			const id = parseInt(v.vendor_id, 10);
-			if (!Number.isFinite(id) || id === 0) continue;
+			const raw = parseInt(v.vendor_id, 10);
+			if (!Number.isFinite(raw) || raw === 0) continue;
+			const id = rollupNrsId(maps, raw);
 			const m = out.get(id) ?? new Map<string, number>();
 			m.set(month, (m.get(month) ?? 0) + (v.retained_amount ?? 0));
 			out.set(id, m);
@@ -279,7 +294,7 @@ export async function revenuePerSqftReport(monthCount: number): Promise<RevenueP
 	if (plans.length === 0) return buildReport([], months, new Map());
 	// One plan today; if more appear, booths are the union across plans.
 	const planIds = plans.map((p) => p.id);
-	const [vendorRows, cellRows, pools, retained] = await Promise.all([
+	const [vendorRows, cellRows, pools, retained, maps] = await Promise.all([
 		db
 			.select({ nrsVendorId: vendors.nrsVendorId, displayName: vendors.displayName, code: vendors.inventoryCodePrefix, monthlyRentCents: vendors.monthlyRentCents })
 			.from(vendors)
@@ -289,12 +304,14 @@ export async function revenuePerSqftReport(monthCount: number): Promise<RevenueP
 			.from(floorplanCellAttrs)
 			.where(and(sql`${floorplanCellAttrs.planId} IN ${planIds}`, sql`${floorplanCellAttrs.key} IN ('vendor_id', 'pool')`)),
 		db.select({ name: floorplanPools.name, vendorIds: floorplanPools.vendorIds }).from(floorplanPools),
-		retainedByVendorByMonth(months)
+		retainedByVendorByMonth(months),
+		loadPayoutGroups()
 	]);
 	const booths = buildBooths(
 		vendorRows.map((v) => ({ ...v, nrsVendorId: v.nrsVendorId! })),
 		cellRows,
-		pools
+		pools,
+		maps
 	);
 	return buildReport(booths, months, retained);
 }

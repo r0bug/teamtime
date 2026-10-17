@@ -15,6 +15,12 @@ vi.mock('$lib/server/services/inventory-change-service', () => ({
 	applyCreateViaApi: mockApplyCreate,
 	InventoryChangeError: class extends Error {}
 }));
+vi.mock('$lib/server/services/payout-group-service', () => ({
+	resolvePortalVendor: vi.fn(async (userId: string) => {
+		const v = await mockGetVendor(userId);
+		return v ? { vendor: v, selected: v, members: [v] } : null;
+	})
+}));
 vi.mock('$lib/server/services/vendor-service', () => ({
 	getVendorForUser: mockGetVendor,
 	generatePartNumber: mockGenerate,

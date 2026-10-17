@@ -1,7 +1,7 @@
 import type { Actions, PageServerLoad } from './$types';
 import { hasTechAccess, TECH } from '$lib/server/auth/tech';
 import { fail, redirect } from '@sveltejs/kit';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { desc, eq, inArray, and, isNull } from 'drizzle-orm';
 import { db, vendors, vendorGroupMembers, vendorGroups } from '$lib/server/db';
 import {
 	setInventoryPrefix,
@@ -19,7 +19,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const rows = await db
 		.select()
 		.from(vendors)
-		.where(eq(vendors.onboardingComplete, false))
+		// NRS pass-through children are onboarded through their parent.
+		.where(and(eq(vendors.onboardingComplete, false), isNull(vendors.parentNrsVendorId)))
 		.orderBy(desc(vendors.createdAt));
 
 	const ids = rows.map((v) => v.id);

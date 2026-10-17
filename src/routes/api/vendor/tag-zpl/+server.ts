@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
-import { getVendorForUser } from '$lib/server/services/vendor-service';
 import { assertThermalFormat, renderVendorTagZpl, TagZplError } from '$lib/server/services/tag-zpl-service';
+import { resolvePortalVendor } from '$lib/server/services/payout-group-service';
 
 /**
  * GET /api/vendor/tag-zpl?partNumber=SR26580001&copies=N&format=CODE
@@ -44,20 +44,26 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		}
 	}
 
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) throw error(403, 'Vendor portal access not enabled');
+	const portal = await resolvePortalVendor(locals.user.id, url.searchParams.get('vendorId'));
+	if (!portal) throw error(403, 'Vendor portal access not enabled');
+	const vendor = portal.selected;
 	// No ownership re-check before printing. Items only reach the print queue by
 	// being created in NRS, so the queue is itself the proof they're valid, owned
 	// items — re-verifying here is redundant, and a live NRS ownership lookup per
 	// tag froze the app. Pre-existing manufacturer UPCs/barcodes (which don't carry
 	// the vendor prefix) now reprint like any other item.
 
+	// Part numbers start with the owning vendor's prefix: render under that
+	// member (a parent printing a child's tag gets the child's header/prefix).
+	const owner =
+		portal.members.find((m) => m.inventoryCodePrefix && partNumber.toUpperCase().startsWith(m.inventoryCodePrefix.toUpperCase())) ?? vendor;
+
 	try {
 		await assertThermalFormat(formatCode);
 		// Header precedence: explicit custom title > store name (contact) > vendor name.
 		const headerOverride =
-			customHeader ?? (nameSource === 'contact' ? (vendor.contactName ?? undefined) : undefined);
-		const zpl = await renderVendorTagZpl(vendor, partNumber, { copies, formatCode, headerOverride, dpi });
+			customHeader ?? (nameSource === 'contact' ? (owner.contactName ?? undefined) : undefined);
+		const zpl = await renderVendorTagZpl(owner, partNumber, { copies, formatCode, headerOverride, dpi });
 		return new Response(zpl, {
 			headers: {
 				'Content-Type': 'text/plain; charset=utf-8',

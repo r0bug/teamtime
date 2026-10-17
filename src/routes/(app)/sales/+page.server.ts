@@ -5,6 +5,7 @@ import { desc, gte, lte, and, or, eq, sql } from 'drizzle-orm';
 import { createPacificDateTime, getPacificToday } from '$lib/server/utils/timezone';
 import { revenuePerSqftReport } from '$lib/server/floorplan/revenue-trends';
 import { loadLaborEntries, laborForPacificDay } from '$lib/server/services/labor-cost';
+import { loadPayoutGroups, rollupSnapshotVendors } from '$lib/server/services/payout-group-service';
 
 const ALLOWED_RANGE_DAYS = [7, 14, 30, 60, 90, 180, 365, 730] as const;
 const DEFAULT_RANGE_DAYS = 30;
@@ -111,9 +112,11 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	const avgDailyNet = salesData.length > 0 ? totalNetSum / salesData.length : 0;
 
 	// Get top vendors across all days
+	// NRS pass-through children roll into their parent (payout unit).
+	const payoutMaps = await loadPayoutGroups();
 	const vendorTotals = new Map<string, { name: string; sales: number; retained: number }>();
 	for (const day of salesData) {
-		for (const v of day.vendors) {
+		for (const v of rollupSnapshotVendors(day.vendors, payoutMaps)) {
 			const existing = vendorTotals.get(v.vendor_id) || { name: v.vendor_name, sales: 0, retained: 0 };
 			existing.sales += v.total_sales;
 			existing.retained += v.retained_amount;

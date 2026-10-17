@@ -1,9 +1,9 @@
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
-import { getVendorForUser } from '$lib/server/services/vendor-service';
+import { resolvePortalVendor } from '$lib/server/services/payout-group-service';
 import {
 	enqueuePrintJob,
-	listQueuedForVendor,
+	listQueuedForVendors,
 	PrintQueueError
 } from '$lib/server/services/print-queue-service';
 
@@ -14,17 +14,24 @@ import {
  * acks it via POST /api/vendor/print-queue/:id/ack. ZPL is fetched separately
  * from GET /api/vendor/tag-zpl?partNumber=X&copies=N.
  */
-export const GET: RequestHandler = async ({ locals }) => {
+export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
 
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) throw error(403, 'Vendor portal access not enabled');
+	const portal = await resolvePortalVendor(locals.user.id, url.searchParams.get('vendorId'));
+	if (!portal) throw error(403, 'Vendor portal access not enabled');
+	const vendor = portal.selected;
 
-	const jobs = await listQueuedForVendor(vendor.id);
+	// A parent's queue carries its NRS pass-through children's jobs too, so the
+	// desktop app prints them today; ?vendorId=<member> narrows to one queue.
+	const scope = url.searchParams.get('vendorId') ? [vendor] : portal.members;
+	const jobs = await listQueuedForVendors(scope.map((m) => m.id));
+	const codeById = new Map(scope.map((m) => [m.id, m.inventoryCodePrefix ?? m.displayName]));
 
 	return json({
 		jobs: jobs.map((j) => ({
 			id: j.id,
+			vendorId: j.vendorId,
+			vendorCode: codeById.get(j.vendorId) ?? null,
 			partNumber: j.partNumber,
 			copies: j.copies,
 			description: j.description,
@@ -44,11 +51,12 @@ export const GET: RequestHandler = async ({ locals }) => {
  * Inventory "Add to queue" button and its "Restore last queue" recovery. The
  * vendor id always comes from the session, never the request.
  */
-export const POST: RequestHandler = async ({ locals, request }) => {
+export const POST: RequestHandler = async ({ locals, request, url }) => {
 	if (!locals.user) throw error(401, 'Not signed in');
 
-	const vendor = await getVendorForUser(locals.user.id);
-	if (!vendor) throw error(403, 'Vendor portal access not enabled');
+	const portal = await resolvePortalVendor(locals.user.id, url.searchParams.get('vendorId'));
+	if (!portal) throw error(403, 'Vendor portal access not enabled');
+	const vendor = portal.selected;
 
 	let body: unknown;
 	try {

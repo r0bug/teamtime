@@ -7,6 +7,7 @@
 
 import { and, eq, inArray } from 'drizzle-orm';
 import { db, floorplanPlans, floorplanCellAttrs, floorplanPools } from '$lib/server/db';
+import { loadPayoutGroups, rollupNrsId, type PayoutGroupMaps } from '$lib/server/services/payout-group-service';
 
 export interface BoothPlanFootprint {
 	planName: string;
@@ -42,8 +43,15 @@ const SUMMARY_KEYS = ['vendor_id', 'zone', 'level'];
 export function buildBoothSummaries(
 	plans: { id: string; name: string }[],
 	rows: { planId: string; x: number; y: number; key: string; value: string }[],
-	pools: { name: string; vendorIds: unknown }[]
+	pools: { name: string; vendorIds: unknown }[],
+	/** NRS pass-through parents: a child's cells/pools are the parent's booth; the child gets none. */
+	maps?: Pick<PayoutGroupMaps, 'parentOf'>
 ): Map<string, BoothSummary> {
+	if (maps && maps.parentOf.size > 0) {
+		const up = (v: string) => (/^\d+$/.test(v) ? String(rollupNrsId(maps, Number(v))) : v);
+		rows = rows.map((r) => (r.key === 'vendor_id' ? { ...r, value: up(r.value) } : r));
+		pools = pools.map((p) => ({ ...p, vendorIds: Array.isArray(p.vendorIds) ? [...new Set(p.vendorIds.map((x) => up(String(x))))] : p.vendorIds }));
+	}
 	const out = new Map<string, BoothSummary>();
 	const ensure = (id: string): BoothSummary => {
 		let s = out.get(id);
@@ -132,7 +140,7 @@ export async function computeBoothSummaries(): Promise<Map<string, BoothSummary>
 			)
 		);
 	const pools = await db.select({ name: floorplanPools.name, vendorIds: floorplanPools.vendorIds }).from(floorplanPools);
-	return buildBoothSummaries(plans, rows, pools);
+	return buildBoothSummaries(plans, rows, pools, await loadPayoutGroups());
 }
 
 /** NRS vendor ids currently painted at the given cells of a plan. */
