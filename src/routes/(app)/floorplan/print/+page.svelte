@@ -105,6 +105,9 @@
 	}
 
 	/** Edges between different booths (thick), and zone boundaries (dashed). */
+	// Floorplan coordinates: +x east, +y NORTH (same as the editor) — so the top
+	// row of a sheet is maxY and screen row = maxY − y.
+	const sy = (s: { maxY: number }, y: number) => s.maxY - y;
 	function edges(s: { minX: number; minY: number; maxX: number; maxY: number }) {
 		const booth: string[] = [], zoneEdges: string[] = [];
 		const at = (x: number, y: number) => cellMap.get(`${x},${y}`);
@@ -113,17 +116,18 @@
 				const c = at(x, y);
 				const k = outlineKey(c);
 				const z = c?.attrs.zone ?? null;
-				// right edge
+				const px = x - s.minX, py = sy(s, y);
+				// east edge
 				const r = at(x + 1, y);
-				if (k !== outlineKey(r) && (k || outlineKey(r))) booth.push(`M${x + 1 - s.minX},${y - s.minY}v1`);
-				if (z !== (r?.attrs.zone ?? null) && (z || r?.attrs.zone)) zoneEdges.push(`M${x + 1 - s.minX},${y - s.minY}v1`);
-				// bottom edge
-				const b = at(x, y + 1);
-				if (k !== outlineKey(b) && (k || outlineKey(b))) booth.push(`M${x - s.minX},${y + 1 - s.minY}h1`);
-				if (z !== (b?.attrs.zone ?? null) && (z || b?.attrs.zone)) zoneEdges.push(`M${x - s.minX},${y + 1 - s.minY}h1`);
-				// left/top edges on the sheet border
-				if (x === s.minX && k) booth.push(`M0,${y - s.minY}v1`);
-				if (y === s.minY && k) booth.push(`M${x - s.minX},0h1`);
+				if (k !== outlineKey(r) && (k || outlineKey(r))) booth.push(`M${px + 1},${py}v1`);
+				if (z !== (r?.attrs.zone ?? null) && (z || r?.attrs.zone)) zoneEdges.push(`M${px + 1},${py}v1`);
+				// north edge (the top of this cell on paper)
+				const n = at(x, y + 1);
+				if (k !== outlineKey(n) && (k || outlineKey(n))) booth.push(`M${px},${py}h1`);
+				if (z !== (n?.attrs.zone ?? null) && (z || n?.attrs.zone)) zoneEdges.push(`M${px},${py}h1`);
+				// west / south edges on the sheet border
+				if (x === s.minX && k) booth.push(`M0,${py}v1`);
+				if (y === s.minY && k) booth.push(`M${px},${py + 1}h1`);
 			}
 		return { booth: booth.join(''), zone: zoneEdges.join('') };
 	}
@@ -139,7 +143,7 @@
 			const text = c.attrs.vendor_id ? (v?.code ?? `#${c.attrs.vendor_id}`) : c.attrs.pool!;
 			const sub = c.attrs.vendor_id ? (v?.name ?? '') : 'pool';
 			const e = acc.get(k) ?? { sx: 0, sy: 0, n: 0, text, sub };
-			e.sx += c.x - s.minX + 0.5; e.sy += c.y - s.minY + 0.5; e.n++;
+			e.sx += c.x - s.minX + 0.5; e.sy += sy(s, c.y) + 0.5; e.n++;
 			acc.set(k, e);
 		}
 		return [...acc.values()].map((e) => ({ x: e.sx / e.n, y: e.sy / e.n, n: e.n, text: e.text, sub: e.sub }));
@@ -182,7 +186,7 @@
 		const r = miniEl.getBoundingClientRect();
 		const w = painted.maxX - painted.minX + 1, h = painted.maxY - painted.minY + 1;
 		const x = Math.floor(((ev.clientX - r.left) / r.width) * w) + painted.minX;
-		const y = Math.floor(((ev.clientY - r.top) / r.height) * h) + painted.minY;
+		const y = painted.maxY - Math.floor(((ev.clientY - r.top) / r.height) * h); // north up
 		return { x: Math.max(painted.minX, Math.min(painted.maxX, x)), y: Math.max(painted.minY, Math.min(painted.maxY, y)) };
 	}
 	function miniDown(ev: PointerEvent) { const c = miniCell(ev); drag = { x0: c.x, y0: c.y, x1: c.x, y1: c.y }; (ev.target as Element).setPointerCapture?.(ev.pointerId); }
@@ -333,14 +337,17 @@
 					class="w-full border border-gray-300 rounded bg-white touch-none cursor-crosshair"
 					viewBox="{painted.minX} {painted.minY} {painted.maxX - painted.minX + 1} {painted.maxY - painted.minY + 1}"
 					on:pointerdown={miniDown} on:pointermove={miniMove} on:pointerup={miniUp} on:pointercancel={() => (drag = null)}
-					role="img" aria-label="Floorplan overview; drag to select a section to print"
+					role="img" aria-label="Floorplan overview (north up); drag to select a section to print"
 				>
+				<!-- north up, like the editor: flip the y axis about the painted area's centre line -->
+				<g transform="translate(0, {painted.minY + painted.maxY + 1}) scale(1, -1)">
 					{#each data.cells as c (c.x + ',' + c.y)}
 						<rect x={c.x} y={c.y} width="1" height="1" fill={c.attrs.kind === 'structure' ? '#4b5563' : c.attrs.vendor_id ? lighten(autoColor(c.attrs.vendor_id)) : c.attrs.pool ? lighten(poolColor.get(c.attrs.pool) ?? autoColor(c.attrs.pool)) : c.attrs.kind === 'boh' ? '#e5e7eb' : '#f8fafc'} />
 					{/each}
 					<path d={Array.from({ length: Math.floor((painted.maxX - painted.minX) / 10) + 2 }, (_, k) => { const x = Math.ceil(painted.minX / 10) * 10 + k * 10; return x <= painted.maxX ? `M${x},${painted.minY}V${painted.maxY + 1}` : ''; }).join('') + Array.from({ length: Math.floor((painted.maxY - painted.minY) / 10) + 2 }, (_, k) => { const y = Math.ceil(painted.minY / 10) * 10 + k * 10; return y <= painted.maxY ? `M${painted.minX},${y}H${painted.maxX + 1}` : ''; }).join('')} stroke="#9ca3af" stroke-width="0.15" fill="none" />
 					<rect x={section.minX} y={section.minY} width={secW} height={secH} fill="rgba(37,99,235,0.12)" stroke="#2563eb" stroke-width="0.4" />
 					{#if dragRect}<rect x={dragRect.x} y={dragRect.y} width={dragRect.w} height={dragRect.h} fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="0.4" stroke-dasharray="1 0.6" />{/if}
+				</g>
 				</svg>
 				<p class="text-xs text-gray-500 mt-1">Blue box = what prints. Drag a new box to zoom; use − / + to change the printed scale. {sheets.length} sheet{sheets.length === 1 ? '' : 's'} at this zoom.</p>
 			</div>
@@ -378,7 +385,7 @@
 				{/if}
 			</div>
 			<div class="howto">
-				<strong>Recording a change:</strong> cells are <b>x,y</b> — x counts across from the left edge (numbers along the top), y counts down from the top (numbers along the left); 1 cell = 1 ft; a rectangle is <b>x1,y1-x2,y2</b> (corner to corner, inclusive).
+				<strong>Recording a change:</strong> cells are <b>x,y</b> — x counts across from the left edge (numbers along the top), y counts UP from the bottom — north is up, as in the editor (numbers along the left); 1 cell = 1 ft; a rectangle is <b>x1,y1-x2,y2</b> (corner to corner, inclusive).
 				Write one change per line, then type it into TeamTime → Floorplan → Worksheet → "Enter changes by text":
 				<span class="ex">78,20-87,28 GSE</span> vendor GSE takes that rectangle ·
 				<span class="ex">60,31 BMC</span> one cell ·
@@ -396,7 +403,7 @@
 				<!-- cells -->
 				{#each Array.from({ length: h }) as _, ry}
 					{#each Array.from({ length: w }) as _, rx}
-						{@const c = cellMap.get(`${s.minX + rx},${s.minY + ry}`)}
+						{@const c = cellMap.get(`${s.minX + rx},${s.maxY - ry}`)}
 						{#if c}
 							<rect x={rx} y={ry} width="1" height="1" fill={fillFor(c)} />
 							{#if c.attrs.door === 'true'}<rect x={rx + 0.25} y={ry + 0.25} width="0.5" height="0.5" fill="#9ca3af" />{/if}
@@ -407,7 +414,7 @@
 				<!-- fine grid -->
 				<path d={Array.from({ length: w + 1 }, (_, k) => `M${k},0v${h}`).join('') + Array.from({ length: h + 1 }, (_, k) => `M0,${k}h${w}`).join('')} stroke="#c7cdd4" stroke-width="0.02" fill="none" />
 				<!-- heavy grid every 10 cells (absolute coordinates) -->
-				<path d={Array.from({ length: w + 1 }, (_, k) => ((s.minX + k) % 10 === 0 ? `M${k},0v${h}` : '')).join('') + Array.from({ length: h + 1 }, (_, k) => ((s.minY + k) % 10 === 0 ? `M0,${k}h${w}` : '')).join('')} stroke="#6b7280" stroke-width="0.05" fill="none" />
+				<path d={Array.from({ length: w + 1 }, (_, k) => ((s.minX + k) % 10 === 0 ? `M${k},0v${h}` : '')).join('') + Array.from({ length: h + 1 }, (_, k) => ((s.maxY + 1 - k) % 10 === 0 ? `M0,${k}h${w}` : '')).join('')} stroke="#6b7280" stroke-width="0.05" fill="none" />
 				<!-- zone boundaries, booth outlines -->
 				<path d={e.zone} stroke="#2563eb" stroke-width="0.08" stroke-dasharray="0.3 0.2" fill="none" />
 				<path d={e.booth} stroke="#111827" stroke-width="0.12" fill="none" stroke-linecap="square" />
@@ -417,7 +424,7 @@
 						{#if (s.minX + k) % 5 === 0 && k <= w}<text x={k} y={-0.08 / cellIn * 0.3 - 0.05} font-size={Math.min(0.5, 0.22 / cellIn)} text-anchor="middle" fill="#374151">{s.minX + k}</text>{/if}
 					{/each}
 					{#each Array.from({ length: h + 1 }) as _, k}
-						{#if (s.minY + k) % 5 === 0 && k <= h}<text x={-0.06} y={k + 0.12} font-size={Math.min(0.5, 0.22 / cellIn)} text-anchor="end" fill="#374151">{s.minY + k}</text>{/if}
+						{#if (s.maxY + 1 - k) % 5 === 0 && k <= h}<text x={-0.06} y={k + 0.12} font-size={Math.min(0.5, 0.22 / cellIn)} text-anchor="end" fill="#374151">{s.maxY + 1 - k}</text>{/if}
 					{/each}
 				{/if}
 				<!-- labels -->
