@@ -4,6 +4,11 @@ All notable changes to the TeamTime project will be documented in this file.
 
 ## [Unreleased]
 
+### NRS pass-through vendor associations (mirrored)
+- NRS "Associated Pass-Through Vendors" (vendor view page → that vendor's sales go on the parent's check) is now read on every NRS sync and mirrored into `vendors.parent_nrs_vendor_id` (migration `0009`). NRS is the source of truth; TeamTime never writes it. Children resolve by vendor code, then by name, never to the parent itself (NRS renders a same-named child with the parent's code)
+- Vendor page shows "Paid through X" / "Check also covers …" read-only; the revenue calculator folds a child's sales into the parent's row (children already in the parent's booth/pool are covered by the booth)
+- NRS sync also imports booth vendors before their first sale (booth rent or floorplan flag set in NRS) and accepts `&` in vendor code prefixes (G&G). Discovery helpers `getVendorWebFormFields`, `getNrsWebPage`, `postNrsWebForm`, `nrsApiProbeGet/Post`
+
 ### Admin → Revenue Calculator (`/admin/revenue-calculator`, admin only)
 - What-if calculator for booth economics: pick one or many vendors (search by code / name / NRS id, current and departed, min sq ft), choose a sales baseline (last month, 3/6/12-month average, trend projection, or manual) plus a growth %, then try rent levels. Each row shows today's rent/commission/store revenue vs the proposal, $/sq ft against the floorplan target, the rent that would hit the target at those sales, and the break-even sales between the two; totals row for the whole selection. Per-vendor overrides for sq ft, sales, rent and commission
 - **Rent ↔ commission scale**: default *step* mode — every vendor keeps their normal commission rate (87/13 etc.); rent is optional, and at or above a premium rent threshold (default $30/sq ft, e.g. $400/mo for a 12 sq ft cabinet) the store only takes the floor rate (default 3%, covers card fees). *Linear* mode is a straight line between two anchors. Saved as an admin setting (`revenue_calc_scale`, audited). Pure math in `src/lib/revenue-calc/model.ts`

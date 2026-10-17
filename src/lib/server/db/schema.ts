@@ -3283,6 +3283,10 @@ export const vendors = pgTable('vendors', {
 
 	// Link to NRS POS (source of truth for sales/inventory)
 	nrsVendorId: integer('nrs_vendor_id').unique(),
+	// NRS "Associated Pass-Through Vendors": this vendor's sales go on the
+	// parent's check (no check of their own). Mirrored from the NRS vendor view
+	// page on every sync; NRS is the source of truth, never edited in TT.
+	parentNrsVendorId: integer('parent_nrs_vendor_id'),
 
 	// Link to a TeamTime user (for the future vendor login portal). Nullable:
 	// many vendors won't have user accounts (esp. paper-archive migrations).
@@ -3343,6 +3347,7 @@ export const vendors = pgTable('vendors', {
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 }, (table) => ({
 	idxStatus: index('idx_vendors_status').on(table.status),
+	idxParentNrs: index('idx_vendors_parent_nrs_vendor_id').on(table.parentNrsVendorId),
 	idxNrsVendorId: index('idx_vendors_nrs_vendor_id').on(table.nrsVendorId),
 	idxOnboarding: index('idx_vendors_onboarding').on(table.onboardingComplete)
 }));

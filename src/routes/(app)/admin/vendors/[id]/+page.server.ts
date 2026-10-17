@@ -1,5 +1,7 @@
 import type { Actions, PageServerLoad } from './$types';
 import { error, fail, redirect } from '@sveltejs/kit';
+import { eq } from 'drizzle-orm';
+import { db, vendors } from '$lib/server/db';
 import {
 	getVendor,
 	updateVendor,
@@ -61,8 +63,18 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 	const availableTemplates = templates.filter((t) => !signedTemplateIds.has(t.id));
 
+	// NRS "Associated Pass-Through Vendors" — read-only mirror (NRS is source of truth).
+	const [passThroughParent] = vendor.parentNrsVendorId
+		? await db.select({ id: vendors.id, displayName: vendors.displayName, code: vendors.inventoryCodePrefix }).from(vendors).where(eq(vendors.nrsVendorId, vendor.parentNrsVendorId)).limit(1)
+		: [];
+	const passThroughChildren = vendor.nrsVendorId
+		? await db.select({ id: vendors.id, displayName: vendors.displayName, code: vendors.inventoryCodePrefix }).from(vendors).where(eq(vendors.parentNrsVendorId, vendor.nrsVendorId))
+		: [];
+
 	return {
 		vendor,
+		passThroughParent: passThroughParent ?? null,
+		passThroughChildren,
 		agreements,
 		availableTemplates,
 		signedCodes: Array.from(signedCodes),

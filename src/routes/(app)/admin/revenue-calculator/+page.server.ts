@@ -150,7 +150,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 			monthlyRentCents: vendors.monthlyRentCents,
 			vendorPaymentPercent: vendors.vendorPaymentPercent,
 			nrsInactive: vendors.nrsInactive,
-			status: vendors.status
+			status: vendors.status,
+			parentNrsVendorId: vendors.parentNrsVendorId
 		})
 		.from(vendors)
 		.where(sql`${vendors.nrsVendorId} IS NOT NULL`);
@@ -183,6 +184,32 @@ export const load: PageServerLoad = async ({ locals }) => {
 			sqftHistory: months.map(() => null),
 			rentHistory: months.map(() => null)
 		});
+	}
+
+	// NRS pass-through parents: a child's sales ride on the parent's check, so
+	// fold the child's row into the parent's (sales, names, ids). Children that
+	// already share the parent's booth/pool are covered by the booth itself.
+	const parentOf = new Map<number, number>();
+	for (const v of vendorRows) if (v.parentNrsVendorId && v.nrsVendorId) parentOf.set(v.nrsVendorId, v.parentNrsVendorId);
+	if (parentOf.size > 0) {
+		const rowByVendor = new Map<number, CalcVendor>();
+		for (const row of vendorsOut) for (const id of row.vendorIds) rowByVendor.set(id, row);
+		const absorbed = new Set<string>();
+		for (const [childId, parentId] of parentOf) {
+			const childRow = rowByVendor.get(childId);
+			const parentRow = rowByVendor.get(parentId);
+			if (!childRow || !parentRow || childRow === parentRow) continue;
+			if (childRow.vendorIds.length > 1) continue; // shared booth of its own — leave it
+			const add = (a: (number | null)[], b: (number | null)[]) => a.map((x, i) => (x === null && b[i] === null ? null : Math.round(((x ?? 0) + (b[i] ?? 0)) * 100) / 100));
+			parentRow.sales = add(parentRow.sales, childRow.sales);
+			parentRow.retained = add(parentRow.retained, childRow.retained);
+			parentRow.vendorIds = [...parentRow.vendorIds, ...childRow.vendorIds];
+			parentRow.names = [...parentRow.names, ...childRow.names.map((n) => `${n} (pays via ${parentRow.label})`)];
+			parentRow.label = `${parentRow.label} + ${childRow.label}`;
+			parentRow.rent += childRow.rent;
+			absorbed.add(childRow.key);
+		}
+		for (let i = vendorsOut.length - 1; i >= 0; i--) if (absorbed.has(vendorsOut[i].key)) vendorsOut.splice(i, 1);
 	}
 
 	vendorsOut.sort((a, b) => Number(b.current) - Number(a.current) || Number(b.onFloor) - Number(a.onFloor) || a.label.localeCompare(b.label));

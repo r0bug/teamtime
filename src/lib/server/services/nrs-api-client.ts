@@ -195,6 +195,14 @@ export interface NrsEmployee {
  * to currently-employed people. The `creds[]` field (PINs) is deliberately
  * dropped here — callers only need identity + number for payroll mapping.
  */
+/** Read-only discovery helpers for endpoints this client does not model yet. */
+export async function nrsApiProbeGet<T = unknown>(endpoint: string): Promise<T> {
+	return apiGet<T>(endpoint);
+}
+export async function nrsApiProbePost<T = unknown>(endpoint: string, body: Record<string, unknown> = {}): Promise<T> {
+	return apiPost<T>(endpoint, body);
+}
+
 export async function getEmployees(activeOnly = true): Promise<NrsEmployee[]> {
 	const data = await apiPost<{ list?: Record<string, unknown>[] }>('employee/list', { activeOnly });
 	const list = Array.isArray(data.list) ? data.list : [];

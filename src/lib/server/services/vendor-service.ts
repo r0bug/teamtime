@@ -30,7 +30,7 @@ import {
 type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 import { getVendors as fetchNrsVendors, getVendorDetail, rentCentsFromMeta, type NrsVendorDetail } from './nrs-api-client';
-import { getVendorWebFlagsBatch } from './nrs-web-client';
+import { getVendorChildren, getVendorWebFlagsBatch } from './nrs-web-client';
 import { mirrorRentFromNrs, reconcileBoothMeta } from './vendor-nrs-metadata-service';
 import { computeBoothSummaries } from '$lib/server/floorplan/booth-summary';
 import { getPacificDateParts } from '$lib/server/utils/timezone';
@@ -403,6 +403,8 @@ export interface SyncFromNrsResult {
 	boothPushFailed: number;
 	/** Booth pushes skipped because NRS vendor writes are switched off. */
 	boothPushDisabled: number;
+	/** parent_nrs_vendor_id values changed this sync (NRS "Associated Pass-Through Vendors"). */
+	passThroughLinks: number;
 }
 
 /**
@@ -573,13 +575,78 @@ export async function syncFromNrs(): Promise<SyncFromNrsResult> {
 	//   2) Delete newly-inactive vendors that have no TT-side data attached
 	//      (mirrors the safety rules in `importVendorsFromCsv`).
 	const { inactiveFlagged, inactiveDeleted, inactiveKept } = await applyNrsInactivityFromWeb();
+	const children = await applyNrsChildrenFromWeb();
 
 	const skipped = nrsVendors.length - created - enriched - filteredOut;
 	log.info(
-		{ created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept, rentMirrored, boothPushed, boothPushFailed, boothPushDisabled },
+		{ created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept, rentMirrored, boothPushed, boothPushFailed, boothPushDisabled, children },
 		'NRS sync complete'
 	);
-	return { created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept, rentMirrored, boothPushed, boothPushFailed, boothPushDisabled };
+	return { created, enriched, skipped, filteredOut, prefixCollisions, inactiveFlagged, inactiveDeleted, inactiveKept, rentMirrored, boothPushed, boothPushFailed, boothPushDisabled, passThroughLinks: children.changed };
+}
+
+/**
+ * Mirror NRS "Associated Pass-Through Vendors" (vendor view page) into
+ * vendors.parent_nrs_vendor_id. A child's sales go on the parent's check.
+ * NRS is the source of truth: parents found there are set, parents no longer
+ * listed are cleared. Children are resolved by vendor code, then by name,
+ * never to the parent itself (NRS renders a same-named child with the
+ * parent's code, e.g. LCA → "LCA - David George" for YFLC).
+ */
+export async function applyNrsChildrenFromWeb(concurrency = 4): Promise<{ parentsScanned: number; linksFound: number; changed: number; unresolved: string[] }> {
+	const tracked = await db
+		.select({ id: vendors.id, nrsVendorId: vendors.nrsVendorId, displayName: vendors.displayName, code: vendors.inventoryCodePrefix, parentNrsVendorId: vendors.parentNrsVendorId })
+		.from(vendors)
+		.where(sql`${vendors.nrsVendorId} IS NOT NULL`);
+	const byNrs = new Map(tracked.map((v) => [v.nrsVendorId!, v]));
+	const parentOf = new Map<number, number>(); // child nrs id → parent nrs id
+	const unresolved: string[] = [];
+	let parentsScanned = 0;
+	let linksFound = 0;
+
+	const ids = tracked.map((v) => v.nrsVendorId!);
+	let i = 0;
+	async function worker() {
+		while (i < ids.length) {
+			const parentId = ids[i++];
+			let children;
+			try {
+				children = await getVendorChildren(parentId);
+			} catch (err) {
+				log.warn({ err: err instanceof Error ? err.message : String(err), parentId }, 'NRS children scrape failed for vendor');
+				continue;
+			}
+			if (children === null) continue;
+			parentsScanned++;
+			for (const c of children) {
+				linksFound++;
+				const norm = (x: string | null) => (x ?? '').trim().toUpperCase();
+				const candidates = tracked.filter((v) => v.nrsVendorId !== parentId);
+				let match = c.code ? candidates.filter((v) => norm(v.code) === norm(c.code)) : [];
+				if (match.length !== 1) match = candidates.filter((v) => norm(v.displayName) === norm(c.name));
+				if (match.length !== 1) {
+					unresolved.push(`${parentId} → "${c.label}"`);
+					continue;
+				}
+				parentOf.set(match[0].nrsVendorId!, parentId);
+			}
+		}
+	}
+	await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker));
+
+	// Only apply when the scrape actually ran; a dead web session must not clear links.
+	if (parentsScanned === 0) return { parentsScanned, linksFound, changed: 0, unresolved };
+
+	let changed = 0;
+	for (const v of tracked) {
+		const want = parentOf.get(v.nrsVendorId!) ?? null;
+		if (want === v.parentNrsVendorId) continue;
+		await db.update(vendors).set({ parentNrsVendorId: want, updatedAt: new Date() }).where(eq(vendors.id, v.id));
+		log.info({ vendor: v.displayName, nrsVendorId: v.nrsVendorId, from: v.parentNrsVendorId, to: want, parent: want ? byNrs.get(want)?.displayName : null }, 'NRS pass-through parent mirrored');
+		changed++;
+	}
+	if (unresolved.length) log.warn({ unresolved }, 'NRS children not matched to TeamTime vendors');
+	return { parentsScanned, linksFound, changed, unresolved };
 }
 
 /**

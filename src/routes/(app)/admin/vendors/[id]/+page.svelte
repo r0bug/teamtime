@@ -430,6 +430,19 @@
 						<label class="label" for="vendorPaymentPercent">Vendor payment % (NRS)</label>
 						<input id="vendorPaymentPercent" name="vendorPaymentPercent" type="number" step="0.01" class="input" value={data.vendor.vendorPaymentPercent ?? ''} placeholder="e.g. 87.00" />
 						<p class="text-xs text-gray-500 mt-1">% the vendor receives. Shop's commission = 100 − this.</p>
+						{#if data.passThroughParent}
+							<p class="text-xs text-amber-700 mt-1">
+								Paid through <a class="underline" href="/admin/vendors/{data.passThroughParent.id}">{data.passThroughParent.code ?? data.passThroughParent.displayName}</a>:
+								NRS puts this vendor's sales on that vendor's check (set in NRS under Associated Pass-Through Vendors).
+							</p>
+						{/if}
+						{#if data.passThroughChildren.length > 0}
+							<p class="text-xs text-amber-700 mt-1">
+								Check also covers:
+								{#each data.passThroughChildren as c, i}{i > 0 ? ', ' : ''}<a class="underline" href="/admin/vendors/{c.id}">{c.code ?? c.displayName}</a>{/each}
+								(NRS Associated Pass-Through Vendors).
+							</p>
+						{/if}
 					</div>
 					<div>
 						<label class="label" for="status">Status</label>

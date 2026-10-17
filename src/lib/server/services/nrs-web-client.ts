@@ -496,6 +496,63 @@ export interface VendorWebFlagsUpdate {
  * new flags plus a diff of every captured field so callers can prove nothing
  * else moved.
  */
+/**
+ * Read-only: every submittable field on the AP Vendor Management form for a
+ * vendor, as NRS renders it. For discovering fields the JSON API does not
+ * expose (e.g. the vendor-to-vendor payment link).
+ */
+export async function getVendorWebFormFields(vendorId: number): Promise<Record<string, string> | null> {
+	const html = await authedGet(`/ap/apVendorManagement?form=${vendorId}`, 'frm');
+	if (!html) return null;
+	return captureFormFields(html);
+}
+
+/** Read-only discovery: raw HTML of an authenticated NRS web page. */
+export async function getNrsWebPage(path: string): Promise<string> {
+	return authedGet(path);
+}
+
+/** Read-only discovery: POST an NRS web form and return the HTML. */
+export async function postNrsWebForm(path: string, fields: Record<string, string>): Promise<string> {
+	return authedPostForm(path, fields);
+}
+
+export interface NrsChildVendor {
+	/** As rendered, e.g. "CAS - Jacob Castillo". */
+	label: string;
+	/** Vendor code before " - " (may be blank). */
+	code: string | null;
+	name: string;
+	note: string | null;
+}
+
+/**
+ * "Associated Pass-Through Vendors" on the vendor VIEW page
+ * (apVendorManagement?vendorView=<id>): NRS puts these vendors' sales on this
+ * vendor's check instead of cutting them their own. NRS is the source of truth;
+ * TeamTime only mirrors it (vendors.parent_nrs_vendor_id). Returns null when
+ * the page did not render (login failure etc.), [] when the section is empty.
+ */
+export async function getVendorChildren(vendorId: number): Promise<NrsChildVendor[] | null> {
+	const html = await authedGet(`/ap/apVendorManagement?vendorView=${vendorId}`, 'View Vendor');
+	if (!html.includes('View Vendor')) return null;
+	const section = html.match(/<div id="ApChildVendors">([\s\S]*?)<\/div>/i);
+	if (!section) return null;
+	const out: NrsChildVendor[] = [];
+	for (const row of section[1].matchAll(/<tr>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<\/tr>/gi)) {
+		const label = decodeAttr(row[1].replace(/<[^>]+>/g, '')).trim();
+		if (!label) continue;
+		const m = label.match(/^(.*?)\s+-\s+(.*)$/);
+		out.push({
+			label,
+			code: m ? m[1].trim() || null : null,
+			name: (m ? m[2] : label).trim(),
+			note: decodeAttr(row[2].replace(/<[^>]+>/g, '')).trim() || null
+		});
+	}
+	return out;
+}
+
 export async function setVendorWebFlags(
 	vendorId: number,
 	update: VendorWebFlagsUpdate

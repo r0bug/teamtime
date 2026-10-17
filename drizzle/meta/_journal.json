@@ -64,6 +64,13 @@
       "when": 1791965353912,
       "tag": "0008_floorplan_booth_history",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1792221204405,
+      "tag": "0009_vendors_parent_nrs_vendor",
+      "breakpoints": true
     }
   ]
 }
