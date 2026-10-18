@@ -160,6 +160,19 @@
 		return [];
 	}
 
+	/** The PDF carries the exact selection in its URL — no browser print dialog state to lose. */
+	$: pdfUrl = (() => {
+		const p = new URLSearchParams();
+		if (data.plan) p.set('plan', data.plan.id);
+		p.set('paper', paper); p.set('shade', shade);
+		if (rangeText.trim()) p.set('range', rangeText.trim()); else if (zone) p.set('zone', zone);
+		p.set('cpi', fit ? '0' : String(cellsPerInch));
+		if (!showLabels) p.set('labels', '0');
+		if (!showCoords) p.set('coords', '0');
+		p.set('margin', '0.2');
+		return `/floorplan/print/pdf?${p.toString()}`;
+	})();
+
 	function apply() {
 		const p = new URLSearchParams();
 		if (data.plan) p.set('plan', data.plan.id);
@@ -315,10 +328,11 @@
 				<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showCoords} /> coordinates</label>
 				<label class="flex items-center gap-1"><input type="checkbox" bind:checked={showNotes} /> notes lines</label>
 				<button type="button" class="btn-secondary btn-sm" on:click={apply}>Update link</button>
-				<button type="button" class="btn-primary" on:click={() => window.print()}>Print…</button>
+				<a class="btn-primary" href={pdfUrl} target="_blank" rel="noopener" title="Landscape PDF, 0.2 in margins, grid fills the page; how-to and legend on the last page">Open PDF</a>
+				<button type="button" class="btn-ghost btn-sm" on:click={() => window.print()} title="Browser print of the on-screen preview (less reliable than the PDF)">Browser print…</button>
 			</div>
 		</div></div>
-		<p class="text-xs text-gray-500 mt-2">Section {section.minX},{section.minY} – {section.maxX},{section.maxY} ({secW} × {secH} cells, 1 cell = 1 ft). Use your browser's print dialog for the color printer; background graphics must be on.</p>
+		<p class="text-xs text-gray-500 mt-2">Section {section.minX},{section.minY} – {section.maxX},{section.maxY} ({secW} × {secH} cells, 1 cell = 1 ft). <b>Open PDF</b> gives a landscape PDF that fills the page with this exact section ({fit ? '1 sheet' : `${sheets.length} sheet${sheets.length === 1 ? '' : 's'}`}); print it from the PDF viewer at 100%.</p>
 
 		<!-- Zoom: drag a box on the overview to pick a section; it prints tiled at the chosen scale -->
 		<div class="card mt-4"><div class="card-body grid grid-cols-1 lg:grid-cols-3 gap-4">
