@@ -89,6 +89,7 @@
 			{ href: '/admin/vendors', label: 'Vendors', icon: 'box', show: true },
 			{ href: '/admin/labels', label: 'Labels & Tags', icon: 'tag', show: true },
 			{ href: '/pricing', label: 'Pricing', icon: 'tag', show: mod('pricing') },
+			{ href: '/appraisals', label: 'Appraisals', icon: 'dollar', show: true },
 			{ href: '/holds', label: 'Holds', icon: 'clipboard-check', show: mod('holds') },
 			{ href: '/floorplan', label: 'Floorplan', icon: 'map', show: mod('floorplan') },
 			{ href: '/notes', label: 'Notes', icon: 'document', show: mod('notes') },

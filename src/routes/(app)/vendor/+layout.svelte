@@ -20,6 +20,7 @@
 		{ href: '/vendor/app', label: 'Get the App' },
 		{ href: '/vendor/leaderboard', label: 'Leaderboard' },
 		{ href: '/vendor/sales', label: 'Sales' },
+		{ href: '/appraisals', label: 'Appraisals' },
 		{ href: '/vendor/profile', label: 'Profile' }
 	];
 

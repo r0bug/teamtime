@@ -39,7 +39,9 @@ module.exports = {
         NRS_STORE_ID: process.env.NRS_STORE_ID,
         // App
         PUBLIC_APP_URL: process.env.PUBLIC_APP_URL,
-        CRON_SECRET: process.env.CRON_SECRET
+        CRON_SECRET: process.env.CRON_SECRET,
+        // value.trickpc.com (photo appraisal tool) SSO + credential-check shared secret
+        VALUE_APP_SECRET: process.env.VALUE_APP_SECRET
       },
 
       // Restart behavior - CRITICAL for preventing crash loops
