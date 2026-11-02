@@ -8,7 +8,8 @@
  *  1. SSO hop — a signed-in TeamTime user clicks "Appraisals"; /appraisals mints
  *     a short-lived HMAC token describing them and redirects to value.trickpc.com.
  *  2. Direct login on the phone — value.trickpc.com posts email + password/PIN to
- *     /api/app/verify-credentials (server-to-server, secret in a header).
+ *     /api/app/value-verify (server-to-server, secret in a header).
+ *     (Not /api/app/verify-credentials: that one is the ListFlow credential proxy.)
  *
  * `kind` is the only authorization signal the appraisal tool uses:
  * 'vendor' users see their own appraisals, 'staff' see everyone's.
