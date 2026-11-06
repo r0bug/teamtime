@@ -32,6 +32,23 @@
 		});
 	}
 
+	// Split post text into plain text and links so URLs (and in-app paths like
+	// /training) are clickable. Rendered as text nodes — no {@html}.
+	const LINK_RE = /(https?:\/\/[^\s<>"')\]]+|(?<![\w/])\/(?:training|TT|tt|floorplan|info)\b[^\s<>"')\]]*)/g;
+	function linkParts(content: string): { text: string; href?: string }[] {
+		const parts: { text: string; href?: string }[] = [];
+		let last = 0;
+		for (const m of content.matchAll(LINK_RE)) {
+			const url = m[0].replace(/[.,;:!?]+$/, '');
+			const at = m.index ?? 0;
+			if (at > last) parts.push({ text: content.slice(last, at) });
+			parts.push({ text: url, href: url });
+			last = at + url.length;
+		}
+		if (last < content.length) parts.push({ text: content.slice(last) });
+		return parts;
+	}
+
 	function truncateContent(content: string, maxLength = 150) {
 		if (content.length <= maxLength) return content;
 		return content.substring(0, maxLength) + '...';
@@ -192,7 +209,7 @@
 					{/if}
 				</div>
 				<div class="prose prose-sm max-w-none">
-					<pre class="whitespace-pre-wrap font-sans text-gray-700 bg-gray-50 p-4 rounded-lg">{viewingPost.content}</pre>
+					<pre class="whitespace-pre-wrap font-sans text-gray-700 bg-gray-50 p-4 rounded-lg">{#each linkParts(viewingPost.content) as part}{#if part.href}<a href={part.href} class="text-primary-600 underline break-all" target={part.href.startsWith('http') ? '_blank' : undefined} rel="noopener">{part.text}</a>{:else}{part.text}{/if}{/each}</pre>
 				</div>
 				<div class="mt-6 pt-4 border-t">
 					<button on:click={() => viewingPost = null} class="btn-secondary">

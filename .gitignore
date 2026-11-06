@@ -73,3 +73,6 @@ static/uploads/
 # Claude Code session artifacts
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
+
+# Training media (private, served via /training/media; see training-resources.ts)
+/training/

@@ -1,4 +1,5 @@
 import type { PageServerLoad } from './$types';
+import { redirect } from '@sveltejs/kit';
 import { db, shifts, timeEntries, breakEntries, tasks, conversationParticipants, messages, inventoryDrops, inventoryDropItems, users, locations, pricingDecisions, customerHolds, staffNotes , ebaySaleSettlements } from '$lib/server/db';
 import { eq, and, or, isNull, gt, gte, lt, lte, sql, inArray, desc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -8,7 +9,15 @@ import { getOrCreateUserStats, getTodayPoints, getLeaderboard, getUserLeaderboar
 import { getRecentAchievements, getAchievementStats } from '$lib/server/services/achievements-service';
 import { getPayPeriodConfig, getCurrentPayPeriod } from '$lib/server/services/pay-period-service';
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, cookies }) => {
+	// Deep-link return: short links like /TT stash their target before sending
+	// an anonymous user to /login; every login flow lands here afterwards.
+	// Same-site paths only (no '//' or '\\' that could leave the site).
+	const afterLogin = cookies.get('after_login');
+	if (afterLogin) {
+		cookies.delete('after_login', { path: '/' });
+		if (/^\/(?![\/\\])/.test(afterLogin)) throw redirect(302, afterLogin);
+	}
 	const user = locals.user!;
 	const now = new Date();
 	const startOfDay = new Date(now);
